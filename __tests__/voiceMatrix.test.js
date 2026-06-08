@@ -59,7 +59,7 @@ describe('Voice Anchor Pipeline', () => {
       expect(window.audiobook_api.promote_test_to_anchor).not.toHaveBeenCalled();
     });
 
-    it('successfully promotes a test take to master anchor and calls ComfyUI export', async () => {
+    it('successfully promotes a test take to character anchor and calls ComfyUI export', async () => {
       window.audiobook_api.promote_test_to_anchor.mockResolvedValue({
         success: true,
         anchor_file_path: "/mock/anchors/new_master_anchor.wav"

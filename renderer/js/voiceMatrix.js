@@ -183,11 +183,13 @@ function populate_voice_matrix_configuration_cards() {
           const normalized_path = raw_path.replace(/\\/g, "/").replace(/^\/+/, "");
           const src_url = `file:///${normalized_path}?t=${Date.now()}`;
           test_audio_players_html += `
-            <div class="d-flex align-items-center justify-content-between p-6 border-radius-4 gap-6" style="background: rgba(0,0,0,0.2);">
-              <span class="text-10 text-muted" style="width: 60px; text-transform: capitalize;">${emotion}</span>
-              <span id="test_status_${emotion}_${character_name_string}" class="d-none text-10 text-gold"></span>
-              <audio id="test_player_${emotion}_${character_name_string}" src="${src_url}" controls class="flex-1 d-block" style="height: 20px;"></audio>
-              <button class="cyber_btn btn_secondary text-9 p-2-6" onclick="promote_test_take_to_anchor('${character_name_string.replace(/'/g, "\\'")}', '${emotion}')" title="Saves this take as the Master Anchor and exports it directly to ComfyUI for future generations.">⭐ Save as Master Anchor</button>
+            <div class="d-flex flex-column p-8 border-radius-4 gap-6 mb-8" style="background: rgba(0,0,0,0.2);">
+              <div class="d-flex align-items-center justify-content-between w-100">
+                <span class="text-10 text-muted" style="text-transform: capitalize; font-weight: 500;">${emotion} take</span>
+                <span id="test_status_${emotion}_${character_name_string}" class="d-none text-10 text-gold"></span>
+              </div>
+              <audio id="test_player_${emotion}_${character_name_string}" src="${src_url}" controls class="w-100 d-block" style="height: 24px;"></audio>
+              <button class="cyber_btn btn_secondary text-10 p-4-8 mt-2 w-100" onclick="promote_test_take_to_anchor('${character_name_string.replace(/'/g, "\\'")}', '${emotion}')" title="Saves this take as the Character Anchor and exports it directly to ComfyUI for future generations.">⭐ Save as Character Anchor</button>
             </div>
           `;
         }
@@ -253,7 +255,7 @@ function populate_voice_matrix_configuration_cards() {
         ${character_timbre_details.savedVoiceFilename ? `
           <div class="d-flex align-items-center gap-6 p-8 border-radius-4 bg-glass-panel border-gold-glow mt-8">
             <span class="text-gold">⭐</span>
-            <span class="text-11 text-gold flex-1">Master Anchor Bound: <strong>${character_timbre_details.savedVoiceFilename}</strong></span>
+            <span class="text-11 text-gold flex-1">Character Anchor Bound: <strong>${character_timbre_details.savedVoiceFilename}</strong></span>
             <button class="cyber_btn btn_secondary p-2-6 text-9 text-coral" onclick="trigger_character_voice_mapping_reset('${character_name_string.replace(/'/g, "\\'")}')">Remove</button>
           </div>
         ` : ""}
@@ -1410,11 +1412,11 @@ async function promote_test_take_to_anchor(character_name_string, emotion) {
     trigger_project_state_disk_flush();
     populate_voice_matrix_configuration_cards();
     
-    // WHAT: Automatically saving the newly saved master anchor to the ComfyUI models folder.
+    // WHAT: Automatically saving the newly saved character anchor to the ComfyUI models folder.
     // WHY: Saves the user a manual step since anchoring natively implies saving the voice template for future use.
     save_custom_voice_to_comfyui(character_name_string);
     
-    alert("Test take successfully saved as Master Anchor and exported to ComfyUI!");
+    alert("Test take successfully saved as Character Anchor and exported to ComfyUI!");
   } else {
     // WHAT: Alerting the user of the promotion failure.
     // WHY: Keeps the user informed if there was a backend error during the copy operation.
@@ -1484,10 +1486,10 @@ async function save_custom_voice_to_comfyui(character_name_string) {
   }
 }
 
-// WHAT: Resets the character voice mapping to remove the saved Master Anchor.
-// WHY: Allows the user to unbind a saved master voice.
+// WHAT: Resets the character voice mapping to remove the saved Character Anchor.
+// WHY: Allows the user to unbind a saved character voice.
 function trigger_character_voice_mapping_reset(character_name_string) {
-  if (confirm(`Are you sure you want to unbind the Master Anchor for "${character_name_string}"?`)) {
+  if (confirm(`Are you sure you want to unbind the Character Anchor for "${character_name_string}"?`)) {
     if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping[character_name_string]) {
       delete active_loaded_project_state_object.voiceMapping[character_name_string].savedVoiceFilename;
       trigger_project_state_disk_flush();
