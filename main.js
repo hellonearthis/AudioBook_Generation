@@ -482,7 +482,7 @@ function dispatch_http_post_request(target_endpoint_url_string, request_payload_
         port: parsed_url_object.port,
         path: parsed_url_object.pathname,
         method: "POST",
-        timeout: 600000, // 10 minutes max
+        timeout: 1200000, // 20 minutes max
         headers: {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(stringified_payload)
@@ -2914,11 +2914,23 @@ ipcMain.handle("audio:save-custom-voice", async (ipc_event_context, request_argu
     const standardized_project_name_string = project_name.toLowerCase().replace(/\s+/g, "_");
     const target_filename = `${standardized_project_name_string}_${standardized_character_name_string}_${uuid_string}`;
 
-    // WHAT: Configuring ComfyUI Node "1" with the absolute filepath of the character's anchor WAV audio file.
+    const comfyui_base_directory = resolve_comfyui_base_directory();
+    const comfyui_input_folder = path_library.join(comfyui_base_directory, "input");
+    
+    // Ensure the ComfyUI input directory exists
+    if (!filesystem_library.existsSync(comfyui_input_folder)) {
+      filesystem_library.mkdirSync(comfyui_input_folder, { recursive: true });
+    }
+    
+    // Copy the anchor file to ComfyUI's input directory to comply with standard security policies
+    const staging_filename = `anchor_save_${uuid_string}.wav`;
+    const destination_path = path_library.join(comfyui_input_folder, staging_filename);
+    filesystem_library.copyFileSync(anchor_file_path, destination_path);
+
+    // WHAT: Configuring ComfyUI Node "1" with the staged filename of the character's anchor WAV audio file.
     // WHY: The VoiceClone node requires the source reference audio file path to load its vocal features.
     if (comfyui_workflow_nodes_payload["1"]) {
-      // Passing absolute path as the user verified Node 1 can handle it
-      comfyui_workflow_nodes_payload["1"].inputs.audio = anchor_file_path.replace(/\\/g, "/");
+      comfyui_workflow_nodes_payload["1"].inputs.audio = staging_filename;
     }
     
     // WHAT: Setting the reference text on Node "2" to match the anchor phrase.
