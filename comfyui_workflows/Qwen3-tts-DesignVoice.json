@@ -1,0 +1,361 @@
+{
+  "id": "cd732cf0-c62d-4c2d-998a-e0e40c8464c5",
+  "revision": 0,
+  "last_node_id": 43,
+  "last_link_id": 50,
+  "nodes": [
+    {
+      "id": 38,
+      "type": "FB_Qwen3TTSVoiceDesign",
+      "pos": [
+        240,
+        -512
+      ],
+      "size": [
+        688,
+        1152
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 49
+        },
+        {
+          "label": "instruct",
+          "name": "instruct",
+          "type": "STRING",
+          "widget": {
+            "name": "instruct"
+          },
+          "link": 50
+        },
+        {
+          "label": "model_choice",
+          "name": "model_choice",
+          "type": "COMBO",
+          "widget": {
+            "name": "model_choice"
+          },
+          "link": null
+        },
+        {
+          "label": "device",
+          "name": "device",
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          },
+          "link": null
+        },
+        {
+          "label": "precision",
+          "name": "precision",
+          "type": "COMBO",
+          "widget": {
+            "name": "precision"
+          },
+          "link": null
+        },
+        {
+          "label": "language",
+          "name": "language",
+          "type": "COMBO",
+          "widget": {
+            "name": "language"
+          },
+          "link": null
+        },
+        {
+          "label": "seed",
+          "name": "seed",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "label": "max_new_tokens",
+          "name": "max_new_tokens",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "max_new_tokens"
+          },
+          "link": null
+        },
+        {
+          "label": "top_p",
+          "name": "top_p",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "top_p"
+          },
+          "link": null
+        },
+        {
+          "label": "top_k",
+          "name": "top_k",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "top_k"
+          },
+          "link": null
+        },
+        {
+          "label": "temperature",
+          "name": "temperature",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "temperature"
+          },
+          "link": null
+        },
+        {
+          "label": "repetition_penalty",
+          "name": "repetition_penalty",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "repetition_penalty"
+          },
+          "link": null
+        },
+        {
+          "label": "attention",
+          "name": "attention",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "attention"
+          },
+          "link": null
+        },
+        {
+          "label": "unload_model_after_generate",
+          "name": "unload_model_after_generate",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "unload_model_after_generate"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            48
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "qwen3-tts-comfyui",
+        "ver": "c7db6c2eb0f269d358c53bb71688dc95de4f7d07",
+        "Node name for S&R": "FB_Qwen3TTSVoiceDesign",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "ue_properties": {
+          "widget_ue_connectable": {}
+        }
+      },
+      "widgets_values": [
+        "Some things, when the country needs them, someone has to shoulder the burden.\n\nOur generation carried the soil on our backs to build the road;\nwhat you must do is make that road lead to the stars and the vast sea beyond.",
+        "Character Name: Lin Huaiyue\n\nVoice Profile: A powerful, commanding middle-aged male voice; resonant and booming, characterized by a deep, authoritative register and strong emphasis.\n\nIdentity & Background: Lead Consultant for a national key scientific research project and a seasoned strategic scientist nearing seventy. A veteran of major national technological breakthrough initiatives, he has weathered decades of adversity, witnessing the arduous journey from industrial backwardness to indigenous innovation. Currently a lifetime honorary member of the National Science and Technology Advisory Committee, he remains dedicated to mentoring young talent on the front lines and providing strategic guidance for national development.\n\nPhysical Appearance: Possesses an upright, imposing stature. His temples are graying, and his brow is etched with the stoic resolve earned over a lifetime. He typically wears dark-colored Zhongshan suits or crisp formal attire. His gaze is calm yet piercing, and every movement exudes a natural sense of dignity and composure.\n\nPersonality Traits: Possesses a will of steel and unwavering conviction; he never retreats in the face of adversity. Deeply patriotic and invested in the nation’s future, he inextricably links his personal destiny to the country’s rise and fall. Rigorous and disciplined, he is a man of his word whose speech carries a profound sense of historical responsibility. While appearing cold and stern on the surface, he is warm-hearted, harboring great expectations for the younger generation and willingly serving as a bridge to their success.\n\nPersonal Motto: \"Our generation does not exist to stand in the light, but to pave the road toward it.\"",
+        "1.7B",
+        "cuda",
+        "bf16",
+        "English",
+        615148012527697,
+        "randomize",
+        2048,
+        0.8,
+        20,
+        1,
+        1.05,
+        "auto",
+        false
+      ]
+    },
+    {
+      "id": 41,
+      "type": "SaveAudioMP3",
+      "pos": [
+        992,
+        -512
+      ],
+      "size": [
+        272,
+        144
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 48
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.20.1",
+        "Node name for S&R": "SaveAudioMP3"
+      },
+      "widgets_values": [
+        "take/qwen3-tts-DesignVoice",
+        "128k"
+      ]
+    },
+    {
+      "id": 42,
+      "type": "PrimitiveString",
+      "pos": [
+        -288,
+        -512
+      ],
+      "size": [
+        384,
+        96
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            49
+          ]
+        }
+      ],
+      "title": "WhatToSay",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.20.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        ""
+      ]
+    },
+    {
+      "id": 43,
+      "type": "PrimitiveString",
+      "pos": [
+        -288,
+        -336
+      ],
+      "size": [
+        384,
+        96
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            50
+          ]
+        }
+      ],
+      "title": "VoiceStyle",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.20.1",
+        "Node name for S&R": "PrimitiveString"
+      },
+      "widgets_values": [
+        ""
+      ]
+    }
+  ],
+  "links": [
+    [
+      48,
+      38,
+      0,
+      41,
+      0,
+      "AUDIO"
+    ],
+    [
+      49,
+      42,
+      0,
+      38,
+      0,
+      "STRING"
+    ],
+    [
+      50,
+      43,
+      0,
+      38,
+      1,
+      "STRING"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 3,
+      "title": "Design Voice",
+      "bounding": [
+        224,
+        -592,
+        1136,
+        1312
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "workflowRendererVersion": "LG",
+    "ds": {
+      "scale": 0.9815950920245399,
+      "offset": [
+        496.7792029380812,
+        770.7227456728618
+      ]
+    },
+    "frontendVersion": "1.42.15",
+    "VHS_latentpreview": true,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true,
+    "ue_links": [],
+    "links_added_by_ue": []
+  },
+  "version": 0.4
+}

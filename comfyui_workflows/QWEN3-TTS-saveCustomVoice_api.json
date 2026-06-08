@@ -1,0 +1,91 @@
+{
+  "1": {
+    "inputs": {
+      "audio": "take_3.mp3",
+      "audioUI": "/api/view?filename=take_3.mp3&type=input&subfolder=&rand=0.3770083753559361"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  },
+  "2": {
+    "inputs": {
+      "ref_text": "What you need to do is make this road lead to the stars and the vast sea.",
+      "model_choice": "1.7B",
+      "device": "cuda",
+      "precision": "bf16",
+      "attention": "auto",
+      "x_vector_only": false,
+      "unload_model_after_generate": false,
+      "ref_audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "FB_Qwen3TTSVoiceClonePrompt",
+    "_meta": {
+      "title": "🎭 Qwen3-TTS VoiceClonePrompt"
+    }
+  },
+  "3": {
+    "inputs": {
+      "target_text": "What you need to do is make this road lead to the stars and the vast sea.",
+      "model_choice": "1.7B",
+      "device": "cuda",
+      "precision": "bf16",
+      "language": "English",
+      "ref_text": "There's no doubt about it. We picked up several from different parts of the planet, took them aboard our recon vessels, and probed them all the way through. They're completely meat.",
+      "seed": 850204781463492,
+      "max_new_tokens": 4096,
+      "top_p": 0.8,
+      "top_k": 20,
+      "temperature": 1,
+      "repetition_penalty": 1.05,
+      "x_vector_only": false,
+      "attention": "auto",
+      "unload_model_after_generate": false,
+      "custom_model_path": "",
+      "ref_audio": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "FB_Qwen3TTSVoiceClone",
+    "_meta": {
+      "title": "🎭 Qwen3-TTS VoiceClone"
+    }
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "audioUI": "",
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "Save Audio (FLAC)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "filename": "SavedVoice",
+      "ref_text": "What you need to do is make this road lead to the stars and the vast sea.",
+      "voice_clone_prompt": [
+        "2",
+        0
+      ],
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "FB_Qwen3TTSSaveVoice",
+    "_meta": {
+      "title": "💾 Qwen3-TTS SaveVoice"
+    }
+  }
+}

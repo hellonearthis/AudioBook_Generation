@@ -1,0 +1,63 @@
+{
+  "38": {
+    "inputs": {
+      "text": [
+        "42",
+        0
+      ],
+      "instruct": [
+        "43",
+        0
+      ],
+      "model_choice": "1.7B",
+      "device": "cuda",
+      "precision": "bf16",
+      "language": "English",
+      "seed": 615148012527697,
+      "max_new_tokens": 2048,
+      "top_p": 0.8,
+      "top_k": 20,
+      "temperature": 1,
+      "repetition_penalty": 1.05,
+      "attention": "auto",
+      "unload_model_after_generate": false
+    },
+    "class_type": "FB_Qwen3TTSVoiceDesign",
+    "_meta": {
+      "title": "🎨 Qwen3-TTS VoiceDesign"
+    }
+  },
+  "41": {
+    "inputs": {
+      "filename_prefix": "take/qwen3-tts-DesignVoice",
+      "quality": "128k",
+      "audioUI": "",
+      "audio": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "SaveAudioMP3",
+    "_meta": {
+      "title": "Save Audio (MP3)"
+    }
+  },
+  "42": {
+    "inputs": {
+      "value": ""
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "WhatToSay"
+    }
+  },
+  "43": {
+    "inputs": {
+      "value": ""
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "VoiceStyle"
+    }
+  }
+}

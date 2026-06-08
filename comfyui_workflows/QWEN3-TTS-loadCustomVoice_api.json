@@ -1,0 +1,80 @@
+{
+  "7": {
+    "inputs": {
+      "audioUI": "",
+      "audio": [
+        "11",
+        1
+      ]
+    },
+    "class_type": "PreviewAudio",
+    "_meta": {
+      "title": "Preview Audio"
+    }
+  },
+  "8": {
+    "inputs": {
+      "audioUI": "",
+      "audio": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "PreviewAudio",
+    "_meta": {
+      "title": "Preview Audio"
+    }
+  },
+  "9": {
+    "inputs": {
+      "text": [
+        "11",
+        2
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "Show Text 🐍"
+    }
+  },
+  "10": {
+    "inputs": {
+      "target_text": "Even if you don't want to get treated for your own sake, you at least have to consider how others feel. It's fine if you don't care about how we, your friends, feel—but what about your family? Do you really not care about your family's feelings at all?!",
+      "model_choice": "1.7B",
+      "device": "cuda",
+      "precision": "bf16",
+      "language": "English",
+      "ref_text": [
+        "11",
+        2
+      ],
+      "seed": 418198609798102,
+      "max_new_tokens": 4096,
+      "top_p": 0.8,
+      "top_k": 20,
+      "temperature": 1,
+      "repetition_penalty": 1.05,
+      "x_vector_only": false,
+      "attention": "flash_attn",
+      "unload_model_after_generate": false,
+      "custom_model_path": "",
+      "voice_clone_prompt": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "FB_Qwen3TTSVoiceClone",
+    "_meta": {
+      "title": "🎭 Qwen3-TTS VoiceClone"
+    }
+  },
+  "11": {
+    "inputs": {
+      "filename": "SavedVoice.wav"
+    },
+    "class_type": "FB_Qwen3TTSLoadSpeaker",
+    "_meta": {
+      "title": "🎙️ Qwen3-TTS LoadSpeaker"
+    }
+  }
+}

@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Audiobook Screenplay Generator & Synthesizer</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- =========================================================================
+       APP SHELL WRAPPER - SIDEBAR + MAIN VIEWPORT
+       ========================================================================= -->
+  <div id="app_shell_container">
+    
+    <!-- LEFT SIDEBAR navigation panel -->
+    <aside class="sidebar_panel">
+      <div>
+        <!-- Brand identity header -->
+        <div class="sidebar_brand_header">
+          <div class="brand_logo_hexagon">Ω</div>
+          <div class="brand_title_container">
+            <h1>Antigravity</h1>
+            <span>Audiobook Engine</span>
+          </div>
+        </div>
+
+        <!-- Navigation navigation links -->
+        <nav>
+          <ul class="navigation_links_list">
+            <li class="navigation_link_item active_nav_tab" id="nav_link_dashboard" onclick="switch_active_navigation_tab('dashboard')">
+              <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+              Projects Matrix
+            </li>
+            <li class="navigation_link_item" id="nav_link_editor" onclick="switch_active_navigation_tab('editor')">
+              <svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              Script Editor
+            </li>
+            <li class="navigation_link_item" id="nav_link_voice" onclick="switch_active_navigation_tab('voice')">
+              <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+              Character Definitions
+            </li>
+            <li class="navigation_link_item" id="nav_link_stitch" onclick="switch_active_navigation_tab('stitch')">
+              <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5v14M22 9v6M7 7v10M2 10v4"/></svg>
+              Audio Editor & Assembler
+            </li>
+            <li class="navigation_link_item" id="nav_link_waveform" onclick="switch_active_navigation_tab('waveform')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>
+              The Cutting Room
+            </li>
+          </ul>
+        </nav>
+      </div>
+
+      <!-- SIDEBAR FOOTER METRICS -->
+      <div class="sidebar_footer_metrics">
+        <div class="metric_row">
+          <span class="metric_label">Workspace:</span>
+          <span class="metric_value" id="sidebar_active_workspace_name">Not Selected</span>
+        </div>
+        <div class="metric_row">
+          <span class="metric_label">Active Book:</span>
+          <span class="metric_value" id="sidebar_active_project_name">- None -</span>
+        </div>
+        <div class="metric_row d-none mt-10 pt-10 flex-column align-items-start gap-4 border-top-dashed-coral" id="sidebar_lm_warning_container">
+          <span class="metric_label text-coral d-flex align-items-center gap-4">
+            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            LM Studio Warning
+          </span>
+          <span class="metric_value text-high-contrast text-9 line-height-1-3 white-space-normal word-break-word" id="sidebar_lm_warning_text">-</span>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- RIGHT MAIN CONTENT PANEL -->
+    <main class="main_viewport_container">
+      
+      <!-- VIEW NAVBAR HEADER -->
+      <header class="view_top_navbar">
+        <div class="navbar_page_title" id="active_page_navbar_title">Projects Dashboard</div>
+        
+        <!-- API CONFIGURATIONS & INTERFACE STATUS -->
+        <div class="navbar_controls d-flex align-items-center">
+          <button id="btn_reset_queue" class="cyber_btn btn_secondary d-none p-4-8 text-11 radius-4 border-coral text-coral mr-15" onclick="trigger_manual_queue_status_reset()" title="Force-clear stuck statuses and backend queue">
+            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Reset Queue
+          </button>
+          
+          <div id="editor_layout_toggles" class="d-none align-items-center gap-8 mr-20">
+            <span class="text-12 text-muted mr-4">Columns:</span>
+            <button id="toggle_col_raw" class="cyber_btn p-4-8 text-11 radius-4" onclick="toggle_editor_column(1)">Source</button>
+            <button id="toggle_col_screenplay" class="cyber_btn p-4-8 text-11 radius-4" onclick="toggle_editor_column(2)">Screenplay</button>
+            <button id="toggle_col_directorial" class="cyber_btn p-4-8 text-11 radius-4" onclick="toggle_editor_column(3)">Directorial</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- =========================================================================
+           TAB VIEW 1: PROJECTS DASHBOARD / PROJECT MANAGER
+           ========================================================================= -->
+      <section class="content_view_pane active_view" id="viewport_dashboard">
+        <!-- Workspace directory selection row -->
+        <div class="workspace_selector_bar">
+          <div class="workspace_info">
+            <h3>Active System Workspace Directory</h3>
+            <span id="active_workspace_directory_display_label">No folder directory selected. Please select workspace to build projects.</span>
+          </div>
+          <button class="cyber_btn btn_secondary" onclick="trigger_native_folder_picker()">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Select Workspace
+          </button>
+        </div>
+
+        <!-- Dashboard columns: New Project Form + Loaded projects list -->
+        <div class="grid-cols-dashboard gap-30" id="dashboard_functional_area">
+          
+          <!-- Creating New Project Form -->
+          <div class="production_card_panel">
+            <h3 class="production_panel_title">Initialize New Audiobook</h3>
+            
+            <div class="form_input_group">
+              <label class="form_input_label">Project Name</label>
+              <input type="text" id="input_new_project_title_name" class="form_text_field" placeholder="Enter book title (e.g. The Hobbit)">
+            </div>
+
+            <div class="form_input_group">
+              <label class="form_input_label">Paste Book Raw Text Content</label>
+              <textarea id="input_new_project_text_contents" class="form_text_area" placeholder="Paste the chapter or segment text of the book here to parse..."></textarea>
+            </div>
+
+            <button class="cyber_btn w-100 justify-content-center mt-15" onclick="trigger_new_project_creation()">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 5v14M5 12h14"/></svg>
+              Create Audiobook Project
+            </button>
+          </div>
+
+          <!-- Existing Loaded Projects List Grid -->
+          <div>
+            <h3 class="production_panel_title mb-20">Your Audiobook Projects</h3>
+            <div class="project_cards_grid" id="project_selection_cards_grid">
+              <!-- Empty state view if no workspace or projects -->
+              <div class="empty_state_screen grid-col-full vh-35">
+                <div class="empty_state_hex_glow">
+                  <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <h4 class="empty_state_title">No Workspace Opened</h4>
+                <p class="empty_state_tagline">Select a local directory above to view your audiobook projects or start a new book synthesis.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================================
+           TAB VIEW 2: INTERACTIVE DUAL-PANE SCREENPLAY EDITOR
+           ========================================================================= -->
+      <section class="content_view_pane" id="viewport_editor">
+        <!-- Empty State overlay if no project is active -->
+        <div id="editor_empty_view_mask" class="empty_state_screen">
+          <div class="empty_state_hex_glow">
+            <svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </div>
+          <h4 class="empty_state_title">No Audiobook Active</h4>
+          <p class="empty_state_tagline">Choose an existing project from the dashboard or initialize a new project to access the interactive script editor.</p>
+          <button class="cyber_btn btn_secondary" onclick="switch_active_navigation_tab('dashboard')">Go to Projects</button>
+        </div>
+
+        <!-- DUAL-PANE LAYOUT -->
+        <div id="editor_view_toggles" class="d-none flex-row gap-10 mb-15 justify-content-end align-items-center">
+          <span class="text-11 text-muted">Toggle Columns:</span>
+          <button id="toggle_col_raw" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(1)">Raw Source</button>
+          <button id="toggle_col_screenplay" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(2)">Screenplay</button>
+          <button id="toggle_col_directorial" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(3)">Directorial</button>
+        </div>
+        <div id="editor_main_layout_split" class="editor_layout_split_view d-none">
+          
+          <!-- LEFT PANE: Raw Book Excerpts & About -->
+          <div class="editor_pane" id="editor_pane_raw">
+            <div class="pane_header">
+              <span class="pane_header_title">1. Raw Source Book Segment & About</span>
+              <div class="d-flex gap-8">
+                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_cleanup()">Clean Line Breaks</button>
+                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_reparse()">Reparse Text</button>
+              </div>
+            </div>
+            <div class="pane_content_area d-flex flex-column gap-15">
+              <div class="form_input_group mb-0">
+                <label class="form_input_label">Book Author</label>
+                <input type="text" id="project_author_input_editor" class="form_text_field" placeholder="Enter author name" onchange="trigger_project_about_details_save()">
+              </div>
+              <div class="form_input_group mb-0">
+                <label class="form_input_label">Book Notes</label>
+                <textarea id="project_notes_textarea_editor" class="form_text_area h-60px" placeholder="Enter book notes, lore, or context" onchange="trigger_project_about_details_save()"></textarea>
+              </div>
+              <div class="form_input_group mb-0 flex-grow-1 d-flex flex-column">
+                <label class="form_input_label">Raw Source Book Segment</label>
+                <textarea id="raw_source_book_textarea_editor" class="raw_book_text_area flex-grow-1"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- MIDDLE PANE: Structured Screenplay Cards -->
+          <div class="editor_pane" id="editor_pane_screenplay">
+            <div class="pane_header">
+              <span class="pane_header_title">2. Screenplay Script Editor</span>
+              <div class="d-flex gap-8">
+                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple" onclick="run_master_pipeline_pass_one_and_two()">
+                  Automate Attribution
+                </button>
+                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-muted" onclick="run_tech_book_sentence_split()">
+                  Tech Book Split
+                </button>
+                <button class="cyber_btn p-6-12 text-11 radius-6" onclick="trigger_queue_synthesis_all_lines()">
+                  Synthesize Classic
+                </button>
+              </div>
+            </div>
+            <div class="pane_content_area scroll-smooth" id="screenplay_segment_cards_wrapper">
+              <!-- RENDERED SCRIPT CARDS -->
+            </div>
+          </div>
+
+          <!-- RIGHTMOST PANE [NEW]: Directorial Orchestration Pipeline -->
+          <div class="editor_pane" id="editor_pane_directorial">
+            <div class="pane_header">
+              <span class="pane_header_title">3. Directorial Orchestration Pipeline</span>
+              <div class="d-flex gap-8">
+                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-gold" onclick="run_directorial_orchestration_extraction_pipeline()">
+                  Director Script Doctor
+                </button>
+                <button class="cyber_btn p-6-12 text-11 radius-6" onclick="trigger_directorial_synthesis_all_lines()">
+                  Synthesize Directorial
+                </button>
+              </div>
+            </div>
+            <div class="pane_content_area scroll-smooth" id="directorial_segment_cards_wrapper">
+              <!-- RENDERED DIRECTORIAL SCRIPT CARDS -->
+              <div class="empty_state_screen vh-50">
+                <div class="empty_state_hex_glow text-gold">
+                  <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </div>
+                <h4 class="empty_state_title">No Directorial Script Enriched</h4>
+                <p class="empty_state_tagline">Click "Director Script Doctor" above to run the Triple-Input metadata and vector emotion extraction.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================================
+           TAB VIEW 3: GLOBAL VOICE MATRIX
+           ========================================================================= -->
+      <section class="content_view_pane" id="viewport_voice">
+        <!-- Empty State overlay if no project is active -->
+        <div id="voice_matrix_empty_view_mask" class="empty_state_screen">
+          <div class="empty_state_hex_glow">
+            <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+          </div>
+          <h4 class="empty_state_title">No Cast Profiles Discovered</h4>
+          <p class="empty_state_tagline">Run the Cast Extraction pass on your script editor page first, or select a project to configure character voice timbres.</p>
+        </div>
+
+        <!-- Character Timbre Settings Cards Grid -->
+        <div id="voice_matrix_functional_container" class="d-none">
+          <div class="d-flex justify-content-between align-items-center mb-25">
+            <h3 class="production_panel_title mb-0">Cast Profiles & Timbre Configuration</h3>
+            <button class="cyber_btn btn_secondary" onclick="run_cast_discovery_pass_one()">Scan Characters (Pass 1)</button>
+          </div>
+          <div class="voice_matrix_cards_container" id="voice_matrix_cards_grid">
+            <!-- CARDS RENDERING HERE -->
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================================
+           TAB VIEW 4: DYNAMIC ASSEMBLY & CONCATENATION CONSOLE
+           ========================================================================= -->
+      <section class="content_view_pane" id="viewport_stitch">
+        <!-- Empty State overlay if no project is active -->
+        <div id="stitch_console_empty_view_mask" class="empty_state_screen">
+          <div class="empty_state_hex_glow">
+            <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5v14M22 9v6M7 7v10M2 10v4"/></svg>
+          </div>
+          <h4 class="empty_state_title">No Audiobook Ready for Stitching</h4>
+          <p class="empty_state_tagline">Select a book and synthesize character line audio files in the Screenplay view to access post-production compilation controls.</p>
+        </div>
+
+        <!-- Stitching Interface Layout Grid -->
+        <div id="stitch_console_functional_container" class="production_console_layout d-none">
+          
+          <!-- Column 1: Synthesis Progress Tracker -->
+          <div class="production_card_panel">
+            <h3 class="production_panel_title">Speech Synthesis Status & Queue</h3>
+            
+            <div class="active_synthesis_queue_container d-flex flex-column gap-15">
+              <!-- Classic Screenplay Progress Bar -->
+              <div class="synthesis_aggregate_progress_bar_wrapper">
+                <div class="progress_stats_row d-flex justify-content-between text-11 mb-5">
+                  <span class="text-neon-blue font-semibold text-uppercase tracking-wide">Classic Screenplay Synthesis</span>
+                  <span id="label_classic_queue_synthesis_ratio" class="text-high-contrast font-medium">0 / 0 Lines</span>
+                </div>
+                <div class="progress_track_bar_bg h-6px bg-glass-5 radius-3 overflow-x-hidden border-glass-5">
+                  <div id="bar_classic_queue_synthesis_progress_fill" class="progress_track_bar_fill h-100 radius-3" style="width: 0%; background: linear-gradient(90deg, var(--accent-neon-blue), #3b82f6); transition: width 0.3s ease;"></div>
+                </div>
+              </div>
+
+              <!-- Directorial Orchestration Progress Bar -->
+              <div class="synthesis_aggregate_progress_bar_wrapper">
+                <div class="progress_stats_row d-flex justify-content-between text-11 mb-5">
+                  <span class="text-gold font-semibold text-uppercase tracking-wide">Directorial Orchestration</span>
+                  <span id="label_directorial_queue_synthesis_ratio" class="text-high-contrast font-medium">0 / 0 Lines</span>
+                </div>
+                <div class="progress_track_bar_bg h-6px bg-glass-5 radius-3 overflow-x-hidden border-glass-5">
+                  <div id="bar_directorial_queue_synthesis_progress_fill" class="progress_track_bar_fill h-100 radius-3" style="width: 0%; background: linear-gradient(90deg, var(--accent-cyber-gold), #f59e0b); transition: width 0.3s ease;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Waveform Editor moved to its own page -->
+            <h3 class="production_panel_title mb-5">Post-Production Audio Editor</h3>
+            <p class="text-12 text-muted mb-15">
+              The interactive waveform editor has been moved to its own dedicated view for a better editing experience.
+            </p>
+            <button class="cyber_btn justify-content-center w-100" onclick="switch_active_navigation_tab('waveform')">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+              Open Dedicated Waveform Editor
+            </button>
+          </div>
+
+          <!-- Column 2: Stitching Parameters & CSV/XML Exporter links -->
+          <div class="production_card_panel d-flex flex-column justify-content-between">
+            <div>
+              <h3 class="production_panel_title">Audio Stitching Parameters</h3>
+              
+              <div class="form_input_group">
+                <label class="form_input_label">Breathing Space Pause Interval (Seconds)</label>
+                <input type="number" id="input_post_prod_pause_between_lines" class="form_text_field" value="0.6" step="0.1" min="0">
+                <span class="text-11 text-muted line-height-1-4">
+                  Adjusts the silent room tone delay inserted automatically between character switches to keep dialogues sounding human.
+                </span>
+              </div>
+
+              <div class="form_input_group mt-25">
+                <h4 class="form_input_label mb-10">Post-Production Exports</h4>
+                <div class="bg-dark-overlay-15 border-solid-glass radius-md p-15 d-flex flex-column gap-10">
+                  <div class="d-flex justify-content-between align-items-center text-12">
+                    <span class="metric_label">Master WAV Audiobook file:</span>
+                    <span class="metric_value text-emerald" id="label_master_export_wav_status">Not Compiled</span>
+                  </div>
+                  <div class="d-flex justify-content-between align-items-center text-12">
+                    <span class="metric_label">DAW Timeline Markers (CSV):</span>
+                    <span class="metric_value text-emerald" id="label_master_export_csv_status">Not Compiled</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="d-flex gap-15 mt-25">
+              <p class="text-11 text-muted line-height-1-4">
+                Backend audio stitching has been replaced. Please use the standalone Waveform Editor to arrange and export your mixdown visually.
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- =========================================================================
+           TAB VIEW 5: DATA-DRIVEN BLOCK TIMELINE EDITOR
+           ========================================================================= -->
+      <section class="content_view_pane" id="viewport_waveform">
+        <div class="production_card_panel d-flex flex-column h-100">
+          <div class="d-flex justify-content-between align-items-center mb-15">
+            <h3 class="production_panel_title mb-0">The Cutting Room</h3>
+            <div class="d-flex gap-10 align-items-center">
+              <span class="text-11 text-muted">Timeline Zoom:</span>
+              <input type="range" id="timeline_zoom_slider" min="10" max="200" value="34" oninput="update_timeline_zoom(this.value)" class="w-100px">
+              <span id="timeline_zoom_label" class="text-11 text-high-contrast w-40px">34px/s</span>
+            </div>
+          </div>
+
+          <!-- WHAT: Data-Driven Timeline container. -->
+          <!-- WHY: Replaces waveform-playlist. Hosts draggable DOM div blocks on a unified wrapping horizontal timeline. -->
+          <div id="data_driven_timeline" class="position-relative flex-grow-1 min-h-200px bg-dark-overlay border-solid-glass overflow-x-hidden overflow-y-auto radius-md p-10">
+            <div id="timeline_track" class="d-flex flex-wrap align-content-start gap-10 position-relative min-h-100 min-w-100"></div>
+          </div>
+
+          <!-- WHAT: Status label overlay showing current state. -->
+          <div id="peaks_status_bar" class="peaks_status_bar">
+            <span id="waveform_sim_status_label" class="peaks_status_text">Timeline Editor Ready</span>
+          </div>
+
+          <!-- WHAT: Transport control bar with segment navigation buttons and export. -->
+          <div class="peaks_transport_controls d-flex justify-content-between align-items-center pt-15 border-top-glass mt-15">
+            <div class="peaks_transport_group d-flex gap-15 align-items-center">
+              <select id="select_import_version" class="form_select_dropdown p-4-8 text-11">
+                <option value="classic">Classic Screenplay</option>
+                <option value="directorial">Directorial Orchestration</option>
+              </select>
+
+              <div class="d-flex align-items-center gap-8">
+                <span class="text-11 text-muted">Lines:</span>
+                <input type="number" id="input_import_start_line" class="form_text_field w-60px p-4 text-11 mb-0" placeholder="Start">
+                <span class="text-11 text-muted">to</span>
+                <input type="number" id="input_import_end_line" class="form_text_field w-60px p-4 text-11 mb-0" placeholder="End">
+              </div>
+              
+              <button class="peaks_transport_btn peaks_btn_accent" id="btn_import_storyboard_takes" onclick="import_storyboard_takes_to_preview_playlist()">
+                📥 Load Timeline
+              </button>
+            </div>
+
+            <div class="peaks_transport_group">
+              <button class="peaks_transport_btn peaks_btn_accent" id="btn_export_mixdown" onclick="trigger_export_mixdown()">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export Master Audio
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================================
+           MODULAR CONFIGURATION DRAWER / SYSTEM DRAWER
+           ========================================================================= -->
+      <footer class="p-10-40 bg-dark-overlay border-top-glass d-flex justify-content-between align-items-center text-11">
+        <div class="d-flex gap-20 align-items-center">
+          <span class="text-muted">LM Studio API Endpoint:</span>
+          <input type="text" id="settings_lm_studio_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:1234/v1" onchange="save_global_configurations()">
+        </div>
+        <div class="d-flex gap-20 align-items-center">
+          <span class="text-muted">ComfyUI API Endpoint:</span>
+          <input type="text" id="settings_comfyui_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8188" onchange="save_global_configurations()">
+        </div>
+        <div>
+          <span class="text-neon-blue font-semibold">System Online</span>
+        </div>
+      </footer>
+
+    </main>
+  </div>
+
+  <!-- =========================================================================
+       MODULAR POPUP OVERLAY - QWEN WORKFLOW CONFIGURATOR
+       ========================================================================= -->
+  <div id="workflow_settings_modal" class="cyber_modal_overlay d-none">
+    <div class="cyber_modal_window">
+      <!-- Header -->
+      <div class="cyber_modal_header">
+        <div class="d-flex align-items-center gap-10">
+          <div class="brand_logo_hexagon w-28px h-28px text-14 line-height-28px">⚙️</div>
+          <div>
+            <h2 id="modal_config_title" class="cyber_modal_title">Qwen Workflow Configurator</h2>
+            <span id="modal_config_subtitle" class="cyber_modal_subtitle">Configure active synthesis engine parameters</span>
+          </div>
+        </div>
+        <button class="cyber_modal_close_btn" onclick="close_workflow_settings_modal()">×</button>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="cyber_modal_tabs">
+        <button class="modal_tab_btn active_tab" id="tab_btn_workflow" onclick="switch_modal_tab('workflow')">Workflow Settings</button>
+        <button class="modal_tab_btn" id="tab_btn_references" onclick="switch_modal_tab('references')">Emotion Library</button>
+      </div>
+
+      <!-- Content Views -->
+      <div class="cyber_modal_body">
+        
+        <!-- Tab 1: Workflow Setup -->
+        <div class="modal_tab_content active_content" id="modal_content_workflow">
+          <div class="form_input_group">
+            <label class="form_input_label">Active Synthesis Engine Workflow</label>
+            <select id="modal_workflow_type_dropdown" class="form_select_dropdown" onchange="handle_modal_workflow_type_change(this.value)">
+              <option value="inherit">Inherit from Character Profile (Default)</option>
+              <option value="design">🎨 Qwen3-TTS VoiceDesign (Natural Language Timbre Description)</option>
+              <option value="clone">🎭 Qwen3-TTS VoiceClone (Zero-Shot Dynamic Cloning)</option>
+            </select>
+          </div>
+
+          <div class="form_input_group" id="form_group_seed_value">
+            <label class="form_input_label">Speech Synthesis Seed</label>
+            <div class="d-flex gap-10">
+              <input type="number" id="modal_synthesis_seed_field" class="form_text_field flex-grow-1" placeholder="Enter seed value (e.g. 12345)">
+              <button class="cyber_btn btn_secondary px-16 py-0 radius-md" title="Randomize seed value" onclick="randomize_modal_synthesis_seed()">
+                🎲
+              </button>
+            </div>
+          </div>
+
+          <div id="modal_qwen_design_override_section" class="d-none flex-column gap-8">
+            <label class="form_input_label d-flex justify-content-between">
+              VoiceDesign Latent Prompt Override
+              <span class="text-10 font-normal text-purple">Overrides inherited profile characteristics</span>
+            </label>
+            <textarea id="modal_qwen_design_input" class="form_text_field" rows="4" placeholder="Explain the character's vocal style, appearance, and physical traits. Qwen3-TTS translates this natural prose directly to a custom voice shape."></textarea>
+          </div>
+
+          <div id="modal_qwen_clone_override_section" class="d-none flex-column gap-8">
+            <label class="form_input_label d-flex justify-content-between">
+              Emotion Reference Clip Target
+              <span class="text-10 font-normal text-purple">Overrides inherited baseline voice shape</span>
+            </label>
+            <select id="modal_qwen_clone_emotion_dropdown" class="form_select_dropdown">
+              <option value="auto">Auto-detect from Emotional Direction (Recommended)</option>
+              <option value="normal">Force: Normal Baseline</option>
+              <option value="surprised">Force: Surprised / Elevated</option>
+              <option value="angry">Force: Angry / Aggressive</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Tab 3: Emotion Library -->
+        <div class="modal_tab_content d-none" id="modal_content_references">
+          <h4 class="form_input_label mb-10">Detected Local Reference Recordings</h4>
+          <div id="modal_references_status_list" class="emotion_reference_status_grid">
+            <!-- Dynamically populated from list files -->
+          </div>
+        </div>
+
+      <!-- Footer Buttons -->
+      <div class="cyber_modal_footer d-flex justify-content-end align-items-center w-100">
+        <button class="cyber_btn btn_secondary text-coral border-coral-glow mr-auto" onclick="reset_modal_workflow_settings_to_default()">Reset to Default</button>
+        <button class="cyber_btn btn_secondary ml-8" onclick="close_workflow_settings_modal()">Cancel</button>
+        <button class="cyber_btn ml-8" onclick="save_modal_workflow_settings_changes()">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODULAR POPUP OVERLAY - CHARACTER ROLE REASSIGNMENT
+       ========================================================================= -->
+  <div id="character_reassignment_modal" class="cyber_modal_overlay d-none">
+    <div class="cyber_modal_window max-w-450px">
+      <div class="cyber_modal_header">
+        <div class="d-flex align-items-center gap-10">
+          <div class="brand_logo_hexagon w-28px h-28px text-14 line-height-28px border-coral text-coral">🗑️</div>
+          <div>
+            <h2 class="cyber_modal_title text-coral">Delete Cast Profile</h2>
+            <span id="modal_reassign_subtitle" class="cyber_modal_subtitle">Reassign active lines before deletion</span>
+          </div>
+        </div>
+        <button class="cyber_modal_close_btn" onclick="close_character_deletion_modal()">×</button>
+      </div>
+
+      <div class="cyber_modal_body p-20">
+        <div class="form_input_group mb-0">
+          <label class="form_input_label">Inheriting Character Profile</label>
+          <select id="modal_reassign_character_dropdown" class="form_select_dropdown">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+        <p class="text-11 text-muted line-height-1-5 mt-15">
+          Warning: Deleting this profile will remove it from the Voice Matrix. Any existing screenplay and directorial lines assigned to this character will be permanently reassigned to the character selected above.
+        </p>
+      </div>
+
+      <div class="cyber_modal_footer d-flex justify-content-end align-items-center w-100">
+        <button class="cyber_btn btn_secondary" onclick="close_character_deletion_modal()">Cancel</button>
+        <button class="cyber_btn bg-coral border-coral-glow ml-8" onclick="execute_character_deletion_and_reassign()">Confirm Deletion & Merge</button>
+      </div>
+    </div>
+  </div>
+  <!-- LOAD INTERACTJS DEPENDENCY -->
+  <script src="../node_modules/interactjs/dist/interact.min.js"></script>
+
+  <!-- LOAD APPLICATION CORE CONTROLLER AND SCRIPTS -->
+  <script src="js/app.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/voiceMatrix.js"></script>
+</body>
+</html>
