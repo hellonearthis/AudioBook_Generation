@@ -124,7 +124,7 @@ contextBridge.exposeInMainWorld("audiobook_api", {
 
   // WHAT: Save the final arranged master audio buffer directly to disk.
   // WHY: Replaces the backend stitching. Waveform-Playlist renders the mixdown in the browser, and we just save the final blob.
-  save_master_audio: (workspace_directory_path, project_name, array_buffer, is_directorial_segment_flag) => {
+  save_audiobook_mixdown: (workspace_directory_path, project_name, array_buffer, is_directorial_segment_flag) => {
     return ipcRenderer.invoke("project:save-master-audio", {
       workspace_directory_path: workspace_directory_path,
       project_name: project_name,

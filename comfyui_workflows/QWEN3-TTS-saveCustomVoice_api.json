@@ -1,8 +1,7 @@
 {
   "1": {
     "inputs": {
-      "audio": "take_3.mp3",
-      "audioUI": "/api/view?filename=take_3.mp3&type=input&subfolder=&rand=0.3770083753559361"
+      "audio": "take_3.mp3"
     },
     "class_type": "LoadAudio",
     "_meta": {
@@ -19,7 +18,7 @@
       "x_vector_only": false,
       "unload_model_after_generate": false,
       "ref_audio": [
-        "3",
+        "1",
         0
       ]
     },
@@ -45,7 +44,6 @@
       "x_vector_only": false,
       "attention": "auto",
       "unload_model_after_generate": false,
-      "custom_model_path": "",
       "ref_audio": [
         "1",
         0
@@ -59,7 +57,6 @@
   "4": {
     "inputs": {
       "filename_prefix": "audio/ComfyUI",
-      "audioUI": "",
       "audio": [
         "3",
         0
@@ -79,7 +76,7 @@
         0
       ],
       "audio": [
-        "3",
+        "1",
         0
       ]
     },

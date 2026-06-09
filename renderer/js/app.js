@@ -405,6 +405,6 @@ async function load_audiobook_project_by_name(project_name_string) {
   } catch (state_fetch_failure_exception) {
     console.error("Project state mapping failed.", state_fetch_failure_exception);
     alert(`Could not load project state: ${state_fetch_failure_exception.message}`);
-    try { require('fs').writeFileSync('./frontend_error.log', state_fetch_failure_exception.stack || state_fetch_failure_exception.toString()); } catch(e){}
+    try { require('fs').writeFileSync('./frontend_error.log', state_fetch_failure_exception.stack || state_fetch_failure_exception.toString()); } catch(filesystem_logging_error){}
   }
 }

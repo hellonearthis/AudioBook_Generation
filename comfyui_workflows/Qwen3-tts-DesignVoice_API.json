@@ -30,16 +30,15 @@
   "41": {
     "inputs": {
       "filename_prefix": "take/qwen3-tts-DesignVoice",
-      "quality": "128k",
       "audioUI": "",
       "audio": [
         "38",
         0
       ]
     },
-    "class_type": "SaveAudioMP3",
+    "class_type": "SaveAudio",
     "_meta": {
-      "title": "Save Audio (MP3)"
+      "title": "Save Audio"
     }
   },
   "42": {

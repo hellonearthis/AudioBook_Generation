@@ -205,7 +205,7 @@
             <div class="pane_header">
               <span class="pane_header_title">2. Screenplay Script Editor</span>
               <div class="d-flex gap-8">
-                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple" onclick="run_master_pipeline_pass_one_and_two()">
+                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple" onclick="run_main_pipeline_pass_one_and_two()">
                   Automate Attribution
                 </button>
                 <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-muted" onclick="run_tech_book_sentence_split()">
@@ -345,12 +345,12 @@
                 <h4 class="form_input_label mb-10">Post-Production Exports</h4>
                 <div class="bg-dark-overlay-15 border-solid-glass radius-md p-15 d-flex flex-column gap-10">
                   <div class="d-flex justify-content-between align-items-center text-12">
-                    <span class="metric_label">Master WAV Audiobook file:</span>
-                    <span class="metric_value text-emerald" id="label_master_export_wav_status">Not Compiled</span>
+                    <span class="metric_label">Compiled WAV Audiobook file:</span>
+                    <span class="metric_value text-emerald" id="label_mixdown_export_wav_status">Not Compiled</span>
                   </div>
                   <div class="d-flex justify-content-between align-items-center text-12">
                     <span class="metric_label">DAW Timeline Markers (CSV):</span>
-                    <span class="metric_value text-emerald" id="label_master_export_csv_status">Not Compiled</span>
+                    <span class="metric_value text-emerald" id="label_mixdown_export_csv_status">Not Compiled</span>
                   </div>
                 </div>
               </div>
@@ -414,7 +414,7 @@
             <div class="peaks_transport_group">
               <button class="peaks_transport_btn peaks_btn_accent" id="btn_export_mixdown" onclick="trigger_export_mixdown()">
                 <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Export Master Audio
+                Export Compiled Audiobook
               </button>
             </div>
           </div>

@@ -305,7 +305,8 @@ ipcMain.handle("audio:stitch-timeline", async (ipc_event_context, request_argume
         filesystem_library.mkdirSync(output_dir, { recursive: true });
       }
 
-      const output_filename = is_directorial ? "master_directorial_mixdown.wav" : "master_classic_mixdown.wav";
+      const formatted_project_name = project_name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const output_filename = is_directorial ? `${formatted_project_name}_directorial_mixdown.wav` : `${formatted_project_name}_classic_mixdown.wav`;
       const output_path = path_library.join(output_dir, output_filename);
 
       if (timeline_data.length === 0) {
@@ -332,11 +333,11 @@ ipcMain.handle("audio:stitch-timeline", async (ipc_event_context, request_argume
         .complexFilter(filter_complex, ["aout"])
         .output(output_path)
         .on("end", () => {
-          resolve({ success: true, masterAudioPath: output_path });
+          resolve({ success: true, mixdownAudioPath: output_path });
         })
-        .on("error", (err) => {
-          console.error("FFmpeg stitching error:", err);
-          reject(err);
+        .on("error", (ffmpeg_execution_error) => {
+          console.error("FFmpeg stitching error:", ffmpeg_execution_error);
+          reject(ffmpeg_execution_error);
         })
         .run();
 
@@ -365,18 +366,25 @@ ipcMain.handle("project:delete-take", async (ipc_event_context, request_argument
 
   // WHAT: Ensuring target file resides strictly within our active project boundaries.
   // WHY: Protects the user's operating system from malicious path injection or traversal attempts.
-  if (target_take_file_path.startsWith(project_root_directory) && filesystem_library.existsSync(target_take_file_path)) {
-    try {
-      // WHAT: Deleting the audio take file synchronously.
-      // WHY: Frees disk space and clears cached takes immediately.
-      filesystem_library.unlinkSync(target_take_file_path);
-      return { success: true };
-    } catch (filesystem_deletion_exception) {
-      console.error("Failed to delete active take file:", filesystem_deletion_exception);
-      return { success: false, error: filesystem_deletion_exception.message };
-    }
+  if (!target_take_file_path.startsWith(project_root_directory)) {
+    return { success: false, error: "Target take audio file access is restricted." };
   }
-  return { success: false, error: "Target take audio file does not exist or access is restricted." };
+
+  // WHAT: Check if the file exists on disk.
+  // WHY: If it's already missing, we still want to report success so the UI can clear out "ghost" state records.
+  if (!filesystem_library.existsSync(target_take_file_path)) {
+    return { success: true, message: "File already missing from disk, but state cleared." };
+  }
+
+  try {
+    // WHAT: Deleting the audio take file synchronously.
+    // WHY: Frees disk space and clears cached takes immediately.
+    filesystem_library.unlinkSync(target_take_file_path);
+    return { success: true };
+  } catch (filesystem_deletion_exception) {
+    console.error("Failed to delete active take file:", filesystem_deletion_exception);
+    return { success: false, error: filesystem_deletion_exception.message };
+  }
 });
 
 // =========================================================================
@@ -1848,8 +1856,8 @@ async function execute_sequential_generation_queue() {
     //      10 minutes in the polling loop. We do a rapid ping first, and if it fails, we instantly
     //      fail the generation task so the queue can recover gracefully.
     let comfyui_is_reachable = await new Promise((resolve_ping) => {
-      const ping_request = http_client_library.get(`${current_active_task.comfyui_api_url_address}/system_stats`, (res) => {
-        resolve_ping(res.statusCode === 200);
+      const ping_request = http_client_library.get(`${current_active_task.comfyui_api_url_address}/system_stats`, (http_response_object) => {
+        resolve_ping(http_response_object.statusCode === 200);
       }).on('error', () => {
         resolve_ping(false);
       });
@@ -1899,7 +1907,8 @@ async function execute_sequential_generation_queue() {
 
     // WHAT: Checking if the character profile has a saved custom voice model file mapped.
     // WHY: If they have a pre-saved voice (from the ComfyUI models/voices folder), we bypass standard cloning/design routing and use the loadCustomVoice workflow for optimal speed.
-    if (global_character_mapping.savedVoiceFilename) {
+    //      We skip this reroute ONLY if the request explicitly asks for the "design" workflow (e.g. testing new voice traits).
+    if (global_character_mapping.savedVoiceFilename && active_workflow_type !== "design") {
       is_saved_voice_rerouted = true;
       active_workflow_type = "load_custom_voice";
       resolved_saved_voice_filename = global_character_mapping.savedVoiceFilename;
@@ -2340,6 +2349,10 @@ async function execute_sequential_generation_queue() {
         // WHY: ComfyUI splits the saved file path in its history logs into separate 'subfolder'
         //      (e.g., 'take') and 'filename' (e.g., 'line_0_take_3_00001_.mp3') fields. We join
         //      them together to obtain the correct relative path.
+        if (!comfyui_history_entry.outputs || !comfyui_history_entry.outputs[save_node_id_string]) {
+            throw new Error(`ComfyUI workflow finished but no output found for save node ${save_node_id_string}. The prompt might have failed execution.`);
+        }
+        
         const audio_output_entry = comfyui_history_entry.outputs[save_node_id_string].audio[0];
         const relative_rendered_audio_path = path_library.join(
           audio_output_entry.subfolder || "",
@@ -2444,15 +2457,16 @@ function notify_renderer_of_generation_progress(progress_update_payload) {
     /// AUDIO STITCHING ENGINE (PASS 5) - HYBRID POST-PRODUCTION CONCATENATOR
     // =========================================================================
 
-    // WHAT: Main project compiler. Merges individual lines into a master audiobook track.
+    // WHAT: Main project compiler. Merges individual lines into a compiled audiobook track.
     // WHY: Stitches audio in pure JavaScript to remain reliable without ffmpeg binaries,
     //      supporting both MP3 binary stream concatenation and PCM WAV header reconstruction.
         ipcMain.handle("project:save-master-audio", async (event, args) => {
       const { workspace_directory_path, project_name, array_buffer, is_directorial } = args;
-      const master_file_prefix_label = is_directorial ? "audiobook_master_directorial" : "audiobook_master";
-      const compiled_book_output_audio_path = path_library.join(workspace_directory_path, project_name, `${master_file_prefix_label}.wav`);
+      const formatted_project_name = project_name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const mixdown_file_prefix_label = is_directorial ? `${formatted_project_name}_directorial_mixdown` : `${formatted_project_name}_classic_mixdown`;
+      const compiled_book_output_audio_path = path_library.join(workspace_directory_path, project_name, `${mixdown_file_prefix_label}.wav`);
       filesystem_library.writeFileSync(compiled_book_output_audio_path, Buffer.from(array_buffer));
-      return { masterAudioPath: compiled_book_output_audio_path };
+      return { mixdownAudioPath: compiled_book_output_audio_path };
     });
 
     // WHAT: Handle native OS context menus for cell manipulation.
@@ -2854,7 +2868,7 @@ ipcMain.handle("audio:promote-test-to-anchor", async (ipc_event_context, request
   }
 
   const destination_anchor_file_path = path_library.join(
-    anchors_directory_absolute_path, `master_voice_${standardized_character_name_string}.wav`
+    anchors_directory_absolute_path, `character_voice_${standardized_character_name_string}.wav`
   );
 
   try {
@@ -2936,7 +2950,7 @@ ipcMain.handle("audio:save-custom-voice", async (ipc_event_context, request_argu
     // WHAT: Setting the reference text on Node "2" to match the anchor phrase.
     // WHY: The TTS model needs the textual transcription of the anchor audio for accurate clone mapping.
     if (comfyui_workflow_nodes_payload["2"]) {
-      comfyui_workflow_nodes_payload["2"].inputs.ref_text = anchor_phrase;
+      comfyui_workflow_nodes_payload["2"].inputs.ref_text = anchor_phrase || "";
     }
     
     // WHAT: Setting target text, reference text, and a random seed on the Qwen3-TTS VoiceClone node (Node 3).
@@ -2944,14 +2958,19 @@ ipcMain.handle("audio:save-custom-voice", async (ipc_event_context, request_argu
     if (comfyui_workflow_nodes_payload["3"]) {
       comfyui_workflow_nodes_payload["3"].inputs.target_text = anchor_phrase;
       comfyui_workflow_nodes_payload["3"].inputs.ref_text = anchor_phrase;
-      comfyui_workflow_nodes_payload["3"].inputs.seed = Math.floor(Math.random() * 900000000000000);
+      comfyui_workflow_nodes_payload["3"].inputs.seed = Math.floor(Math.random() * 90000) + 10000;
     }
+
+    // WHAT: Deleting unnecessary output nodes that cause validation failures.
+    // WHY: The save custom voice template contains a VoiceClone and SaveAudio node which are unnecessary and fail validation.
+    delete comfyui_workflow_nodes_payload["3"];
+    delete comfyui_workflow_nodes_payload["4"];
     
     // WHAT: Configuring the output filename and reference transcription on the SaveVoice node (Node 5).
     // WHY: Directs ComfyUI to write the computed latent vocal embeddings file to disk using the specific target filename format.
     if (comfyui_workflow_nodes_payload["5"]) {
       comfyui_workflow_nodes_payload["5"].inputs.filename = target_filename;
-      comfyui_workflow_nodes_payload["5"].inputs.ref_text = anchor_phrase;
+      comfyui_workflow_nodes_payload["5"].inputs.ref_text = anchor_phrase || "";
     }
 
     const payload_data_string = JSON.stringify({
@@ -2991,6 +3010,7 @@ ipcMain.handle("audio:save-custom-voice", async (ipc_event_context, request_argu
     // WHAT: Checking if the ComfyUI server encountered issues parsing or scheduling the workflow prompt payload.
     // WHY: If an error is returned in the response object, we immediately throw an exception to stop execution.
     if (execution_response.error) {
+      console.error("ComfyUI Prompt Validation Error Details:", JSON.stringify(execution_response.error, null, 2));
       throw new Error(`ComfyUI rejected prompt: ${execution_response.error.message || execution_response.error.type}`);
     }
 

@@ -1612,7 +1612,7 @@ select option {
   cursor: text;
 }
 
-.performance_direction_row .inline_qwen_input:empty::before {
+.performance_direction_row .inline_qwen_input:empty:not(:focus)::before {
   content: attr(data-placeholder);
   color: rgba(245, 171, 53, 0.4);
   font-weight: 400;

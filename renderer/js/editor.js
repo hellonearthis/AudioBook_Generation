@@ -596,7 +596,7 @@ async function run_tech_book_sentence_split() {
 
 // WHAT: Automatically divides prose blocks into speaker segments and generates staging guides.
 // WHY: Pass 2 and 3 convert unstructured txt paragraphs into dialogue screenplay records.
-async function run_master_pipeline_pass_one_and_two() {
+async function run_main_pipeline_pass_one_and_two() {
   if (!active_loaded_project_state_object || !active_selected_workspace_directory_path) {
     return;
   }
@@ -769,7 +769,7 @@ async function trigger_raw_text_reparse() {
     const raw_book_text_input = document.getElementById("raw_source_book_textarea_editor").value;
     active_loaded_project_state_object.rawBookText = raw_book_text_input;
     await trigger_project_state_disk_flush();
-    run_master_pipeline_pass_one_and_two();
+    run_main_pipeline_pass_one_and_two();
   }
 }
 
@@ -802,6 +802,16 @@ async function trigger_single_line_speech_synthesis(index_position_of_card) {
 
   const script_segment_data_reference = active_loaded_project_state_object.scriptSegments[index_position_of_card];
   const voice_configuration_mapping = active_loaded_project_state_object.voiceMapping || {};
+
+  // WHAT: Ensuring the assigned character has been locked in before allowing synthesis.
+  // WHY: The user explicitly requested that all voices used on the script editor page MUST be locked in.
+  const assigned_character_profile = voice_configuration_mapping[script_segment_data_reference.speaker] || {};
+  const is_cell_overridden_to_design = script_segment_data_reference.workflowOverride && script_segment_data_reference.workflowOverride.workflowType === "design";
+  
+  if (!assigned_character_profile.savedVoiceFilename && !is_cell_overridden_to_design) {
+    alert(`Synthesis Blocked: Character "${script_segment_data_reference.speaker}" has not been locked in.\n\nPlease go to the Characters tab, generate a test phrase, and click "⭐ Lock in character" before synthesizing script lines.`);
+    return;
+  }
 
   // WHAT: Ensuring the audioVersions list history array is initialized.
   // WHY: Needed to compute next take counts sequentially.
@@ -856,13 +866,33 @@ async function trigger_queue_synthesis_all_lines() {
   }
 
   const script_segments_count = active_loaded_project_state_object.scriptSegments.length;
+  const voice_configuration_mapping = active_loaded_project_state_object.voiceMapping || {};
+
+  // WHAT: Pre-validating that ALL characters in the script have been locked in before starting the batch.
+  // WHY: Prevents the queue from starting and then failing halfway through because a character was missed.
+  const unlocked_characters_found = new Set();
+  for (let segment_counter = 0; segment_counter < script_segments_count; segment_counter++) {
+    const segment_item = active_loaded_project_state_object.scriptSegments[segment_counter];
+    const character_profile = voice_configuration_mapping[segment_item.speaker] || {};
+    const is_cell_overridden_to_design = segment_item.workflowOverride && segment_item.workflowOverride.workflowType === "design";
+    
+    if (!character_profile.savedVoiceFilename && !is_cell_overridden_to_design) {
+      unlocked_characters_found.add(segment_item.speaker);
+    }
+  }
+
+  if (unlocked_characters_found.size > 0) {
+    const missing_names = Array.from(unlocked_characters_found).join(", ");
+    alert(`Batch Synthesis Blocked: The following characters have not been locked in yet:\n\n${missing_names}\n\nPlease go to the Characters tab and lock in their voices before generating the full audiobook.`);
+    return;
+  }
 
   // WHAT: Force the backend queue to reset.
   // WHY: We are starting a fresh batch generation; any old pending tasks should be aborted.
   await window.audiobook_api.reset_stuck_queue();
 
   // WHAT: Clear out the active audioPath so the stitching progress panel starts at 0%.
-  // WHY: We are generating new master takes. Old takes remain safe in audioVersions, but they are no longer active.
+  // WHY: We are generating new compiled takes. Old takes remain safe in audioVersions, but they are no longer active.
   for (let segment_counter = 0; segment_counter < script_segments_count; segment_counter++) {
     const segment_item = active_loaded_project_state_object.scriptSegments[segment_counter];
     segment_item.audioPath = null;
@@ -1414,12 +1444,23 @@ function play_individual_line_clip(index_position_of_card) {
     document.body.appendChild(clip_player_node);
   }
 
-  // WHAT: Dispatching local play request.
+  // WHAT: Checking if the user clicked play on the card that is already currently playing.
+  // WHY: If they click the same button while it's playing, it should act as a "Stop" button.
+  if (clip_player_node.dataset.currentCardIndex === String(index_position_of_card) && !clip_player_node.paused) {
+    clip_player_node.pause();
+    clip_player_node.currentTime = 0;
+    clip_player_node.dataset.currentCardIndex = ""; // Clear it so clicking again restarts it
+    return; // Exit early, we only wanted to stop the audio
+  }
+
+  // WHAT: Dispatching local play request for the new or restarted card.
   // WHY: Loads audio stream and fires playback event, throwing clean catch blocks if missing.
+  clip_player_node.dataset.currentCardIndex = String(index_position_of_card);
   clip_player_node.src = source_audio_file_path;
   clip_player_node.play().catch((audio_failure_exception) => {
     console.error("Failed to play segment audio clip file.", audio_failure_exception);
     alert("Audio clip file not accessible. Please ensure it was synthesized correctly.");
+    clip_player_node.dataset.currentCardIndex = "";
   });
 }
 
@@ -1868,7 +1909,7 @@ async function trigger_directorial_synthesis_all_lines() {
   await window.audiobook_api.reset_stuck_queue();
 
   // WHAT: Clear out the active audioPath so the stitching progress panel starts at 0%.
-  // WHY: We are generating new master takes. Old takes remain safe in audioVersions, but they are no longer active.
+  // WHY: We are generating new compiled takes. Old takes remain safe in audioVersions, but they are no longer active.
   for (let segment_counter = 0; segment_counter < script_segments_count; segment_counter++) {
     const segment_item = active_loaded_project_state_object.directorialSegments[segment_counter];
     segment_item.audioPath = null;

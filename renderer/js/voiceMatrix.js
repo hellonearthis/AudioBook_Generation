@@ -189,7 +189,7 @@ function populate_voice_matrix_configuration_cards() {
                 <span id="test_status_${emotion}_${character_name_string}" class="d-none text-10 text-gold"></span>
               </div>
               <audio id="test_player_${emotion}_${character_name_string}" src="${src_url}" controls class="w-100 d-block" style="height: 24px;"></audio>
-              <button class="cyber_btn btn_secondary text-10 p-4-8 mt-2 w-100" onclick="promote_test_take_to_anchor('${character_name_string.replace(/'/g, "\\'")}', '${emotion}')" title="Saves this take as the Character Anchor and exports it directly to ComfyUI for future generations.">⭐ Save as Character Anchor</button>
+              <button class="cyber_btn btn_secondary text-10 p-4-8 mt-2 w-100" onclick="promote_test_take_to_anchor('${character_name_string.replace(/'/g, "\\'")}', '${emotion}')" title="Saves this take as the Character Anchor and exports it directly to ComfyUI for future generations.">⭐ Lock in character</button>
             </div>
           `;
         }
@@ -212,7 +212,7 @@ function populate_voice_matrix_configuration_cards() {
       <div class="character_implicit_metadata_badges">
         <span class="character_meta_badge text-purple border-purple-glow">${character_timbre_details.gender || 'Unknown'}</span>
         <span class="character_meta_badge">${character_timbre_details.age || 'Adult'}</span>
-        ${character_timbre_details.savedVoiceFilename ? `<span class="character_meta_badge text-gold border-gold-glow">${character_timbre_details.savedVoiceFilename}</span>` : ""}
+        ${character_timbre_details.savedVoiceFilename ? `<span class="character_meta_badge text-gold border-gold-glow" style="word-break: break-all;">${character_timbre_details.savedVoiceFilename}</span>` : ""}
       </div>
 
       <!-- Voice Design Character Card properties -->
@@ -255,7 +255,7 @@ function populate_voice_matrix_configuration_cards() {
         ${character_timbre_details.savedVoiceFilename ? `
           <div class="d-flex align-items-center gap-6 p-8 border-radius-4 bg-glass-panel border-gold-glow mt-8">
             <span class="text-gold">⭐</span>
-            <span class="text-11 text-gold flex-1">Character Anchor Bound: <strong>${character_timbre_details.savedVoiceFilename}</strong></span>
+            <span class="text-11 text-gold flex-1">Character Anchor Bound: <strong style="word-break: break-all;">${character_timbre_details.savedVoiceFilename}</strong></span>
             <button class="cyber_btn btn_secondary p-2-6 text-9 text-coral" onclick="trigger_character_voice_mapping_reset('${character_name_string.replace(/'/g, "\\'")}')">Remove</button>
           </div>
         ` : ""}
@@ -391,10 +391,13 @@ function trigger_character_voice_test(character_name_string) {
   
   emotions.forEach(emotion => {
     container.innerHTML += `
-      <div class="d-flex align-items-center justify-content-between p-5 border-radius-4 bg-dark-overlay">
-        <span class="text-10 text-muted-cyan w-60px text-capitalize">${emotion}</span>
-        <span id="test_status_${emotion}_${character_name_string}" class="text-10 text-gold">Queued...</span>
-        <audio id="test_player_${emotion}_${character_name_string}" controls class="h-20px w-180px d-none"></audio>
+      <div class="d-flex flex-column p-8 border-radius-4 gap-6 mb-8" style="background: rgba(0,0,0,0.2);">
+        <div class="d-flex align-items-center justify-content-between w-100">
+          <span class="text-10 text-muted" style="text-transform: capitalize; font-weight: 500;">${emotion} take</span>
+          <span id="test_status_${emotion}_${character_name_string}" class="text-10 text-gold">Queued...</span>
+        </div>
+        <audio id="test_player_${emotion}_${character_name_string}" controls class="w-100 d-none" style="height: 24px;"></audio>
+        <button id="test_lock_btn_${emotion}_${character_name_string}" class="cyber_btn btn_secondary text-10 p-4-8 mt-2 w-100 d-none" onclick="promote_test_take_to_anchor('${character_name_string.replace(/'/g, "\\'")}', '${emotion}')" title="Saves this take as the Character Anchor and exports it directly to ComfyUI for future generations.">⭐ Lock in character</button>
       </div>
     `;
     
@@ -405,7 +408,8 @@ function trigger_character_voice_test(character_name_string) {
       text: test_phrase,
       direction: emotion, // This feeds into Qwen's emotion processing
       workflowOverride: {
-        seed: seed_value
+        seed: seed_value,
+        workflowType: "design"
       }
     };
     
@@ -497,7 +501,7 @@ if (window.audiobook_api && window.audiobook_api.subscribe_to_generation_status_
           }
           if (anchor_bake_button_element) {
             anchor_bake_button_element.disabled = false;
-            anchor_bake_button_element.textContent = "🎬 Save as Master Anchor";
+            anchor_bake_button_element.textContent = "🎬 Lock in character";
           }
         }
       }
@@ -524,6 +528,11 @@ if (window.audiobook_api && window.audiobook_api.subscribe_to_generation_status_
           player_el.classList.remove('d-none');
           player_el.classList.add('d-block');
           if (status_el) status_el.classList.add('d-none');
+          
+          const lock_btn = document.getElementById(`test_lock_btn_${emotion}_${character_name}`);
+          if (lock_btn) {
+            lock_btn.classList.remove('d-none');
+          }
           
           if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping[character_name]) {
             if (!active_loaded_project_state_object.voiceMapping[character_name].testTakes) {
@@ -628,7 +637,7 @@ function modify_character_anchor_phrase(character_name_string, updated_anchor_ph
   }
 }
 
-// WHAT: Dispatches the Master Anchor Save request to the backend via the preload bridge.
+// WHAT: Dispatches the Character Anchor Save request to the backend via the preload bridge.
 // WHY: Triggers Step 1 of the Two-Step Voice Cloning pipeline: runs VoiceDesign once with the
 //      character's design prompt, seed, and anchor phrase, then converts the output to a 16-bit
 //      Mono WAV via FFmpeg and saves it as the character's permanent master anchor file.
@@ -715,7 +724,7 @@ async function trigger_anchor_bake(character_name_string) {
       }
       if (bake_button_element) {
         bake_button_element.disabled = false;
-        bake_button_element.textContent = "🎬 Save as Master Anchor";
+        bake_button_element.textContent = "🎬 Lock in character";
       }
     }
   } catch (anchor_bake_dispatch_exception) {
@@ -726,7 +735,7 @@ async function trigger_anchor_bake(character_name_string) {
     }
     if (bake_button_element) {
       bake_button_element.disabled = false;
-      bake_button_element.textContent = "🎬 Save as Master Anchor";
+      bake_button_element.textContent = "🎬 Lock in character";
     }
   }
 }
@@ -1294,7 +1303,7 @@ function show_take_selector_modal(clip) {
   document.body.appendChild(modal);
 }
 
-// WHAT: Applies the selected take back to the master project state and triggers a timeline reload.
+// WHAT: Applies the selected take back to the main project state and triggers a timeline reload.
 // WHY: We must save the take decision and recalculate the block duration via the import function.
 function apply_selected_take(index_position) {
   const dropdown = document.getElementById('take_selector_dropdown');
@@ -1340,7 +1349,7 @@ function trigger_export_mixdown() {
     is_directorial_flag
   ).then(response => {
     if (response.success) {
-      document.getElementById('waveform_sim_status_label').textContent = 'Export Saved: ' + response.masterAudioPath;
+      document.getElementById('waveform_sim_status_label').textContent = 'Export Saved: ' + response.mixdownAudioPath;
     } else {
       document.getElementById('waveform_sim_status_label').textContent = 'Export Failed: ' + response.error;
     }
@@ -1403,7 +1412,11 @@ async function promote_test_take_to_anchor(character_name_string, emotion) {
     
     // WHAT: Copying the test phrase text over to become the official anchor phrase.
     // WHY: The text used to generate the test take is now the transcript for the master anchor voice.
-    if (character_timbre_details.testPhrase) {
+    const phrase_input = document.getElementById(`test_phrase_${character_name_string}`);
+    if (phrase_input && phrase_input.value) {
+      character_timbre_details.anchorPhrase = phrase_input.value;
+      character_timbre_details.testPhrase = phrase_input.value;
+    } else if (character_timbre_details.testPhrase) {
       character_timbre_details.anchorPhrase = character_timbre_details.testPhrase;
     }
     
@@ -1453,7 +1466,7 @@ async function save_custom_voice_to_comfyui(character_name_string) {
       active_loaded_project_state_object.projectName,
       character_name_string,
       character_timbre_details.anchorFilePath,
-      character_timbre_details.anchorPhrase
+      character_timbre_details.anchorPhrase || (document.getElementById(`test_phrase_${character_name_string}`) ? document.getElementById(`test_phrase_${character_name_string}`).value : "")
     );
 
     // WHAT: Assessing the custom voice save response.
