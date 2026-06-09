@@ -319,15 +319,23 @@ ipcMain.handle("audio:stitch-timeline", async (ipc_event_context, request_argume
 
       timeline_data.forEach((clip, index) => {
         command.input(clip.filePath);
-        // adelay expects milliseconds (e.g., 1500|1500 for left/right channels)
-        const delay_ms = Math.floor(clip.startTime * 1000);
-        filter_complex += `[${index}:a]adelay=${delay_ms}|${delay_ms}[aud${index}];`;
-        mix_inputs += `[aud${index}]`;
+        
+        // WHAT: Fetch the desired gap interval.
+        // WHY: We pad the end of this current clip with silence so the next clip starts after the gap.
+        const gap = clip.gap_before || 0;
+        
+        // Only pad if there is a next clip in the sequence to transition into.
+        if (gap > 0 && index < timeline_data.length - 1) {
+          filter_complex += `[${index}:a]apad=pad_dur=${gap}[aud${index}];`;
+          concat_inputs += `[aud${index}]`;
+        } else {
+          concat_inputs += `[${index}:a]`;
+        }
       });
 
-      // Combine all delayed streams using amix
-      // normalize=0 prevents volume reduction when mixing multiple streams
-      filter_complex += `${mix_inputs}amix=inputs=${timeline_data.length}:dropout_transition=0:normalize=0[aout]`;
+      // WHAT: Concatenate all processed audio streams end-to-end.
+      // WHY: concat natively decodes stream lengths, preventing overlap or cut-offs caused by imprecise metadata approximations.
+      filter_complex += `${concat_inputs}concat=n=${timeline_data.length}:v=0:a=1[aout]`;
 
       command
         .complexFilter(filter_complex, ["aout"])
