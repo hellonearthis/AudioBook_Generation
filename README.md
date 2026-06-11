@@ -88,18 +88,21 @@ Use this when:
 
 ## Character Voice Design & Synthesis Rules
 
-The application uses two distinct AI voice workflows to maintain strict acoustic consistency:
+The application uses three distinct AI voice workflows to maintain strict acoustic consistency:
 
-1. **The Character Designer (Voice Design Pipeline)**
+1. **The Custom Preset (Default Workflow)**
+   By default, if no specific workflow is configured (defaulting to "inherit"), the system uses the `Qwen3-TTS-CustomVoice_API` workflow. It leverages pre-defined preset voices (like `Eric`, `Dylan`, or `Serena`) and dynamic acting prompts combined with a **deterministic seed** derived from a hash of the speaker's name. This eliminates the "random voice lottery" and ensures the same character always has a consistent baseline voice profile across runs.
+
+2. **The Character Designer (Voice Design Pipeline)**
    When you generate a test phrase on the **Characters** page, the system uses the `Qwen3-TTS-DesignVoice_API` workflow. It automatically compiles a comprehensive "Character Card" from the Voice Profile, Identity & Background, and Personality Traits fields to design a completely new voice from scratch.
 
-2. **⭐ The Anchor Lock-in Mechanism**
-   Because the Design Pipeline creates a new voice dynamically based on the text it reads, it is prone to morphing. To prevent this, you must click **"⭐ Lock in character"** on the design page once you find a voice you like. 
+3. **⭐ The Anchor Lock-in Mechanism**
+   Because the Design Pipeline creates a new voice dynamically based on the text it reads, it is prone to morphing (Acoustic Context Bleed). To prevent this, you must click **"⭐ Lock in character"** on the design page once you find a voice you like. 
    - **What happens when you lock in?** The system saves that specific generated audio file to disk as the master physical anchor (`master_voice.wav`) and permanently locks the random seed and parameter states.
    - **Editing locked characters:** Making further edits to the Character Card text inputs will NOT affect the script editor unless you generate a new test phrase and explicitly click "⭐ Lock in character" again.
 
-3. **The Script Editor (Voice Clone Pipeline)**
-   The Script Editor page **exclusively uses locked-in characters**. It routes all generation requests through the `Qwen3-TTS-loadCustomVoice_API` (or VoiceClone) workflow. It physically clones the vocal cords of your locked-in master anchor while applying the new acting emotions from the script line. **You cannot synthesize lines in the Script Editor for a character whose voice has not been explicitly locked in.**
+4. **The Script Editor (Voice Clone Pipeline)**
+   The Script Editor page **exclusively uses locked-in characters** for custom cast profiles. It routes all generation requests through the `Qwen3-TTS-loadCustomVoice_API` (or VoiceClone) workflow. It physically clones the vocal cords of your locked-in master anchor while applying the new acting emotions from the script line. **You cannot synthesize lines in the Script Editor for a character whose voice has not been explicitly locked in.** To ensure maximum consistency, generation parameters are restricted (`temperature: 0.3`, `top_p: 0.7`, `top_k: 15`, `repetition_penalty: 1.1`) to prevent timbre or pacing drift.
 
 ---
 

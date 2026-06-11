@@ -500,3 +500,47 @@ Physical Appearance: Possesses an upright, imposing stature. His temples are gra
 Personality Traits: Possesses a will of steel and unwavering conviction; he never retreats in the face of adversity. Deeply patriotic and invested in the nation’s future, he inextricably links his personal destiny to the country’s rise and fall. Rigorous and disciplined, he is a man of his word whose speech carries a profound sense of historical responsibility. While appearing cold and stern on the surface, he is warm-hearted, harboring great expectations for the younger generation and willingly serving as a bridge to their success.
 
 Personal Motto: "Our generation does not exist to stand in the light, but to pave the road toward it."
+
+---
+
+## 6. Voice Consistency Optimizations (Anti-Drift Protocols)
+
+To safeguard multi-speaker vocal identity across long audiobook synthesis queues, the backend orchestrator implements several automated anti-drift protocols.
+
+### A. Deterministic Speaker Seed Fallback
+In standard systems, a random seed is selected for each synthesis request, which makes consecutive lines sound like entirely different people. When no seed is explicitly configured for a character or line, the engine computes a deterministic seed based on the character's name.
+
+```javascript
+// WHAT: Generating a stable seed value using a deterministic hash of the character's name.
+// WHY: We want the same character to always have the same voice structure across different lines,
+//      preventing the "random voice lottery" when no manual seed is set.
+const character_name_to_hash_characters = Array.from(active_speaker_name).reduce(
+  (running_hash_accumulator, current_character) =>
+    ((running_hash_accumulator << 5) - running_hash_accumulator + current_character.charCodeAt(0)) | 0,
+  0
+);
+const deterministic_fallback_seed_value = Math.abs(character_name_to_hash_characters) % 90000 + 10000;
+const active_seed_value = Number(cell_override_mapping.seed || global_character_mapping.seed || deterministic_fallback_seed_value);
+```
+
+### B. Acoustic Context Bleed Mitigation (Default Custom Workflow)
+Because the `VoiceDesign` workflow evaluates the style description alongside the screenplay text in a single context window, changing the target script line physically alters the vocal cords of the voice (e.g., sharp consonants make the voice raspy). 
+To prevent this, the default workflow type fallback is set to `custom` rather than `design`. The `custom` workflow uses preset speakers and seed variations, keeping the vocal identity stable while applying localized emotional instructions.
+
+### C. Hyperparameter Tightening
+The default ComfyUI workflow templates use a `temperature` of `1.0` and high `top_p`/`top_k` values, designed for creative diversity rather than narrative consistency. Under these settings, the same speaker's voice will drift significantly between sentences. The engine explicitly overrides these values in `voiceClone` and `loadCustomVoice` API calls:
+
+| Parameter | Default Value | Tuned Value | Purpose of Change |
+| :--- | :---: | :---: | :--- |
+| `temperature` | `1.0` | **`0.3`** | Constrains randomness, locking voice pitch contours and pacing to the reference sample. |
+| `top_p` | `0.8` | **`0.7`** | Restricts the cumulative probability distribution to cut off low-probability token drift. |
+| `top_k` | `0` (or unset) | **`15`** | Selects only from the top 15 highest-probability acoustic tokens. |
+| `repetition_penalty` | `1.0` | **`1.1`** | Minimizes phonic repetitions, preventing stuttering or stuck-loop artifacts. |
+
+### D. Attention Alignment & Transcript Validation
+Qwen3's zero-shot cloning is highly sensitive to text-audio alignment. If the reference audio transcript text does not match the spoken words in the reference audio, the model maps sound patterns to incorrect phonemes, causing garbled audio start-frames or sudden pitch spikes.
+
+The engine verifies the existence of a corresponding `.txt` transcript file for every custom emotion recording.
+- **Successful Path:** If `references/[character_name]/[emotion].txt` is present, its text is loaded as the `CloneAudioText` input.
+- **Warning Fallback:** If the `.txt` transcript file is missing, the engine logs a console warning (`[Voice Consistency Warning]`) advising the user to create the matching transcript file, and falls back to a standardized calibration sentence:
+  > `"The direct path through the valley was covered in thick, dark moss."`

@@ -1888,10 +1888,12 @@ async function execute_sequential_generation_queue() {
 
     let active_workflow_type = cell_override_mapping.workflowType || "inherit";
     if (active_workflow_type === "inherit") {
-      // WHAT: Defaulting the active workflow type to the new Custom Voice Design pipeline.
-      // WHY: If the global configuration mapping doesn't have an explicit workflow type assigned,
-      //      we default to "design" so that characters automatically get their custom described voices.
-      active_workflow_type = global_character_mapping.workflowType || "design";
+      // WHAT: Defaulting the active workflow type to the preset Custom Voice pipeline.
+      // WHY: VoiceDesign suffers from "Acoustic Context Bleed" — the model re-sculpts the vocal
+      //      cords based on the target text content, causing timbre drift across different lines.
+      //      We default to "custom" (preset speakers + seed) for stable baseline identity.
+      //      Characters with baked anchors or saved voices are auto-rerouted upstream.
+      active_workflow_type = global_character_mapping.workflowType || "custom";
     }
 
     // =========================================================================
@@ -2043,7 +2045,17 @@ async function execute_sequential_generation_queue() {
 
     generated_qwen3_style_prompt_string = `${compiled_voice_quality_block} ${compiled_prosody_block} ${compiled_style_block} ${compiled_emotion_block}`;
 
-    const active_seed_value = Number(cell_override_mapping.seed || global_character_mapping.seed || Math.floor(Math.random() * 90000) + 10000);
+    // WHAT: Generating a deterministic fallback seed from the speaker's name when no explicit seed is configured.
+    // WHY: A random seed on every generation request means every line sounds like a different person.
+    //      By hashing the character name into a stable integer, the same character always receives
+    //      the same vocal baseline, eliminating the "random voice lottery" problem.
+    const character_name_deterministic_hash_value = Array.from(active_speaker_name).reduce(
+      (running_hash_accumulator, current_character) =>
+        ((running_hash_accumulator << 5) - running_hash_accumulator + current_character.charCodeAt(0)) | 0,
+      0
+    );
+    const deterministic_fallback_seed_value = Math.abs(character_name_deterministic_hash_value) % 90000 + 10000;
+    const active_seed_value = Number(cell_override_mapping.seed || global_character_mapping.seed || deterministic_fallback_seed_value);
     const target_dialogue_text = current_active_task.script_segment_data.text;
 
     let save_node_id_string = "43"; // default for custom
@@ -2230,7 +2242,12 @@ async function execute_sequential_generation_queue() {
         );
 
         let resolved_reference_audio_filename = "";
-        let reference_transcription_text = "As long as you stand in the wind, even a sound can take flight."; // baseline backup
+        // WHAT: Setting a generic fallback transcript for when no matching .txt file exists.
+        // WHY: An inaccurate or missing transcript causes Qwen3's attention alignment mechanism
+        //      to map acoustic patterns to the wrong phonemes, resulting in garbled first words,
+        //      random pitch spikes, and timing instability. This fallback is a last resort.
+        let reference_transcription_text = "The direct path through the valley was covered in thick, dark moss.";
+        let is_transcript_missing_warning_flag = true; // Track if we're using the fallback
 
         if (filesystem_library.existsSync(references_subfolder_absolute_path)) {
           const emotional_audio_filename = `${active_emotion_label}.mp3`;
@@ -2273,9 +2290,14 @@ async function execute_sequential_generation_queue() {
             staged_temporary_reference_audio_absolute_path = absolute_comfyui_input_staging_path;
 
             // WHAT: Reading corresponding `.txt` transcription context file.
+            // WHY: The exact transcript of the reference audio is critical for Qwen3's attention
+            //      alignment mechanism to correctly map sound patterns to phonemes.
             const transcript_text_filepath = path_library.join(references_subfolder_absolute_path, `${selected_audio_emotion_label}.txt`);
             if (filesystem_library.existsSync(transcript_text_filepath)) {
               reference_transcription_text = filesystem_library.readFileSync(transcript_text_filepath, "utf-8").trim();
+              is_transcript_missing_warning_flag = false;
+            } else {
+              console.warn(`[Voice Consistency Warning] No transcript file found at: ${transcript_text_filepath}. Using generic fallback transcript. This WILL cause voice instability. Please create a .txt file with the exact words spoken in the reference audio.`);
             }
           }
         }
@@ -2295,6 +2317,15 @@ async function execute_sequential_generation_queue() {
           // WHAT: Explicitly setting the language parameter to English as required.
           // WHY: Guarantees that Qwen clones voices with English language structures consistently.
           comfyui_workflow_nodes_payload["3"].inputs.language = "English";
+          // WHAT: Tightening autoregressive generation parameters for voice consistency.
+          // WHY: The workflow template defaults to temperature=1.0 (maximum randomness), which
+          //      causes dramatic run-to-run variation in pitch contour, pacing, and vocal texture.
+          //      Lowering temperature to 0.3 enforces strict adherence to the reference voice's
+          //      acoustic profile. Tighter top_p/top_k further constrain the token sampling space.
+          comfyui_workflow_nodes_payload["3"].inputs.temperature = 0.3;
+          comfyui_workflow_nodes_payload["3"].inputs.top_p = 0.7;
+          comfyui_workflow_nodes_payload["3"].inputs.top_k = 15;
+          comfyui_workflow_nodes_payload["3"].inputs.repetition_penalty = 1.1;
         }
       }
     } else if (active_workflow_type === "load_custom_voice") {
@@ -2306,6 +2337,15 @@ async function execute_sequential_generation_queue() {
         comfyui_workflow_nodes_payload["10"].inputs.target_text = target_dialogue_text;
         comfyui_workflow_nodes_payload["10"].inputs.seed = active_seed_value;
         comfyui_workflow_nodes_payload["10"].inputs.language = "English";
+        // WHAT: Tightening autoregressive generation parameters for saved custom voice consistency.
+        // WHY: The loadCustomVoice workflow template defaults to temperature=1.0 and top_p=0.8,
+        //      which allows excessive variation between generations. By constraining these values,
+        //      the saved voice's latent profile is followed much more faithfully, producing
+        //      near-identical vocal timbre and pacing across all lines in the audiobook.
+        comfyui_workflow_nodes_payload["10"].inputs.temperature = 0.3;
+        comfyui_workflow_nodes_payload["10"].inputs.top_p = 0.7;
+        comfyui_workflow_nodes_payload["10"].inputs.top_k = 15;
+        comfyui_workflow_nodes_payload["10"].inputs.repetition_penalty = 1.1;
       }
 
       // WHAT: Configuring the filename on Node 11 (FB_Qwen3TTSLoadSpeaker).
