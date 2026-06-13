@@ -95,7 +95,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: HSLA(210, 20%, 50%, 0.15);
+  background: HSLA(210, 20%, 80%, 0.5);
   border-radius: 4px;
 }
 

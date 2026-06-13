@@ -308,5 +308,13 @@ contextBridge.exposeInMainWorld("audiobook_api", {
       anchor_file_path: anchor_file_path,
       anchor_phrase: anchor_phrase
     });
+  },
+
+  // WHAT: Opens a specific file's parent folder in the native OS file explorer.
+  // WHY: Allows the user to quickly access their exported audio mixes without digging through the file system.
+  open_file_folder: (file_path_string) => {
+    return ipcRenderer.invoke("system:open-file-folder", {
+      file_path: file_path_string
+    });
   }
 });

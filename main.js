@@ -313,9 +313,20 @@ ipcMain.handle("audio:stitch-timeline", async (ipc_event_context, request_argume
         return resolve({ success: false, error: "No timeline data provided." });
       }
 
+      // WHAT: Validate that all requested audio segments exist on disk before executing ffmpeg.
+      // WHY: If even one file is missing, ffmpeg will immediately crash and exit with an error.
+      for (const clip of timeline_data) {
+        if (!filesystem_library.existsSync(clip.filePath)) {
+          return resolve({ 
+            success: false, 
+            error: `Missing required audio file: ${clip.filePath}. Please ensure all segments are generated before stitching.` 
+          });
+        }
+      }
+
       const command = ffmpeg();
       let filter_complex = "";
-      let mix_inputs = "";
+      let concat_inputs = "";
 
       timeline_data.forEach((clip, index) => {
         command.input(clip.filePath);
@@ -354,6 +365,19 @@ ipcMain.handle("audio:stitch-timeline", async (ipc_event_context, request_argume
       reject(error);
     }
   });
+});
+
+// WHAT: Opens a local file's parent directory in the native OS file explorer.
+// WHY: Allows the user to quickly navigate to exported mixdown audio files.
+ipcMain.handle("system:open-file-folder", async (ipc_event_context, request_arguments) => {
+  const { file_path } = request_arguments;
+  const { shell } = require("electron");
+  if (filesystem_library.existsSync(file_path)) {
+    shell.showItemInFolder(file_path);
+    return { success: true };
+  } else {
+    return { success: false, error: "File not found on disk." };
+  }
 });
 
 // WHAT: Registering the dynamic take file deletion IPC service.

@@ -176,4 +176,33 @@ describe('Voice Anchor Pipeline', () => {
       expect(btn.textContent).toBe("💾 Save to ComfyUI");
     });
   });
+
+  describe('modify_character_gender(), modify_character_age(), and modify_character_voice_mapping_template()', () => {
+    it('successfully updates character gender and triggers UI update', () => {
+      modify_character_gender("Character 1", "Female");
+      
+      const updated_character_details = window.active_loaded_project_state_object.voiceMapping["Character 1"];
+      expect(updated_character_details.gender).toBe("Female");
+      expect(window.trigger_project_state_disk_flush).toHaveBeenCalled();
+      expect(window.populate_voice_matrix_configuration_cards).toHaveBeenCalled();
+    });
+
+    it('successfully updates character age and triggers UI update', () => {
+      modify_character_age("Character 1", "Elderly");
+      
+      const updated_character_details = window.active_loaded_project_state_object.voiceMapping["Character 1"];
+      expect(updated_character_details.age).toBe("Elderly");
+      expect(window.trigger_project_state_disk_flush).toHaveBeenCalled();
+      expect(window.populate_voice_matrix_configuration_cards).toHaveBeenCalled();
+    });
+
+    it('successfully updates voice mapping template and triggers UI update', () => {
+      modify_character_voice_mapping_template("Character 1", "Serena");
+      
+      const updated_character_details = window.active_loaded_project_state_object.voiceMapping["Character 1"];
+      expect(updated_character_details.voice).toBe("Serena");
+      expect(window.trigger_project_state_disk_flush).toHaveBeenCalled();
+      expect(window.populate_voice_matrix_configuration_cards).toHaveBeenCalled();
+    });
+  });
 });

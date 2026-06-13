@@ -219,6 +219,30 @@ function populate_voice_matrix_configuration_cards() {
       <div class="d-flex flex-column gap-10 mt-15 pt-10 border-top-glass">
         <h4 class="font-display text-11 font-semibold text-gold" style="margin: 0;">🎭 VOICE DESIGN CHARACTER CARD</h4>
         
+        <div class="d-flex gap-10">
+          <div class="form_input_group mb-0 flex-1">
+            <label class="form_input_label text-10 text-muted mb-4">Gender</label>
+            <select class="form_text_field w-100 text-11 bg-input-glass" style="height: 34px; padding: 4px 8px;" onchange="modify_character_gender('${character_name_string.replace(/'/g, "\\'")}', this.value)">
+              <option value="Male" ${character_timbre_details.gender === 'Male' ? 'selected' : ''}>Male</option>
+              <option value="Female" ${character_timbre_details.gender === 'Female' ? 'selected' : ''}>Female</option>
+              <option value="Narrator" ${character_timbre_details.gender === 'Narrator' ? 'selected' : ''}>Narrator</option>
+              <option value="Unknown" ${(!character_timbre_details.gender || character_timbre_details.gender === 'Unknown') ? 'selected' : ''}>Unknown</option>
+            </select>
+          </div>
+
+          <div class="form_input_group mb-0 flex-1">
+            <label class="form_input_label text-10 text-muted mb-4">Age Category</label>
+            <select class="form_text_field w-100 text-11 bg-input-glass" style="height: 34px; padding: 4px 8px;" onchange="modify_character_age('${character_name_string.replace(/'/g, "\\'")}', this.value)">
+              <option value="Child" ${character_timbre_details.age === 'Child' ? 'selected' : ''}>Child</option>
+              <option value="Teenager" ${character_timbre_details.age === 'Teenager' ? 'selected' : ''}>Teenager</option>
+              <option value="Young Adult" ${character_timbre_details.age === 'Young Adult' ? 'selected' : ''}>Young Adult</option>
+              <option value="Adult" ${(!character_timbre_details.age || character_timbre_details.age === 'Adult') ? 'selected' : ''}>Adult</option>
+              <option value="Middle-Aged" ${character_timbre_details.age === 'Middle-Aged' ? 'selected' : ''}>Middle-Aged</option>
+              <option value="Elderly" ${character_timbre_details.age === 'Elderly' ? 'selected' : ''}>Elderly</option>
+            </select>
+          </div>
+        </div>
+        
         <div class="form_input_group mb-0">
           <label class="form_input_label text-10 text-muted mb-4">Voice Profile</label>
           <textarea class="form_text_field w-100 text-11 line-height-1-4 resize-vertical bg-input-glass" rows="3" placeholder="Detailed physical voice description, pitch, resonance, and delivery register..." onchange="modify_character_voice_profile_text('${character_name_string}', this.value)">${human_readable_voice_profile_string}</textarea>
@@ -251,6 +275,15 @@ function populate_voice_matrix_configuration_cards() {
             <span class="text-11 text-muted">Identifies character clips in the Post-Production Audio Editor</span>
           </div>
         </div>
+
+        ${character_timbre_details.anchorFilePath ? `
+          <div class="form_input_group mb-0 mt-10">
+            <label class="form_input_label text-10 text-muted mb-4">ComfyUI Voice Integration</label>
+            <div class="d-flex gap-10 align-items-center">
+              <button id="save_custom_voice_btn_${character_name_string}" class="cyber_btn btn_secondary text-11 flex-grow-1" onclick="save_custom_voice_to_comfyui('${character_name_string.replace(/'/g, "\\'")}')">💾 Save to ComfyUI</button>
+            </div>
+          </div>
+        ` : ""}
 
         ${character_timbre_details.savedVoiceFilename ? `
           <div class="d-flex align-items-center gap-6 p-8 border-radius-4 bg-glass-panel border-gold-glow mt-8">
@@ -333,6 +366,31 @@ function modify_character_voice_mapping_template(character_name_string, selected
   if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping[character_name_string]) {
     active_loaded_project_state_object.voiceMapping[character_name_string].voice = selected_voice_preset_name;
     trigger_project_state_disk_flush();
+    populate_voice_matrix_configuration_cards();
+  }
+}
+
+// WHAT: Modifying the assigned gender tag for the character.
+// WHY: The user can manually change the gender mapping of a character to ensure
+//      that future synthesis runs or prompt updates are tailored correctly to the proper gender.
+function modify_character_gender(character_name_string, selected_gender_value) {
+  if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping[character_name_string]) {
+    active_loaded_project_state_object.voiceMapping[character_name_string].gender = selected_gender_value;
+    recompile_character_design_prompt(character_name_string);
+    trigger_project_state_disk_flush();
+    populate_voice_matrix_configuration_cards();
+  }
+}
+
+// WHAT: Modifying the assigned age tag for the character.
+// WHY: The user can manually adjust the age mapping of a character profile to refine
+//      the acoustic pacing and styling parameters that depend on the character's age category.
+function modify_character_age(character_name_string, selected_age_value) {
+  if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping[character_name_string]) {
+    active_loaded_project_state_object.voiceMapping[character_name_string].age = selected_age_value;
+    recompile_character_design_prompt(character_name_string);
+    trigger_project_state_disk_flush();
+    populate_voice_matrix_configuration_cards();
   }
 }
 
@@ -758,7 +816,12 @@ function recompile_character_design_prompt(character_name_string) {
   const compiled_personality_traits_section = character_profile_object.personalityTraits || "";
   const compiled_personal_motto_section = character_profile_object.personalMotto || "";
 
+  const gender_string = character_profile_object.gender || "Unknown";
+  const age_string = character_profile_object.age || "Adult";
+
   let rebuilt_design_prompt_string = `Character Name: ${character_name_string}\n`;
+  rebuilt_design_prompt_string += `Gender: ${gender_string}\n`;
+  rebuilt_design_prompt_string += `Age Category: ${age_string}\n`;
   rebuilt_design_prompt_string += `Voice Profile: ${compiled_voice_profile_section}\n`;
   if (compiled_identity_background_section) {
     rebuilt_design_prompt_string += `Identity & Background: ${compiled_identity_background_section}\n`;
@@ -932,6 +995,8 @@ async function run_cast_discovery_pass_one() {
           //      in the Qwen3-tts-DesignVoice_API.json workflow during synthesis. By assembling it now,
           //      the synthesis handler can use it as-is without needing to re-read individual fields.
           let compiled_design_prompt_character_card = `Character Name: ${character_key}\n`;
+          compiled_design_prompt_character_card += `Gender: ${discovered_member.gender || extracted_gender_label}\n`;
+          compiled_design_prompt_character_card += `Age Category: ${discovered_member.implied_age || extracted_age_label}\n`;
           compiled_design_prompt_character_card += `Voice Profile: ${clean_voice_profile_string || "Normal physical voice"}\n`;
           if (clean_identity_background_string) {
             compiled_design_prompt_character_card += `Identity & Background: ${clean_identity_background_string}\n`;
@@ -1350,6 +1415,11 @@ function trigger_export_mixdown() {
   ).then(response => {
     if (response.success) {
       document.getElementById('waveform_sim_status_label').textContent = 'Export Saved: ' + response.mixdownAudioPath;
+      const open_btn = document.getElementById('btn_open_master_folder');
+      if (open_btn) {
+        open_btn.classList.remove('d-none');
+        open_btn.setAttribute('data-filepath', response.mixdownAudioPath);
+      }
     } else {
       document.getElementById('waveform_sim_status_label').textContent = 'Export Failed: ' + response.error;
     }
@@ -1357,6 +1427,15 @@ function trigger_export_mixdown() {
     console.error("Export Error:", err);
     document.getElementById('waveform_sim_status_label').textContent = 'Export Failed. Check console.';
   });
+}
+
+// WHAT: Invokes the native file explorer through the IPC bridge to locate the compiled master audio.
+// WHY: Simplifies user workflow by bringing them directly to their final exported mixdown file.
+function trigger_open_master_folder() {
+  const open_btn = document.getElementById('btn_open_master_folder');
+  if (open_btn && open_btn.getAttribute('data-filepath')) {
+    window.audiobook_api.open_file_folder(open_btn.getAttribute('data-filepath'));
+  }
 }
 
 // WHAT: Populates the test phrase textarea with a pre-defined calibration script.

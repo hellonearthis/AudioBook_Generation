@@ -350,7 +350,14 @@ async function load_audiobook_project_by_name(project_name_string) {
         seed: 12345,
         gender: "Narrator",
         age: "Steady Narrator",
-        traits: "Primary audiobook narration storytelling persona."
+        voiceProfile: "A calm, professional narrator with a clear British accent, speaking at a steady, measured pace with precise enunciation.",
+        identityBackground: "Experienced audiobook narrator with a steady, storytelling tone.",
+        physicalAppearance: "Middle-aged gentleman with a warm presence.",
+        personalityTraits: "Articulate, measured, and engaging storytelling persona.",
+        isLocked: false,
+        workflowType: "design",
+        colorCode: "#485F86",
+        designPrompt: "Character Name: Narrator\nGender: Narrator\nAge Category: Steady Narrator\nVoice Profile: A calm, professional narrator with a clear British accent, speaking at a steady, measured pace with precise enunciation.\nIdentity & Background: Experienced audiobook narrator with a steady, storytelling tone.\nPhysical Appearance: Middle-aged gentleman with a warm presence.\nPersonality Traits: Articulate, measured, and engaging storytelling persona."
       };
     }
 
