@@ -1014,6 +1014,13 @@ select option {
   background-color: rgba(46, 204, 113, 0.15);
 }
 
+.card_operation_btn.btn_edit_take:hover {
+  color: var(--accent-cyber-purple);
+  border-color: var(--accent-cyber-purple);
+  background-color: var(--accent-cyber-purple-glow);
+  transform: scale(1.08);
+}
+
 .card_operation_btn svg {
   width: 14px;
   height: 14px;

@@ -316,5 +316,12 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     return ipcRenderer.invoke("system:open-file-folder", {
       file_path: file_path_string
     });
+  },
+
+  // WHAT: Applies an AuK editing workflow to an existing take audio clip.
+  // WHY: Allows the frontend script editor to invoke post-processing (whisper, pitch, speed, volume, denoise, emotion) on takes.
+  apply_auk_audio_edit: (edit_request_configuration_payload) => {
+    return ipcRenderer.invoke("audio:apply-auk-edit", edit_request_configuration_payload);
   }
 });
+

@@ -1,8 +1,8 @@
 /** @jest-environment jsdom */
-const fs = require('fs');
-const path = require('path');
+const filesystem_library = require('fs');
+const path_library = require('path');
 
-const scriptContent = fs.readFileSync(path.resolve(__dirname, '../renderer/js/voiceMatrix.js'), 'utf8');
+const scriptContent = filesystem_library.readFileSync(path_library.resolve(__dirname, '../renderer/js/voiceMatrix.js'), 'utf8');
 
 describe('Voice Anchor Pipeline', () => {
   beforeEach(() => {

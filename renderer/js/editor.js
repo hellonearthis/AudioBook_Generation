@@ -180,6 +180,9 @@ function populate_screenplay_cards_in_editor_view() {
         <div class="card_operational_buttons">
           ${take_select_options_html}
           ${active_script_segment_item.audioVersions && active_script_segment_item.audioVersions.length > 0 ? `
+            <button class="card_operation_btn btn_edit_take text-purple border-purple-glow" title="AuK Audio Editing Suite (Whisper, Denoise, Pitch, Speed, Emotion)" onclick="open_auk_edit_tools_modal(${segment_index_counter}, false)">
+              <span class="text-12">🪄</span>
+            </button>
             <button class="card_operation_btn btn_delete_take text-coral border-coral-glow" title="Delete active take" onclick="trigger_delete_active_take(${segment_index_counter}, false)">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
             </button>
@@ -625,7 +628,7 @@ async function run_main_pipeline_pass_one_and_two() {
   // WHAT: Pre-flight check to ensure characters exist before running attribution.
   // WHY: Dialogue attribution depends entirely on pre-existing character definitions.
   //      If none exist, we automatically run the multi-pass cast discovery first.
-  const existing_character_keys_for_pass_two = Object.keys(active_loaded_project_state_object.voiceMapping || {}).filter(k => k !== "Narrator");
+  const existing_character_keys_for_pass_two = Object.keys(active_loaded_project_state_object.voiceMapping || {}).filter(character_identifier_key => character_identifier_key !== "Narrator");
   if (existing_character_keys_for_pass_two.length === 0) {
     if (typeof run_cast_discovery_pass_one === "function") {
       await run_cast_discovery_pass_one();
@@ -677,8 +680,8 @@ async function run_main_pipeline_pass_one_and_two() {
             
             // Ignore common titles to prevent false positive matches (e.g. "The Doctor" matching "The Deliveryman")
             const ignored_words = ["the", "a", "an", "mr", "mrs", "ms", "miss", "dr", "sir", "madam", "uncle", "aunt"];
-            const existing_words = existing_name.toLowerCase().split(/[\s-]+/).filter(w => !ignored_words.includes(w));
-            const resolved_words = resolved_speaker_name.toLowerCase().split(/[\s-]+/).filter(w => !ignored_words.includes(w));
+            const existing_words = existing_name.toLowerCase().split(/[\s-]+/).filter(single_word_token => !ignored_words.includes(single_word_token));
+            const resolved_words = resolved_speaker_name.toLowerCase().split(/[\s-]+/).filter(single_word_token => !ignored_words.includes(single_word_token));
             
             const has_word_match = existing_words.some(word => resolved_words.includes(word));
             
@@ -734,36 +737,38 @@ async function run_main_pipeline_pass_one_and_two() {
   }
 }
 
-// WHAT: Saving modified raw source paragraphs text.
 // WHAT: Cleans up messy PDF line breaks while preserving actual paragraph breaks.
 // WHY: Some raw text sources contain hard line breaks mid-sentence. This function removes single CRLF/LF characters, 
 //      replacing them with spaces, but preserves double CRLF/LF characters as paragraph breaks.
 function trigger_raw_text_cleanup() {
-  const textarea = document.getElementById("raw_source_book_textarea_editor");
-  if (!textarea) return;
+  const raw_source_textarea_element = document.getElementById("raw_source_book_textarea_editor");
+  if (!raw_source_textarea_element) return;
   
-  let text = textarea.value;
+  let raw_text_content_string = raw_source_textarea_element.value;
   
   // Standardize all newlines to \n to simplify regex
-  text = text.replace(/\r\n/g, '\n');
-  text = text.replace(/\r/g, '\n');
+  raw_text_content_string = raw_text_content_string.replace(/\r\n/g, '\n');
+  raw_text_content_string = raw_text_content_string.replace(/\r/g, '\n');
   
   // Replace double newlines with a temporary unique token
-  text = text.replace(/\n\n+/g, '___DOUBLE_NEWLINE_TOKEN___');
+  raw_text_content_string = raw_text_content_string.replace(/\n\n+/g, '___DOUBLE_NEWLINE_TOKEN___');
   
   // Replace remaining single newlines with a space
-  text = text.replace(/\n/g, ' ');
+  raw_text_content_string = raw_text_content_string.replace(/\n/g, ' ');
   
   // Restore double newlines
-  text = text.replace(/___DOUBLE_NEWLINE_TOKEN___/g, '\n\n');
+  raw_text_content_string = raw_text_content_string.replace(/___DOUBLE_NEWLINE_TOKEN___/g, '\n\n');
   
-  textarea.value = text;
+  raw_source_textarea_element.value = raw_text_content_string;
   
   // Assuming there is a save trigger. We can call trigger_raw_text_reparse() to save and update the right panes.
   trigger_raw_text_reparse();
 }
 
 // WHAT: Explicitly reading the book text and triggering the NLP segmentation pipeline.
+// WHY: When the user manually edits or cleans the raw book manuscript in the left panel,
+//      we immediately synchronize the active project state and trigger both NLP attribution passes
+//      so all screenplay and directorial cards reflect the fresh manuscript content.
 async function trigger_raw_text_reparse() {
   if (active_loaded_project_state_object) {
     const raw_book_text_input = document.getElementById("raw_source_book_textarea_editor").value;
@@ -1609,6 +1614,9 @@ function populate_directorial_cards_in_editor_view() {
         <div class="card_operational_buttons">
           ${take_select_options_html}
           ${active_script_segment_item.audioVersions && active_script_segment_item.audioVersions.length > 0 ? `
+            <button class="card_operation_btn btn_edit_take text-purple border-purple-glow" title="AuK Audio Editing Suite (Whisper, Denoise, Pitch, Speed, Emotion)" onclick="open_auk_edit_tools_modal(${segment_index_counter}, true)">
+              <span class="text-12">🪄</span>
+            </button>
             <button class="card_operation_btn btn_delete_take text-coral border-coral-glow" title="Delete active take" onclick="trigger_delete_active_take(${segment_index_counter}, true)">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
             </button>
@@ -1749,7 +1757,7 @@ async function run_directorial_orchestration_extraction_pipeline() {
   // WHAT: Pre-flight check to ensure characters exist before running directorial extraction.
   // WHY: Directorial alignment depends entirely on pre-existing character definitions.
   //      If none exist, we automatically run the multi-pass cast discovery first.
-  const existing_character_keys_for_pass_three = Object.keys(active_loaded_project_state_object.voiceMapping || {}).filter(k => k !== "Narrator");
+  const existing_character_keys_for_pass_three = Object.keys(active_loaded_project_state_object.voiceMapping || {}).filter(character_identifier_key => character_identifier_key !== "Narrator");
   if (existing_character_keys_for_pass_three.length === 0) {
     if (typeof run_cast_discovery_pass_one === "function") {
       await run_cast_discovery_pass_one();
@@ -2328,5 +2336,391 @@ async function execute_cell_insert_action(direction_string) {
     populate_screenplay_cards_in_editor_view();
   }
 }
+
+// =========================================================================
+// AUK AUDIO EDITING SUITE CONTROLLER
+// =========================================================================
+
+// WHAT: Global context holding reference to the active script card being edited with AuK tools.
+// WHY: We need to know which line, which take, and whether it's directorial when applying the audio transform.
+let active_auk_editing_target_context = null;
+
+// WHAT: Opens the AuK Audio Editing Suite modal for a specific take on a card.
+// WHY: Gives the user access to whisper conversion, pitch shift, speed adjust, denoise, and emotion morphing.
+function open_auk_edit_tools_modal(segment_index_position, is_directorial_flag) {
+  const segment_collection = is_directorial_flag
+    ? active_loaded_project_state_object.directorialSegments
+    : active_loaded_project_state_object.scriptSegments;
+
+  const target_script_segment = segment_collection[segment_index_position];
+  if (!target_script_segment || !target_script_segment.audioVersions || target_script_segment.audioVersions.length === 0) {
+    alert("No generated audio take exists for this line yet. Please synthesize the line first.");
+    return;
+  }
+
+  const active_take_number = target_script_segment.activeTake || 1;
+  const active_take_file_path = target_script_segment.audioVersions[active_take_number - 1] || target_script_segment.audioVersions[0];
+
+  active_auk_editing_target_context = {
+    segment_index_position: segment_index_position,
+    is_directorial_flag: is_directorial_flag,
+    source_take_file_path: active_take_file_path,
+    active_take_number: active_take_number,
+    speaker_name: target_script_segment.speaker,
+    segment_text: target_script_segment.text
+  };
+
+  const subtitle_element = document.getElementById("modal_auk_edit_subtitle");
+  if (subtitle_element) {
+    subtitle_element.textContent = `Line #${segment_index_position + 1} (${target_script_segment.speaker}) - Editing Take ${active_take_number}`;
+  }
+
+  const status_message_element = document.getElementById("modal_auk_edit_status_message");
+  if (status_message_element) {
+    status_message_element.textContent = "";
+  }
+
+  const execute_button = document.getElementById("btn_execute_auk_edit");
+  if (execute_button) {
+    execute_button.disabled = false;
+    execute_button.textContent = "Apply Transformation";
+  }
+
+  // Pre-fill speech content original text
+  const original_phrase_input = document.getElementById("input_auk_speech_content_original");
+  if (original_phrase_input) {
+    original_phrase_input.value = target_script_segment.text;
+  }
+
+  // Set default selection to whisper
+  const task_dropdown = document.getElementById("modal_auk_edit_task_dropdown");
+  if (task_dropdown) {
+    task_dropdown.value = "whisper";
+    handle_auk_edit_task_selection_change("whisper");
+  }
+
+  const modal_overlay = document.getElementById("auk_edit_tools_modal");
+  if (modal_overlay) {
+    modal_overlay.classList.remove("d-none");
+  }
+}
+
+// WHAT: Closes the AuK Audio Editing Suite modal and cleans up target context.
+// WHY: Resets state and returns focus to the screenplay storyboard.
+function close_auk_edit_tools_modal() {
+  const modal_overlay = document.getElementById("auk_edit_tools_modal");
+  if (modal_overlay) {
+    modal_overlay.classList.add("d-none");
+  }
+  active_auk_editing_target_context = null;
+}
+
+// WHAT: Dynamically reveals parameter controls corresponding to the chosen AuK edit task.
+// WHY: Pitch needs semitone sliders, Speed needs tempo multipliers, Emotion needs emotion select, etc.
+function handle_auk_edit_task_selection_change(selected_task_identifier) {
+  const list_of_control_containers = [
+    "auk_control_pitch",
+    "auk_control_speed",
+    "auk_control_volume",
+    "auk_control_emotion",
+    "auk_control_speech_content"
+  ];
+
+  for (let control_index = 0; control_index < list_of_control_containers.length; control_index++) {
+    const container_element = document.getElementById(list_of_control_containers[control_index]);
+    if (container_element) {
+      container_element.classList.add("d-none");
+    }
+  }
+
+  switch (selected_task_identifier) {
+    case "pitch":
+      document.getElementById("auk_control_pitch")?.classList.remove("d-none");
+      break;
+    case "speed":
+      document.getElementById("auk_control_speed")?.classList.remove("d-none");
+      break;
+    case "volume":
+      document.getElementById("auk_control_volume")?.classList.remove("d-none");
+      break;
+    case "emotion":
+      document.getElementById("auk_control_emotion")?.classList.remove("d-none");
+      break;
+    case "speech_content":
+      document.getElementById("auk_control_speech_content")?.classList.remove("d-none");
+      break;
+    default:
+      // Presets like whisper, enhance, deaccent don't require manual sliders
+      break;
+  }
+}
+
+// WHAT: Executes the active AuK audio editing task via IPC and updates the project state with a new take.
+// WHY: Coordinates backend ComfyUI processing, creates an incremental take file, and auto-selects it in the UI.
+async function execute_active_auk_edit_task() {
+  if (!active_auk_editing_target_context) {
+    return;
+  }
+
+  const task_dropdown = document.getElementById("modal_auk_edit_task_dropdown");
+  const selected_task_identifier = task_dropdown ? task_dropdown.value : "whisper";
+
+  let resolved_parameter_value = "";
+  let resolved_secondary_value = "";
+
+  switch (selected_task_identifier) {
+    case "pitch": {
+      const semitones_value = document.getElementById("input_auk_pitch_semitones")?.value || "2";
+      resolved_parameter_value = (Number(semitones_value) > 0 ? "+" : "") + semitones_value;
+      break;
+    }
+    case "speed": {
+      resolved_parameter_value = document.getElementById("input_auk_speed_multiplier")?.value || "1.15";
+      break;
+    }
+    case "volume": {
+      const volume_db_value = document.getElementById("input_auk_volume_decibels")?.value || "3";
+      resolved_parameter_value = (Number(volume_db_value) > 0 ? "+" : "") + volume_db_value;
+      break;
+    }
+    case "emotion": {
+      resolved_parameter_value = document.getElementById("select_auk_target_emotion")?.value || "sad";
+      break;
+    }
+    case "speech_content": {
+      resolved_parameter_value = document.getElementById("input_auk_speech_content_instruction")?.value || "";
+      resolved_secondary_value = document.getElementById("input_auk_speech_content_original")?.value || "";
+      break;
+    }
+    default:
+      resolved_parameter_value = "";
+      break;
+  }
+
+  const execute_button = document.getElementById("btn_execute_auk_edit");
+  const status_message_element = document.getElementById("modal_auk_edit_status_message");
+
+  if (execute_button) {
+    execute_button.disabled = true;
+    execute_button.textContent = "Processing with AuK...";
+  }
+  if (status_message_element) {
+    status_message_element.textContent = "Sending workflow to ComfyUI...";
+  }
+
+  try {
+    const edit_request_payload = {
+      workspace_directory_path: active_selected_workspace_directory_path,
+      project_name: active_loaded_project_state_object.projectName,
+      is_directorial: active_auk_editing_target_context.is_directorial_flag,
+      index_position: active_auk_editing_target_context.segment_index_position,
+      source_take_file_path: active_auk_editing_target_context.source_take_file_path,
+      edit_task_identifier: selected_task_identifier,
+      edit_parameter_value: resolved_parameter_value,
+      secondary_parameter_value: resolved_secondary_value,
+      comfyui_api_url_address: configuration_comfyui_api_url_address
+    };
+
+    const edit_response_result = await window.audiobook_api.apply_auk_audio_edit(edit_request_payload);
+
+    if (edit_response_result && edit_response_result.success) {
+      // WHAT: Append new take file to the script segment's audioVersions list.
+      // WHY: Preserves all previous takes and makes the new edited take immediately available.
+      const segment_collection = active_auk_editing_target_context.is_directorial_flag
+        ? active_loaded_project_state_object.directorialSegments
+        : active_loaded_project_state_object.scriptSegments;
+
+      const target_segment = segment_collection[active_auk_editing_target_context.segment_index_position];
+      if (target_segment) {
+        if (!target_segment.audioVersions) {
+          target_segment.audioVersions = [];
+        }
+        target_segment.audioVersions.push(edit_response_result.filePath);
+        target_segment.activeTake = edit_response_result.newTakeNumber;
+        target_segment.audioPath = edit_response_result.filePath;
+      }
+
+      // WHAT: Persist project state to local disk.
+      await trigger_project_state_disk_flush();
+
+      // WHAT: Re-render card storyboards so take pill dropdowns and play buttons reflect the new take.
+      if (active_auk_editing_target_context.is_directorial_flag) {
+        populate_directorial_cards_in_editor_view();
+      } else {
+        populate_screenplay_cards_in_editor_view();
+      }
+
+      close_auk_edit_tools_modal();
+
+      // Automatically play the freshly edited take
+      const audio_element = document.getElementById("master_hidden_audio_player");
+      if (audio_element) {
+        const audio_playback_promise = audio_element.play();
+        if (audio_playback_promise && typeof audio_playback_promise.catch === "function") {
+          audio_playback_promise.catch(() => {});
+        }
+      }
+    } else {
+      if (status_message_element) {
+        status_message_element.textContent = `Edit failed: ${edit_response_result.error || "Unknown error"}`;
+      }
+      if (execute_button) {
+        execute_button.disabled = false;
+        execute_button.textContent = "Apply Transformation";
+      }
+    }
+  } catch (execution_error) {
+    console.error("Failed to execute AuK edit:", execution_error);
+    if (status_message_element) {
+      status_message_element.textContent = `Error: ${execution_error.message}`;
+    }
+    if (execute_button) {
+      execute_button.disabled = false;
+      execute_button.textContent = "Apply Transformation";
+    }
+  }
+}
+
+// =========================================================================
+// CELL WORKFLOW OVERRIDE MODAL CONTROLLER
+// =========================================================================
+
+// WHAT: Global context tracking which script cell is being configured for workflow overrides.
+let active_cell_workflow_override_context = null;
+
+// WHAT: Opens the workflow configuration modal for a specific line card.
+// WHY: Allows the user to override synthesis engine (e.g. AuK Voice Clone, Qwen Design, Qwen Custom) on a per-cell basis.
+function open_cell_workflow_config_modal(segment_index_position, is_directorial_flag) {
+  const segment_collection = is_directorial_flag
+    ? active_loaded_project_state_object.directorialSegments
+    : active_loaded_project_state_object.scriptSegments;
+
+  const target_segment = segment_collection[segment_index_position];
+  if (!target_segment) {
+    return;
+  }
+
+  active_cell_workflow_override_context = {
+    segment_index_position: segment_index_position,
+    is_directorial_flag: is_directorial_flag
+  };
+
+  const modal_title_element = document.getElementById("modal_config_title");
+  if (modal_title_element) {
+    modal_title_element.textContent = `Workflow Config: Line #${segment_index_position + 1}`;
+  }
+
+  const modal_subtitle_element = document.getElementById("modal_config_subtitle");
+  if (modal_subtitle_element) {
+    modal_subtitle_element.textContent = `Configure active synthesis engine for ${target_segment.speaker}`;
+  }
+
+  const existing_override = target_segment.workflowOverride || {};
+  const workflow_dropdown = document.getElementById("modal_workflow_type_dropdown");
+  if (workflow_dropdown) {
+    workflow_dropdown.value = existing_override.workflowType || "inherit";
+    handle_modal_workflow_type_change(workflow_dropdown.value);
+  }
+
+  const seed_input = document.getElementById("modal_synthesis_seed_field");
+  if (seed_input) {
+    seed_input.value = existing_override.seed || "";
+  }
+
+  const modal_overlay = document.getElementById("workflow_settings_modal");
+  if (modal_overlay) {
+    modal_overlay.classList.remove("d-none");
+  }
+}
+
+// WHAT: Closes the workflow configuration modal and saves the override settings.
+// WHY: Persists changes to project_state.json and refreshes card badges.
+async function close_workflow_settings_modal() {
+  if (active_cell_workflow_override_context && active_loaded_project_state_object) {
+    const segment_collection = active_cell_workflow_override_context.is_directorial_flag
+      ? active_loaded_project_state_object.directorialSegments
+      : active_loaded_project_state_object.scriptSegments;
+
+    const target_segment = segment_collection[active_cell_workflow_override_context.segment_index_position];
+    if (target_segment) {
+      const workflow_dropdown = document.getElementById("modal_workflow_type_dropdown");
+      const seed_input = document.getElementById("modal_synthesis_seed_field");
+
+      const selected_workflow = workflow_dropdown ? workflow_dropdown.value : "inherit";
+      const selected_seed = seed_input && seed_input.value ? Number(seed_input.value) : null;
+
+      if (!target_segment.workflowOverride) {
+        target_segment.workflowOverride = {};
+      }
+      target_segment.workflowOverride.workflowType = selected_workflow;
+      if (selected_seed !== null) {
+        target_segment.workflowOverride.seed = selected_seed;
+      }
+
+      await trigger_project_state_disk_flush();
+
+      if (active_cell_workflow_override_context.is_directorial_flag) {
+        populate_directorial_cards_in_editor_view();
+      } else {
+        populate_screenplay_cards_in_editor_view();
+      }
+    }
+  }
+
+  const modal_overlay = document.getElementById("workflow_settings_modal");
+  if (modal_overlay) {
+    modal_overlay.classList.add("d-none");
+  }
+  active_cell_workflow_override_context = null;
+}
+
+// WHAT: Responds to changing the workflow dropdown in the modal.
+// WHY: Reveals or hides workflow-specific override sections (Design prompt, clone emotion target).
+function handle_modal_workflow_type_change(selected_workflow_type) {
+  const design_section = document.getElementById("modal_qwen_design_override_section");
+  const clone_section = document.getElementById("modal_qwen_clone_override_section");
+
+  if (design_section) {
+    design_section.classList.toggle("d-none", selected_workflow_type !== "design");
+  }
+  if (clone_section) {
+    clone_section.classList.toggle("d-none", selected_workflow_type !== "clone");
+  }
+}
+
+// WHAT: Randomizes the seed value in the workflow modal.
+// WHY: Quick shortcut for creators auditioning different acoustic variations.
+function randomize_modal_synthesis_seed() {
+  const seed_input = document.getElementById("modal_synthesis_seed_field");
+  if (seed_input) {
+    seed_input.value = Math.floor(Math.random() * 9000000000) + 100000;
+  }
+}
+
+// WHAT: Switches between Workflow and Emotion Library tabs in the workflow modal.
+// WHY: Organizes settings logically without UI clutter.
+function switch_modal_tab(target_tab_identifier) {
+  const workflow_tab_btn = document.getElementById("tab_btn_workflow");
+  const references_tab_btn = document.getElementById("tab_btn_references");
+  const workflow_content = document.getElementById("modal_content_workflow");
+  const references_content = document.getElementById("modal_content_references");
+
+  if (target_tab_identifier === "workflow") {
+    workflow_tab_btn?.classList.add("active_tab");
+    references_tab_btn?.classList.remove("active_tab");
+    workflow_content?.classList.add("active_content");
+    workflow_content?.classList.remove("d-none");
+    references_content?.classList.remove("active_content");
+    references_content?.classList.add("d-none");
+  } else {
+    references_tab_btn?.classList.add("active_tab");
+    workflow_tab_btn?.classList.remove("active_tab");
+    references_content?.classList.add("active_content");
+    references_content?.classList.remove("d-none");
+    workflow_content?.classList.remove("active_content");
+    workflow_content?.classList.add("d-none");
+  }
+}
+
 
 

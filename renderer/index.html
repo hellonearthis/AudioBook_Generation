@@ -474,8 +474,11 @@
             <label class="form_input_label">Active Synthesis Engine Workflow</label>
             <select id="modal_workflow_type_dropdown" class="form_select_dropdown" onchange="handle_modal_workflow_type_change(this.value)">
               <option value="inherit">Inherit from Character Profile (Default)</option>
+              <option value="auk_voice_clone">🧬 AuK-02 Voice Clone (Zero-Shot using Reference Audio)</option>
+              <option value="auk_instruct_tts">🎙️ AuK-01 Instruct-TTS (Description Prompt)</option>
+              <option value="load_custom_voice">💾 Qwen3-TTS LoadCustomVoice (Pre-Baked Model)</option>
               <option value="design">🎨 Qwen3-TTS VoiceDesign (Natural Language Timbre Description)</option>
-              <option value="clone">🎭 Qwen3-TTS VoiceClone (Zero-Shot Dynamic Cloning)</option>
+              <option value="clone">🎭 Qwen3-TTS VoiceClone (Per-Emotion Reference Cloning)</option>
             </select>
           </div>
 
@@ -562,6 +565,110 @@
       </div>
     </div>
   </div>
+
+  <!-- =========================================================================
+       MODULAR POPUP OVERLAY - AUK AUDIO EDITING SUITE
+       ========================================================================= -->
+  <div id="auk_edit_tools_modal" class="cyber_modal_overlay d-none">
+    <div class="cyber_modal_window max-w-550px">
+      <div class="cyber_modal_header">
+        <div class="d-flex align-items-center gap-10">
+          <div class="brand_logo_hexagon w-28px h-28px text-14 line-height-28px border-purple text-purple">🪄</div>
+          <div>
+            <h2 class="cyber_modal_title">AuK Audio Editing Suite</h2>
+            <span id="modal_auk_edit_subtitle" class="cyber_modal_subtitle">Refine existing take audio non-destructively</span>
+          </div>
+        </div>
+        <button class="cyber_modal_close_btn" onclick="close_auk_edit_tools_modal()">×</button>
+      </div>
+
+      <div class="cyber_modal_body p-20">
+        <!-- Quick Action Presets -->
+        <div class="form_input_group">
+          <label class="form_input_label">Choose Audio Transformation Tool</label>
+          <select id="modal_auk_edit_task_dropdown" class="form_select_dropdown" onchange="handle_auk_edit_task_selection_change(this.value)">
+            <option value="whisper">🤫 Whisper Conversion (AuK-12: Convert normal voice to intimate whisper)</option>
+            <option value="enhance">🧹 Denoise & Enhance (AuK-13: Remove background noise & boost clarity)</option>
+            <option value="pitch">🎵 Pitch Shift (AuK-05: Adjust vocal pitch semitones)</option>
+            <option value="speed">⚡ Speed / Tempo (AuK-06: Speed up or slow down speaking pace)</option>
+            <option value="volume">🔊 Volume Adjust (AuK-07: Boost or attenuate volume in dB)</option>
+            <option value="emotion">🎭 Emotion Morphing (AuK-08: Change emotional performance tone)</option>
+            <option value="deaccent">🗣️ De-accent (AuK-10: Soften regional accent)</option>
+            <option value="speech_content">📝 Speech Content Edit (AuK-03: Re-speak a phrase in existing audio)</option>
+          </select>
+        </div>
+
+        <!-- Dynamic Parameter Inputs -->
+        <div id="modal_auk_edit_dynamic_controls">
+          <!-- Pitch Slider -->
+          <div id="auk_control_pitch" class="form_input_group d-none">
+            <label class="form_input_label d-flex justify-content-between">
+              <span>Pitch Shift (Semitones)</span>
+              <span id="label_pitch_shift_display" class="text-purple font-semibold">+2</span>
+            </label>
+            <input type="range" id="input_auk_pitch_semitones" min="-6" max="6" step="1" value="2" class="w-100" oninput="document.getElementById('label_pitch_shift_display').textContent = (this.value > 0 ? '+' : '') + this.value">
+          </div>
+
+          <!-- Speed Slider -->
+          <div id="auk_control_speed" class="form_input_group d-none">
+            <label class="form_input_label d-flex justify-content-between">
+              <span>Speed Multiplier</span>
+              <span id="label_speed_multiplier_display" class="text-purple font-semibold">1.15x</span>
+            </label>
+            <input type="range" id="input_auk_speed_multiplier" min="0.75" max="1.50" step="0.05" value="1.15" class="w-100" oninput="document.getElementById('label_speed_multiplier_display').textContent = this.value + 'x'">
+          </div>
+
+          <!-- Volume Slider -->
+          <div id="auk_control_volume" class="form_input_group d-none">
+            <label class="form_input_label d-flex justify-content-between">
+              <span>Volume Adjustment (dB)</span>
+              <span id="label_volume_shift_display" class="text-purple font-semibold">+3 dB</span>
+            </label>
+            <input type="range" id="input_auk_volume_decibels" min="-12" max="12" step="1" value="3" class="w-100" oninput="document.getElementById('label_volume_shift_display').textContent = (this.value > 0 ? '+' : '') + this.value + ' dB'">
+          </div>
+
+          <!-- Emotion Select -->
+          <div id="auk_control_emotion" class="form_input_group d-none">
+            <label class="form_input_label">Target Emotional Performance</label>
+            <select id="select_auk_target_emotion" class="form_select_dropdown">
+              <option value="calm">Calm / Composed / Neutral</option>
+              <option value="happy">Happy / Joyous / Bubbly</option>
+              <option value="sad" selected>Sad / Somber / Melancholic</option>
+              <option value="angry">Angry / Intense / Aggressive</option>
+              <option value="fearful">Fearful / Trembling / Anxious</option>
+              <option value="surprised">Surprised / Startled / Incredulous</option>
+              <option value="disgusted">Disgusted / Bitter / Sneering</option>
+              <option value="excited">Excited / Rapid / Enthusiastic</option>
+            </select>
+          </div>
+
+          <!-- Speech Content Inputs -->
+          <div id="auk_control_speech_content" class="form_input_group d-none">
+            <label class="form_input_label">Instruction (e.g. Replace 'old' with 'new' / Add 'text' before 'anchor')</label>
+            <input type="text" id="input_auk_speech_content_instruction" class="form_text_field mb-8" placeholder="Replace 'accepting what we cannot have' with 'living well with dreams unmet'">
+            <label class="form_input_label">Original Phrase in Audio</label>
+            <input type="text" id="input_auk_speech_content_original" class="form_text_field" placeholder="Full original sentence or phrase">
+          </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-10 mt-15 p-10 bg-dark-overlay radius-md border-glass-subtle">
+          <span class="text-16">💡</span>
+          <span class="text-11 text-muted line-height-1-4">
+            The edited audio will be saved as a brand new take (e.g. <strong>Take 2</strong>), keeping your original take safe for immediate A/B comparisons.
+          </span>
+        </div>
+      </div>
+
+      <div class="cyber_modal_footer d-flex justify-content-between align-items-center w-100">
+        <span id="modal_auk_edit_status_message" class="text-11 text-purple"></span>
+        <div class="d-flex gap-8">
+          <button class="cyber_btn btn_secondary" onclick="close_auk_edit_tools_modal()">Cancel</button>
+          <button class="cyber_btn btn_accent" id="btn_execute_auk_edit" onclick="execute_active_auk_edit_task()">Apply Transformation</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- LOAD INTERACTJS DEPENDENCY -->
   <script src="../node_modules/interactjs/dist/interact.min.js"></script>
 

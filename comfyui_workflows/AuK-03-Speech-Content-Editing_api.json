@@ -1,0 +1,72 @@
+{
+  "1": {
+    "inputs": {
+      "model_variant": "AuK Base",
+      "device": "cuda:0",
+      "dtype": "auto"
+    },
+    "class_type": "AuKModelLoader",
+    "_meta": {
+      "title": "AuK Model Loader"
+    }
+  },
+  "2": {
+    "inputs": {
+      "audio": "auk_input.wav"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  },
+  "3": {
+    "inputs": {
+      "task": "Speech Content Editing",
+      "primary": "Change 'meeting this afternoon' to 'meeting tomorrow morning'.",
+      "secondary": "Reminder: We have a meeting this afternoon. Please be on time.",
+      "generation_seconds": 3,
+      "seed": 42,
+      "nfe_steps": 32,
+      "cfg_strength": 2,
+      "sway_sampling_coef": -1,
+      "duration_mode": "Auto Estimate (TTS Recommended)",
+      "engine": [
+        "1",
+        0
+      ],
+      "input_audio": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "AuKGenerateEdit",
+    "_meta": {
+      "title": "AuK Generate / Edit"
+    }
+  },
+  "4": {
+    "inputs": {
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "PreviewAudio",
+    "_meta": {
+      "title": "Preview Audio"
+    }
+  },
+  "5": {
+    "inputs": {
+      "filename_prefix": "auk/speech_content_edit",
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "Save Audio (FLAC) (DEPRECATED)"
+    }
+  }
+}

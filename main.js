@@ -505,9 +505,10 @@ function extract_json_from_llm_response_text(raw_llm_output_text) {
   }
 }
 
+// WHAT: Dispatches an HTTP POST request with a JSON payload to a specified local or remote endpoint.
+// WHY: Used to communicate with local AI generation backends (such as LM Studio, Ollama, or ComfyUI),
+//      wrapping the Node.js native http client in a promise with timeout handling and automatic IPv4 loopback normalization.
 function dispatch_http_post_request(target_endpoint_url_string, request_payload_object) {
-  // WHAT: Returning a promise that wraps the standard node.js HTTP client requests.
-  // WHY: Allows using modern async/await patterns inside our IPC handlers.
   return new Promise((resolve_callback_function, reject_callback_function) => {
     try {
       // WHAT: Normalizing the URL before handing it to the Node.js HTTP client.
@@ -1951,16 +1952,39 @@ async function execute_sequential_generation_queue() {
 
 
 
-    // WHAT: Load workflow JSON template from disk.
+    // WHAT: Resolving the target ComfyUI workflow template JSON filename based on active engine selection.
+    // WHY: Supports both AuK workflows (AuK-02 Voice Clone with reference audio, AuK-01 Instruct-TTS)
+    //      and Qwen3-TTS workflows (loadCustomVoice, DesignVoice), with automatic fallbacks to prevent crashes.
     let workflow_filename;
-    if (active_workflow_type === "load_custom_voice") {
+    if (active_workflow_type === "auk_voice_clone" || active_workflow_type === "auk_clone") {
+      workflow_filename = "AuK-02-Voice-Clone_api.json";
+    } else if (active_workflow_type === "auk_instruct_tts" || active_workflow_type === "auk_instruct") {
+      workflow_filename = "AuK-01-Instruct-TTS_api.json";
+    } else if (active_workflow_type === "load_custom_voice") {
       workflow_filename = "QWEN3-TTS-loadCustomVoice_api.json";
     } else if (active_workflow_type === "design") {
       workflow_filename = "Qwen3-tts-DesignVoice_API.json";
     } else if (active_workflow_type === "clone") {
-      workflow_filename = "Qwen3-tts-voiceClone_API.json";
+      // WHAT: Check if Qwen voice clone template exists, otherwise route to AuK Zero-Shot Voice Clone.
+      // WHY: AuK-02 provides robust zero-shot voice cloning using reference audio.
+      if (filesystem_library.existsSync(path_library.join(__dirname, "comfyui_workflows", "Qwen3-tts-voiceClone_API.json"))) {
+        workflow_filename = "Qwen3-tts-voiceClone_API.json";
+      } else {
+        workflow_filename = "AuK-02-Voice-Clone_api.json";
+        active_workflow_type = "auk_voice_clone";
+      }
     } else {
-      workflow_filename = "Qwen3-tts_CustomVoice_API.json";
+      // WHAT: Fallback resolution for preset/custom workflow requests.
+      // WHY: If Qwen3-tts_CustomVoice_API.json is not present on disk, fall back to AuK Instruct-TTS or DesignVoice.
+      if (filesystem_library.existsSync(path_library.join(__dirname, "comfyui_workflows", "Qwen3-tts_CustomVoice_API.json"))) {
+        workflow_filename = "Qwen3-tts_CustomVoice_API.json";
+      } else if (filesystem_library.existsSync(path_library.join(__dirname, "comfyui_workflows", "AuK-01-Instruct-TTS_api.json"))) {
+        workflow_filename = "AuK-01-Instruct-TTS_api.json";
+        active_workflow_type = "auk_instruct_tts";
+      } else {
+        workflow_filename = "Qwen3-tts-DesignVoice_API.json";
+        active_workflow_type = "design";
+      }
     }
     const workflow_template_absolute_path = path_library.join(__dirname, "comfyui_workflows", workflow_filename);
 
@@ -2389,6 +2413,91 @@ async function execute_sequential_generation_queue() {
         class_type: "SaveAudio",
         _meta: { title: "Save Audio (Injected)" }
       };
+    } else if (active_workflow_type === "auk_voice_clone" || active_workflow_type === "auk_clone") {
+      // WHAT: Configuring AuK Zero-Shot Voice Clone (AuK-02).
+      // WHY: Clones the acoustic fingerprint directly from a reference audio file to deliver high-fidelity character dialogue.
+      save_node_id_string = "5";
+
+      // Node 3: AuKGenerateEdit
+      if (comfyui_workflow_nodes_payload["3"]) {
+        comfyui_workflow_nodes_payload["3"].inputs.task = "Zero-Shot TTS (Voice Clone)";
+        comfyui_workflow_nodes_payload["3"].inputs.primary = target_dialogue_text;
+        comfyui_workflow_nodes_payload["3"].inputs.secondary = "";
+        comfyui_workflow_nodes_payload["3"].inputs.seed = active_seed_value;
+        comfyui_workflow_nodes_payload["3"].inputs.duration_mode = "Auto Estimate (TTS Recommended)";
+      }
+
+      // WHAT: Resolving the character reference audio recording.
+      // WHY: AuK Zero-Shot Voice Clone uses the raw physical audio from the reference clip to model vocal cords.
+      let resolved_reference_audio_file_path = cell_override_mapping.referenceAudioPath || 
+                                              cell_override_mapping.reference_audio_path || 
+                                              global_character_mapping.referenceAudioPath || 
+                                              global_character_mapping.reference_audio_path;
+
+      if (!resolved_reference_audio_file_path || !filesystem_library.existsSync(resolved_reference_audio_file_path)) {
+        const standardized_speaker_name = active_speaker_name.toLowerCase().replace(/\s+/g, "_");
+        const potential_anchor_path = path_library.join(
+          current_active_task.workspace_directory_path,
+          current_active_task.project_name,
+          "audio",
+          "anchors",
+          `${standardized_speaker_name}_master.wav`
+        );
+        if (filesystem_library.existsSync(potential_anchor_path)) {
+          resolved_reference_audio_file_path = potential_anchor_path;
+        } else {
+          const references_subfolder_path = path_library.join(
+            current_active_task.workspace_directory_path,
+            current_active_task.project_name,
+            "audio",
+            "references",
+            standardized_speaker_name
+          );
+          if (filesystem_library.existsSync(references_subfolder_path)) {
+            const available_reference_files = filesystem_library.readdirSync(references_subfolder_path);
+            const matching_audio_filename = available_reference_files.find(filename_candidate =>
+              filename_candidate.endsWith(".wav") || filename_candidate.endsWith(".mp3") || filename_candidate.endsWith(".flac")
+            );
+            if (matching_audio_filename) {
+              resolved_reference_audio_file_path = path_library.join(references_subfolder_path, matching_audio_filename);
+            }
+          }
+        }
+      }
+
+      if (resolved_reference_audio_file_path && filesystem_library.existsSync(resolved_reference_audio_file_path)) {
+        const reference_file_extension = path_library.extname(resolved_reference_audio_file_path) || ".wav";
+        const unique_staging_audio_filename = `auk_ref_${Date.now()}${reference_file_extension}`;
+        const comfyui_resolved_base_directory = resolve_comfyui_base_directory();
+        const absolute_staging_path = path_library.join(comfyui_resolved_base_directory, "input", unique_staging_audio_filename);
+
+        const comfyui_input_parent_directory = path_library.dirname(absolute_staging_path);
+        if (!filesystem_library.existsSync(comfyui_input_parent_directory)) {
+          filesystem_library.mkdirSync(comfyui_input_parent_directory, { recursive: true });
+        }
+        filesystem_library.copyFileSync(resolved_reference_audio_file_path, absolute_staging_path);
+        staged_temporary_reference_audio_absolute_path = absolute_staging_path;
+
+        if (comfyui_workflow_nodes_payload["2"]) {
+          comfyui_workflow_nodes_payload["2"].inputs.audio = unique_staging_audio_filename;
+        }
+      } else {
+        console.warn(`[AuK Voice Clone Warning] No reference audio file found for character "${active_speaker_name}". Will proceed with workflow defaults.`);
+      }
+
+    } else if (active_workflow_type === "auk_instruct_tts" || active_workflow_type === "auk_instruct") {
+      // WHAT: Configuring AuK Instruct-TTS (AuK-01).
+      // WHY: Synthesizes dialogue using natural language vocal description prompts without requiring reference audio.
+      save_node_id_string = "4";
+
+      // Node 2: AuKGenerateEdit
+      if (comfyui_workflow_nodes_payload["2"]) {
+        comfyui_workflow_nodes_payload["2"].inputs.task = "Instruct TTS (Description)";
+        comfyui_workflow_nodes_payload["2"].inputs.primary = target_dialogue_text;
+        comfyui_workflow_nodes_payload["2"].inputs.secondary = generated_qwen3_style_prompt_string || global_character_mapping.traits || "A natural, clear, and warm speaking voice";
+        comfyui_workflow_nodes_payload["2"].inputs.seed = active_seed_value;
+        comfyui_workflow_nodes_payload["2"].inputs.duration_mode = "Auto Estimate (TTS Recommended)";
+      }
     }
 
     // WHAT: Set dynamic take prefix to prevent output file name collisions.
@@ -2417,15 +2526,25 @@ async function execute_sequential_generation_queue() {
         
         const comfyui_history_entry = queue_status_payload[prompt_execution_id];
         
-        // WHAT: Parsing the output audio entry and reconstructing the relative path.
-        // WHY: ComfyUI splits the saved file path in its history logs into separate 'subfolder'
-        //      (e.g., 'take') and 'filename' (e.g., 'line_0_take_3_00001_.mp3') fields. We join
-        //      them together to obtain the correct relative path.
-        if (!comfyui_history_entry.outputs || !comfyui_history_entry.outputs[save_node_id_string]) {
-            throw new Error(`ComfyUI workflow finished but no output found for save node ${save_node_id_string}. The prompt might have failed execution.`);
+        // WHAT: Parsing the output audio entry with dynamic node detection fallback.
+        // WHY: AuK, Qwen, and custom injected nodes may save audio to different node IDs.
+        //      If save_node_id_string is not present, we inspect all outputs to find the generated audio.
+        let target_output_node_entry = comfyui_history_entry.outputs ? comfyui_history_entry.outputs[save_node_id_string] : null;
+        if (!target_output_node_entry || !target_output_node_entry.audio || target_output_node_entry.audio.length === 0) {
+          for (const output_node_identifier of Object.keys(comfyui_history_entry.outputs || {})) {
+            const candidate_output_node = comfyui_history_entry.outputs[output_node_identifier];
+            if (candidate_output_node && candidate_output_node.audio && candidate_output_node.audio.length > 0) {
+              target_output_node_entry = candidate_output_node;
+              break;
+            }
+          }
+        }
+
+        if (!target_output_node_entry || !target_output_node_entry.audio || target_output_node_entry.audio.length === 0) {
+          throw new Error(`ComfyUI workflow finished but no audio output was found for execution ${prompt_execution_id}.`);
         }
         
-        const audio_output_entry = comfyui_history_entry.outputs[save_node_id_string].audio[0];
+        const audio_output_entry = target_output_node_entry.audio[0];
         const relative_rendered_audio_path = path_library.join(
           audio_output_entry.subfolder || "",
           audio_output_entry.filename
@@ -3129,3 +3248,236 @@ ipcMain.handle("audio:save-custom-voice", async (ipc_event_context, request_argu
     return { success: false, error: voice_saving_execution_error.message };
   }
 });
+
+// =========================================================================
+// AUK AUDIO EDITING SUITE IPC HANDLER
+// =========================================================================
+
+// WHAT: Applies an AuK editing workflow to an existing take audio clip.
+// WHY: Empowers creators to refine, whisper-convert, pitch-shift, speed-adjust, denoise,
+//      or emotion-morph an existing take non-destructively, generating a new take incrementally.
+ipcMain.handle("audio:apply-auk-edit", async (ipc_event_context, request_arguments) => {
+  const {
+    workspace_directory_path,
+    project_name,
+    is_directorial,
+    index_position,
+    source_take_file_path,
+    edit_task_identifier,
+    edit_parameter_value,
+    secondary_parameter_value,
+    comfyui_api_url_address
+  } = request_arguments;
+
+  let staged_temporary_edit_audio_path = null;
+
+  try {
+    // WHAT: Validating that the source take audio file exists on the filesystem.
+    // WHY: Cannot perform audio editing operations on non-existent audio clips.
+    if (!source_take_file_path || !filesystem_library.existsSync(source_take_file_path)) {
+      return { success: false, error: "Source audio take file was not found on disk." };
+    }
+
+    // WHAT: Proactive ComfyUI connectivity check.
+    // WHY: Warns early if the ComfyUI server is down or unreachable.
+    const comfyui_is_reachable = await new Promise((resolve_ping_probe) => {
+      const ping_connection_probe = http_client_library.get(`${comfyui_api_url_address}/system_stats`, (http_response_object) => {
+        resolve_ping_probe(http_response_object.statusCode === 200);
+      }).on("error", () => {
+        resolve_ping_probe(false);
+      });
+      ping_connection_probe.setTimeout(2500, () => {
+        ping_connection_probe.destroy();
+        resolve_ping_probe(false);
+      });
+    });
+
+    if (!comfyui_is_reachable) {
+      return { success: false, error: `ComfyUI server is unreachable at ${comfyui_api_url_address}. Please ensure the server is active.` };
+    }
+
+    // WHAT: Resolving the target AuK workflow template and default parameter values.
+    // WHY: Each AuK editing workflow specializes in a distinct audio transformation task.
+    let workflow_template_filename;
+    let resolved_primary_argument_value = edit_parameter_value;
+    let resolved_secondary_argument_value = secondary_parameter_value || "";
+
+    // WHAT: Resolving the target workflow file and instruction prompt based on the official AuK COOKBOOK specifications.
+    // WHY: AuK uses a unified ChatML instruction model where precise natural language phrasing yields the highest acoustic accuracy.
+    switch (edit_task_identifier) {
+      case "whisper":
+        workflow_template_filename = "AuK-12-Whisper-Conversion_api.json";
+        resolved_primary_argument_value = "Convert this speech into a soft whisper while preserving the speaker and content.";
+        break;
+      case "enhance":
+        workflow_template_filename = "AuK-13-Speech-Enhancement_api.json";
+        resolved_primary_argument_value = "Preserve all speakers, remove noise and reverberation, and output clean speech of the same length.";
+        break;
+      case "pitch":
+        workflow_template_filename = "AuK-05-Pitch-Editing_api.json";
+        resolved_primary_argument_value = String(edit_parameter_value || "+2");
+        break;
+      case "speed":
+        workflow_template_filename = "AuK-06-Speed-Editing_api.json";
+        resolved_primary_argument_value = String(edit_parameter_value || "1.15");
+        break;
+      case "volume":
+        workflow_template_filename = "AuK-07-Volume-Editing_api.json";
+        resolved_primary_argument_value = String(edit_parameter_value || "+3");
+        break;
+      case "emotion":
+        workflow_template_filename = "AuK-08-Emotion-Editing_api.json";
+        const target_emotion_identifier = String(edit_parameter_value || "sad").trim();
+        resolved_primary_argument_value = target_emotion_identifier.toLowerCase().startsWith("change the emotion")
+          ? target_emotion_identifier
+          : `Change the emotion to ${target_emotion_identifier}.`;
+        break;
+      case "deaccent":
+        workflow_template_filename = "AuK-10-De-accent_api.json";
+        resolved_primary_argument_value = "Remove the regional accent while preserving the speaker's voice and content.";
+        break;
+      case "speech_content":
+        workflow_template_filename = "AuK-03-Speech-Content-Editing_api.json";
+        resolved_primary_argument_value = String(edit_parameter_value || "");
+        resolved_secondary_argument_value = String(secondary_parameter_value || "");
+        break;
+      default:
+        return { success: false, error: `Unrecognized AuK edit task identifier: ${edit_task_identifier}` };
+    }
+
+    const workflow_template_absolute_path = path_library.join(__dirname, "comfyui_workflows", workflow_template_filename);
+    if (!filesystem_library.existsSync(workflow_template_absolute_path)) {
+      return { success: false, error: `AuK workflow template ${workflow_template_filename} not found on disk.` };
+    }
+
+    const comfyui_workflow_nodes_payload = JSON.parse(filesystem_library.readFileSync(workflow_template_absolute_path, "utf-8"));
+
+    // WHAT: Staging source take audio into ComfyUI's input directory.
+    // WHY: The LoadAudio node can only access audio files located within ComfyUI's input folder.
+    const source_audio_file_extension = path_library.extname(source_take_file_path) || ".wav";
+    const staging_audio_filename = `auk_edit_input_${Date.now()}${source_audio_file_extension}`;
+    const comfyui_resolved_base_directory = resolve_comfyui_base_directory();
+    const absolute_comfyui_staging_path = path_library.join(comfyui_resolved_base_directory, "input", staging_audio_filename);
+
+    const comfyui_input_parent_directory = path_library.dirname(absolute_comfyui_staging_path);
+    if (!filesystem_library.existsSync(comfyui_input_parent_directory)) {
+      filesystem_library.mkdirSync(comfyui_input_parent_directory, { recursive: true });
+    }
+    filesystem_library.copyFileSync(source_take_file_path, absolute_comfyui_staging_path);
+    staged_temporary_edit_audio_path = absolute_comfyui_staging_path;
+
+    // WHAT: Binding the staged filename to Node 2 (LoadAudio).
+    if (comfyui_workflow_nodes_payload["2"]) {
+      comfyui_workflow_nodes_payload["2"].inputs.audio = staging_audio_filename;
+    }
+
+    // WHAT: Setting task parameters on Node 3 (AuKGenerateEdit).
+    if (comfyui_workflow_nodes_payload["3"]) {
+      comfyui_workflow_nodes_payload["3"].inputs.primary = resolved_primary_argument_value;
+      comfyui_workflow_nodes_payload["3"].inputs.secondary = resolved_secondary_argument_value;
+      comfyui_workflow_nodes_payload["3"].inputs.seed = Math.floor(Math.random() * 9000000000) + 100000;
+    }
+
+    // WHAT: Setting the output filename prefix on Node 5 (SaveAudio).
+    if (comfyui_workflow_nodes_payload["5"]) {
+      comfyui_workflow_nodes_payload["5"].inputs.filename_prefix = `auk/edited_${edit_task_identifier}_${Date.now()}`;
+    }
+
+    // WHAT: Dispatching the prompt payload to ComfyUI.
+    const comfyui_response_payload = await dispatch_http_post_request(`${comfyui_api_url_address}/prompt`, { prompt: comfyui_workflow_nodes_payload });
+    const prompt_execution_id = comfyui_response_payload.prompt_id;
+
+    // WHAT: Polling ComfyUI history queue for completion.
+    let rendering_is_completed = false;
+    let polling_iterations_counter = 0;
+    let rendered_audio_file_path = null;
+
+    while (!rendering_is_completed && polling_iterations_counter < 300) {
+      await new Promise(resolve_delay => setTimeout(resolve_delay, 1000));
+      const queue_history = await fetch_comfyui_queue_history(comfyui_api_url_address, prompt_execution_id);
+      if (queue_history && queue_history[prompt_execution_id]) {
+        rendering_is_completed = true;
+        const history_entry = queue_history[prompt_execution_id];
+
+        let target_output_node = history_entry.outputs ? history_entry.outputs["5"] : null;
+        if (!target_output_node || !target_output_node.audio) {
+          for (const output_key of Object.keys(history_entry.outputs || {})) {
+            const candidate_node = history_entry.outputs[output_key];
+            if (candidate_node && candidate_node.audio && candidate_node.audio.length > 0) {
+              target_output_node = candidate_node;
+              break;
+            }
+          }
+        }
+
+        if (!target_output_node || !target_output_node.audio || target_output_node.audio.length === 0) {
+          throw new Error("AuK editing completed but no audio output was found.");
+        }
+
+        const audio_file_info = target_output_node.audio[0];
+        const relative_audio_path = path_library.join(audio_file_info.subfolder || "", audio_file_info.filename);
+        rendered_audio_file_path = path_library.join(comfyui_resolved_base_directory, "output", relative_audio_path);
+      }
+      polling_iterations_counter++;
+    }
+
+    if (!rendering_is_completed || !rendered_audio_file_path || !filesystem_library.existsSync(rendered_audio_file_path)) {
+      throw new Error("AuK editing execution timed out or rendered audio was missing.");
+    }
+
+    // WHAT: Resolving the target takes folder inside the project structure.
+    const target_file_prefix_label = is_directorial ? "line_directorial" : "line";
+    const takes_destination_directory_path = path_library.join(
+      workspace_directory_path,
+      project_name,
+      "audio",
+      "takes",
+      `${target_file_prefix_label}_${index_position}`
+    );
+
+    if (!filesystem_library.existsSync(takes_destination_directory_path)) {
+      filesystem_library.mkdirSync(takes_destination_directory_path, { recursive: true });
+    }
+
+    // WHAT: Finding the next incremental take number for this line.
+    // WHY: Preserves the source take intact, allowing non-destructive A/B comparisons.
+    const existing_take_file_names = filesystem_library.readdirSync(takes_destination_directory_path);
+    let highest_take_number_found = 1;
+    for (const filename_candidate of existing_take_file_names) {
+      const regex_take_match = filename_candidate.match(/take_(\d+)/i);
+      if (regex_take_match) {
+        const parsed_take_number = parseInt(regex_take_match[1], 10);
+        if (parsed_take_number > highest_take_number_found) {
+          highest_take_number_found = parsed_take_number;
+        }
+      }
+    }
+    const next_take_number = highest_take_number_found + 1;
+    const output_audio_extension = path_library.extname(rendered_audio_file_path) || ".flac";
+    const destination_take_audio_path = path_library.join(takes_destination_directory_path, `take_${next_take_number}${output_audio_extension}`);
+
+    filesystem_library.copyFileSync(rendered_audio_file_path, destination_take_audio_path);
+
+    return {
+      success: true,
+      newTakeNumber: next_take_number,
+      filePath: destination_take_audio_path,
+      task: edit_task_identifier,
+      message: `Take ${next_take_number} created with AuK ${edit_task_identifier}.`
+    };
+
+  } catch (auk_editing_execution_exception) {
+    console.error("AuK edit execution failed:", auk_editing_execution_exception);
+    return { success: false, error: auk_editing_execution_exception.message };
+  } finally {
+    // WHAT: Cleaning up temporary staged file from ComfyUI's input directory.
+    if (staged_temporary_edit_audio_path && filesystem_library.existsSync(staged_temporary_edit_audio_path)) {
+      try {
+        filesystem_library.unlinkSync(staged_temporary_edit_audio_path);
+      } catch (cleanup_filesystem_exception) {
+        console.error("Failed to clean up staged edit audio:", cleanup_filesystem_exception);
+      }
+    }
+  }
+});
+

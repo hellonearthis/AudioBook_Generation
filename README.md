@@ -104,6 +104,21 @@ The application uses three distinct AI voice workflows to maintain strict acoust
 4. **The Script Editor (Voice Clone Pipeline)**
    The Script Editor page **exclusively uses locked-in characters** for custom cast profiles. It routes all generation requests through the `Qwen3-TTS-loadCustomVoice_API` (or VoiceClone) workflow. It physically clones the vocal cords of your locked-in master anchor while applying the new acting emotions from the script line. **You cannot synthesize lines in the Script Editor for a character whose voice has not been explicitly locked in.** To ensure maximum consistency, generation parameters are restricted (`temperature: 0.3`, `top_p: 0.7`, `top_k: 15`, `repetition_penalty: 1.1`) to prevent timbre or pacing drift.
 
+5. **🧬 AuK Zero-Shot Voice Clone (`AuK-02`) & Instruct-TTS (`AuK-01`)**
+   Supports ComfyUI native AuK models. You can assign any reference audio file (or master anchor) to a character and use `AuK-02-Voice-Clone` to generate dialogue matching that reference without requiring reference transcripts. For characters without audio samples, `AuK-01-Instruct-TTS` synthesizes speech directly from descriptive prompts.
+
+6. **🪄 AuK Audio Editing Suite (`AuK-03` through `AuK-14`)**
+   Every generated take card features a **"🪄 Edit Take"** action to non-destructively transform audio:
+   - **🤫 Whisper Conversion (`AuK-12`)**: Converts normal speech into an intimate whisper.
+   - **🧹 Denoise & Enhance (`AuK-13`)**: Removes background noise and boosts clarity.
+   - **🎵 Pitch Shift (`AuK-05`)**: Shifts pitch by semitones (+/-6).
+   - **⚡ Speed Adjustment (`AuK-06`)**: Multiplies speaking tempo (0.75x to 1.5x).
+   - **🔊 Volume Adjustment (`AuK-07`)**: Boosts or attenuates dB level.
+   - **🎭 Emotion Morphing (`AuK-08`)**: Alters emotional tone (Sad, Angry, Happy, Fearful, Disgusted, Excited).
+   - **🗣️ De-accent (`AuK-10`)**: Softens regional accent.
+   - **📝 Speech Content Edit (`AuK-03`)**: Re-speaks targeted phrases in existing audio.
+   - *Non-Destructive*: All edits produce a new incremental take (e.g. `Take 2`) so your original take remains intact for A/B comparison.
+
 ---
 
 ## External Services & Workflows Setup
@@ -133,21 +148,26 @@ The application uses three distinct AI voice workflows to maintain strict acoust
 
 ## Quick Start & Dev Setup
 
-### 1. Install Packages
-Verify or install necessary dependencies:
+### 1. Easy Start (Recommended)
+You can launch the entire app with pre-flight environment checks using the PowerShell launcher:
 ```powershell
+.\start.ps1
+```
+Or with hot-reloading enabled for UI / script editing:
+```powershell
+.\start.ps1 -Dev
+```
+
+### 2. Manual Dev Setup (npm)
+If you prefer running via npm:
+```powershell
+# Install packages
 npm install
-```
 
-### 2. Launch the Application (Standard)
-Start the desktop Electron frame:
-```powershell
+# Launch standard application
 npm start
-```
 
-### 3. Launch in Developer Dev Mode (Hot-Reloading)
-To edit styles, script cards, or file controllers and see updates relaunch instantly on save:
-```powershell
+# Launch in dev mode (hot-reloading)
 npm run dev
 ```
 

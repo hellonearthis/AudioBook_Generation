@@ -241,6 +241,16 @@ function populate_voice_matrix_configuration_cards() {
               <option value="Elderly" ${character_timbre_details.age === 'Elderly' ? 'selected' : ''}>Elderly</option>
             </select>
           </div>
+
+          <div class="form_input_group mb-0 flex-1">
+            <label class="form_input_label text-10 text-muted mb-4">Voice Engine</label>
+            <select class="form_text_field w-100 text-11 bg-input-glass" style="height: 34px; padding: 4px 8px;" onchange="modify_character_workflow_type('${character_name_string.replace(/'/g, "\\'")}', this.value)">
+              <option value="custom" ${(!character_timbre_details.workflowType || character_timbre_details.workflowType === 'custom') ? 'selected' : ''}>Qwen3 Preset</option>
+              <option value="auk_voice_clone" ${character_timbre_details.workflowType === 'auk_voice_clone' ? 'selected' : ''}>🧬 AuK Voice Clone (Ref Audio)</option>
+              <option value="auk_instruct_tts" ${character_timbre_details.workflowType === 'auk_instruct_tts' ? 'selected' : ''}>🎙️ AuK Instruct-TTS</option>
+              <option value="design" ${character_timbre_details.workflowType === 'design' ? 'selected' : ''}>🎨 Qwen3 VoiceDesign</option>
+            </select>
+          </div>
         </div>
         
         <div class="form_input_group mb-0">
@@ -365,6 +375,16 @@ function trigger_character_deletion(character_name_string) {
 function modify_character_voice_mapping_template(character_name_string, selected_voice_preset_name) {
   if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping[character_name_string]) {
     active_loaded_project_state_object.voiceMapping[character_name_string].voice = selected_voice_preset_name;
+    trigger_project_state_disk_flush();
+    populate_voice_matrix_configuration_cards();
+  }
+}
+
+// WHAT: Modifying the selected voice synthesis engine workflow for the character.
+// WHY: Allows assigning AuK Voice Clone, AuK Instruct-TTS, or Qwen3-TTS as the default engine for this character.
+function modify_character_workflow_type(character_name_string, selected_workflow_type_identifier) {
+  if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping[character_name_string]) {
+    active_loaded_project_state_object.voiceMapping[character_name_string].workflowType = selected_workflow_type_identifier;
     trigger_project_state_disk_flush();
     populate_voice_matrix_configuration_cards();
   }
@@ -1111,27 +1131,33 @@ function refresh_synthesis_progress_tracking_meters() {
 let timeline_clips_data = [];
 let timeline_pixels_per_second = 34;
 
-function update_timeline_zoom(value) {
-  timeline_pixels_per_second = parseInt(value, 10);
-  const zoom_label = document.getElementById('timeline_zoom_label');
-  if (zoom_label) zoom_label.textContent = `${timeline_pixels_per_second}px/s`;
+// WHAT: Updates the horizontal timeline scale zoom level and triggers a visual re-render.
+// WHY: Adjusting the pixels-per-second ratio allows audio engineers to inspect dense take sequences closely
+//      or zoom out to view an entire chapter's dialogue pacing at a glance.
+function update_timeline_zoom(new_zoom_pixels_per_second_number) {
+  timeline_pixels_per_second = parseInt(new_zoom_pixels_per_second_number, 10);
+  const timeline_zoom_indicator_element = document.getElementById('timeline_zoom_label');
+  if (timeline_zoom_indicator_element) timeline_zoom_indicator_element.textContent = `${timeline_pixels_per_second}px/s`;
   render_data_driven_timeline();
 }
 
+// WHAT: Imports active takes from the project storyboard into the interactive post-production timeline.
+// WHY: Extracts audio duration metadata via backend FFmpeg IPC, calculates sequential timeline offsets,
+//      and populates interactive clips for previewing and multi-take mixdown assembly.
 async function import_storyboard_takes_to_preview_playlist() {
   if (!active_loaded_project_state_object || !active_selected_workspace_directory_path) {
     alert('Please load an audiobook project first.');
     return;
   }
 
-  const version_selector = document.getElementById('select_import_version');
-  const is_directorial_flag = version_selector ? version_selector.value === 'directorial' : false;
+  const timeline_version_selector_element = document.getElementById('select_import_version');
+  const is_directorial_flag = timeline_version_selector_element ? timeline_version_selector_element.value === 'directorial' : false;
   
-  const segments_list = is_directorial_flag
+  const target_script_segments_list = is_directorial_flag
     ? active_loaded_project_state_object.directorialSegments
     : active_loaded_project_state_object.scriptSegments;
 
-  if (!segments_list || segments_list.length === 0) {
+  if (!target_script_segments_list || target_script_segments_list.length === 0) {
     alert('There are no segments loaded in the storyboard for this version.');
     return;
   }
@@ -1144,10 +1170,10 @@ async function import_storyboard_takes_to_preview_playlist() {
     : 0;
   let import_end_index_boundary = end_line_input_element && end_line_input_element.value !== "" 
     ? parseInt(end_line_input_element.value, 10) 
-    : segments_list.length - 1;
+    : target_script_segments_list.length - 1;
 
   if (import_start_index_boundary < 0) import_start_index_boundary = 0;
-  if (import_end_index_boundary >= segments_list.length) import_end_index_boundary = segments_list.length - 1;
+  if (import_end_index_boundary >= target_script_segments_list.length) import_end_index_boundary = target_script_segments_list.length - 1;
   if (import_start_index_boundary > import_end_index_boundary) {
     alert('Start line must be less than or equal to End line.');
     return;
@@ -1155,8 +1181,8 @@ async function import_storyboard_takes_to_preview_playlist() {
 
   const target_file_prefix_label = is_directorial_flag ? 'line_directorial' : 'line';
   
-  const gap_input = document.getElementById('input_post_prod_pause_between_lines');
-  const gap_seconds = gap_input ? parseFloat(gap_input.value) : 0.6;
+  const post_production_gap_input_element = document.getElementById('input_post_prod_pause_between_lines');
+  const pause_gap_duration_seconds = post_production_gap_input_element ? parseFloat(post_production_gap_input_element.value) : 0.6;
 
   document.getElementById('waveform_sim_status_label').textContent = 'Fetching audio metadata...';
 
@@ -1164,7 +1190,7 @@ async function import_storyboard_takes_to_preview_playlist() {
   let current_start_time = 0;
 
   for (let segment_index = import_start_index_boundary; segment_index <= import_end_index_boundary; segment_index++) {
-    const segment_item = segments_list[segment_index];
+    const segment_item = target_script_segments_list[segment_index];
     
     let active_take_number = 1;
     let active_take_absolute_path = null;
@@ -1183,106 +1209,112 @@ async function import_storyboard_takes_to_preview_playlist() {
     }
 
     // Call the fast metadata extractor via IPC
-    const duration = await window.audiobook_api.get_audio_duration(active_take_absolute_path);
+    const extracted_audio_duration_seconds = await window.audiobook_api.get_audio_duration(active_take_absolute_path);
     
-    const speaker_name = segment_item.speaker || 'Narrator';
-    let block_color = '#485F86';
-    if (active_loaded_project_state_object.voiceMapping && active_loaded_project_state_object.voiceMapping[speaker_name] && active_loaded_project_state_object.voiceMapping[speaker_name].colorCode) {
-      block_color = active_loaded_project_state_object.voiceMapping[speaker_name].colorCode;
+    const segment_speaker_name = segment_item.speaker || 'Narrator';
+    let timeline_clip_block_color = '#485F86';
+    if (active_loaded_project_state_object.voiceMapping && active_loaded_project_state_object.voiceMapping[segment_speaker_name] && active_loaded_project_state_object.voiceMapping[segment_speaker_name].colorCode) {
+      timeline_clip_block_color = active_loaded_project_state_object.voiceMapping[segment_speaker_name].colorCode;
     }
 
     timeline_clips_data.push({
       id: `clip_${segment_item.index_position}`,
       index_position: segment_item.index_position,
-      speaker: speaker_name,
+      speaker: segment_speaker_name,
       text: segment_item.text || "",
       audioVersions: segment_item.audioVersions || [],
       active_take_number: active_take_number,
       filePath: active_take_absolute_path,
       startTime: current_start_time,
-      duration: duration,
-      color: block_color,
-      gap_before: gap_seconds
+      duration: extracted_audio_duration_seconds,
+      color: timeline_clip_block_color,
+      gap_before: pause_gap_duration_seconds
     });
 
-    current_start_time += duration + gap_seconds;
+    current_start_time += extracted_audio_duration_seconds + pause_gap_duration_seconds;
   }
 
   document.getElementById('waveform_sim_status_label').textContent = 'Timeline Editor Ready - ' + timeline_clips_data.length + ' tracks loaded';
   render_data_driven_timeline();
 }
 
+// WHAT: Renders DOM elements for each storyboard audio take inside the timeline container.
+// WHY: Dynamically maps audio duration and inter-sentence pauses to scaled pixel blocks with
+//      preview audio event listeners, take-switching modal triggers, and drag-and-drop gap adjustments.
 function render_data_driven_timeline() {
-  const track_container = document.getElementById('timeline_track');
-  if (!track_container) return;
+  const timeline_track_container_element = document.getElementById('timeline_track');
+  if (!timeline_track_container_element) return;
   
-  track_container.innerHTML = '';
+  timeline_track_container_element.innerHTML = '';
   
   // WHAT: Sequentially calculate absolute start times based on previous durations and gaps.
   // WHY: Since the UI now uses relative flex wrapping, we must calculate the math manually for the FFmpeg export backend.
-  let current_start = 0;
-  timeline_clips_data.forEach(clip => {
-     clip.startTime = current_start + clip.gap_before;
-     current_start = clip.startTime + clip.duration;
+  let cumulative_timeline_start_time_seconds = 0;
+  timeline_clips_data.forEach(timeline_clip_entry => {
+     timeline_clip_entry.startTime = cumulative_timeline_start_time_seconds + timeline_clip_entry.gap_before;
+     cumulative_timeline_start_time_seconds = timeline_clip_entry.startTime + timeline_clip_entry.duration;
   });
 
   for (let clip_index = 0; clip_index < timeline_clips_data.length; clip_index++) {
-    const clip = timeline_clips_data[clip_index];
-    const clip_div = document.createElement('div');
-    clip_div.id = clip.id;
-    clip_div.className = 'timeline_clip_block';
+    const current_timeline_clip = timeline_clips_data[clip_index];
+    const timeline_clip_card_element = document.createElement('div');
+    timeline_clip_card_element.id = current_timeline_clip.id;
+    timeline_clip_card_element.className = 'timeline_clip_block';
     
-    const width_px = clip.duration * timeline_pixels_per_second;
-    const margin_left_px = clip.gap_before * timeline_pixels_per_second;
+    const calculated_clip_width_pixels = current_timeline_clip.duration * timeline_pixels_per_second;
+    const calculated_margin_left_pixels = current_timeline_clip.gap_before * timeline_pixels_per_second;
     
-    clip_div.style.position = 'relative';
-    clip_div.style.marginLeft = `${margin_left_px}px`;
-    clip_div.style.height = '60px';
-    clip_div.style.width = `${width_px}px`;
-    clip_div.style.backgroundColor = clip.color;
-    clip_div.style.borderRadius = '4px';
-    clip_div.style.border = '1px solid rgba(255,255,255,0.3)';
-    clip_div.style.cursor = 'grab';
-    clip_div.style.display = 'inline-flex';
-    clip_div.style.flexShrink = '0';
-    clip_div.style.alignItems = 'center';
-    clip_div.style.justifyContent = 'center';
-    clip_div.style.overflow = 'hidden';
-    clip_div.style.boxShadow = '0 4px 6px rgba(0,0,0,0.3)';
-    clip_div.setAttribute('data-index', clip_index);
-    clip_div.title = `[${clip.speaker}] ${clip.text}`;
+    timeline_clip_card_element.style.position = 'relative';
+    timeline_clip_card_element.style.marginLeft = `${calculated_margin_left_pixels}px`;
+    timeline_clip_card_element.style.height = '60px';
+    timeline_clip_card_element.style.width = `${calculated_clip_width_pixels}px`;
+    timeline_clip_card_element.style.backgroundColor = current_timeline_clip.color;
+    timeline_clip_card_element.style.borderRadius = '4px';
+    timeline_clip_card_element.style.border = '1px solid rgba(255,255,255,0.3)';
+    timeline_clip_card_element.style.cursor = 'grab';
+    timeline_clip_card_element.style.display = 'inline-flex';
+    timeline_clip_card_element.style.flexShrink = '0';
+    timeline_clip_card_element.style.alignItems = 'center';
+    timeline_clip_card_element.style.justifyContent = 'center';
+    timeline_clip_card_element.style.overflow = 'hidden';
+    timeline_clip_card_element.style.boxShadow = '0 4px 6px rgba(0,0,0,0.3)';
+    timeline_clip_card_element.setAttribute('data-index', clip_index);
+    timeline_clip_card_element.title = `[${current_timeline_clip.speaker}] ${current_timeline_clip.text}`;
     
     // WHAT: Hook right click context menu to audio playback.
     // WHY: Let's the user quickly preview a specific block without building a full playback transport.
-    clip_div.addEventListener('contextmenu', (context_menu_mouse_event) => {
+    timeline_clip_card_element.addEventListener('contextmenu', (context_menu_mouse_event) => {
       context_menu_mouse_event.preventDefault();
-      const audio = new Audio(clip.filePath);
-      audio.play();
+      const clip_preview_audio_element = new Audio(current_timeline_clip.filePath);
+      clip_preview_audio_element.play();
     });
     
     // WHAT: Hook double click to open the take selector modal.
     // WHY: Allows the user to switch takes visually from the timeline.
-    clip_div.addEventListener('dblclick', (double_click_event) => {
+    timeline_clip_card_element.addEventListener('dblclick', (double_click_event) => {
       double_click_event.preventDefault();
-      show_take_selector_modal(clip);
+      show_take_selector_modal(current_timeline_clip);
     });
     
-    const label = document.createElement('span');
-    label.textContent = `${clip.index_position}: ${clip.speaker}`;
-    label.style.color = '#fff';
-    label.style.fontSize = '10px';
-    label.style.whiteSpace = 'nowrap';
-    label.style.pointerEvents = 'none';
-    label.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
-    label.style.padding = '0 4px';
+    const clip_label_span_element = document.createElement('span');
+    clip_label_span_element.textContent = `${current_timeline_clip.index_position}: ${current_timeline_clip.speaker}`;
+    clip_label_span_element.style.color = '#fff';
+    clip_label_span_element.style.fontSize = '10px';
+    clip_label_span_element.style.whiteSpace = 'nowrap';
+    clip_label_span_element.style.pointerEvents = 'none';
+    clip_label_span_element.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
+    clip_label_span_element.style.padding = '0 4px';
     
-    clip_div.appendChild(label);
-    track_container.appendChild(clip_div);
+    timeline_clip_card_element.appendChild(clip_label_span_element);
+    timeline_track_container_element.appendChild(timeline_clip_card_element);
   }
   
   setup_timeline_interactions();
 }
 
+// WHAT: Attaches drag gesture handlers to rendered timeline clip elements using interact.js.
+// WHY: Enables interactive horizontal dragging so engineers can adjust inter-sentence pauses
+//      by dragging clips left or right directly within the visual timeline editor.
 function setup_timeline_interactions() {
   if (typeof interact !== 'undefined') {
     interact('.timeline_clip_block')
@@ -1303,86 +1335,91 @@ function setup_timeline_interactions() {
   }
 }
 
-function dragMoveListener(event) {
-  const target = event.target;
-  const horizontal_translation_pixels = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
-  target.style.transform = `translate(${horizontal_translation_pixels}px, 0)`;
-  target.setAttribute('data-x', horizontal_translation_pixels);
+// WHAT: Handles real-time horizontal translation while a clip is actively being dragged.
+// WHY: Updates the visual CSS transform of the dragged element smoothly during user drag interaction.
+function dragMoveListener(interact_drag_move_event) {
+  const dragged_target_element = interact_drag_move_event.target;
+  const horizontal_translation_pixels = (parseFloat(dragged_target_element.getAttribute('data-x')) || 0) + interact_drag_move_event.dx;
+  dragged_target_element.style.transform = `translate(${horizontal_translation_pixels}px, 0)`;
+  dragged_target_element.setAttribute('data-x', horizontal_translation_pixels);
 }
 
-function dragEndListener(event) {
-  const target = event.target;
-  const clip_index = parseInt(target.getAttribute('data-index'), 10);
-  const clip = timeline_clips_data[clip_index];
+// WHAT: Commits the final drag displacement as a modified gap duration for the clip.
+// WHY: Converts horizontal pixel offset into time shift seconds, updates gap_before,
+//      resets the visual transform, and re-renders the timeline with the updated spacing.
+function dragEndListener(interact_drag_end_event) {
+  const dragged_target_element = interact_drag_end_event.target;
+  const target_clip_index_number = parseInt(dragged_target_element.getAttribute('data-index'), 10);
+  const target_timeline_clip = timeline_clips_data[target_clip_index_number];
   
-  const x_offset = parseFloat(target.getAttribute('data-x')) || 0;
-  target.style.transform = 'translate(0px, 0)';
-  target.setAttribute('data-x', 0);
+  const horizontal_drag_offset_pixels = parseFloat(dragged_target_element.getAttribute('data-x')) || 0;
+  dragged_target_element.style.transform = 'translate(0px, 0)';
+  dragged_target_element.setAttribute('data-x', 0);
   
-  const time_shift = x_offset / timeline_pixels_per_second;
-  if (time_shift === 0) return;
+  const calculated_time_shift_seconds = horizontal_drag_offset_pixels / timeline_pixels_per_second;
+  if (calculated_time_shift_seconds === 0) return;
   
   // WHAT: Adjusting the block's physical margin gap directly.
   // WHY: In a flex wrap layout, absolute left positions don't exist. Gaps are controlled by margin-left.
-  clip.gap_before += time_shift;
-  if (clip.gap_before < 0) clip.gap_before = 0;
+  target_timeline_clip.gap_before += calculated_time_shift_seconds;
+  if (target_timeline_clip.gap_before < 0) target_timeline_clip.gap_before = 0;
   
   render_data_driven_timeline();
 }
 
 // WHAT: Generates and displays a glassmorphism modal to select alternate takes.
 // WHY: Fulfills the user requirement to switch takes from a dropdown via a double click interaction.
-function show_take_selector_modal(clip) {
-  let modal = document.getElementById('take_selector_modal');
-  if (modal) modal.remove();
+function show_take_selector_modal(timeline_clip_reference) {
+  let take_selector_modal_element = document.getElementById('take_selector_modal');
+  if (take_selector_modal_element) take_selector_modal_element.remove();
   
-  modal = document.createElement('div');
-  modal.id = 'take_selector_modal';
-  modal.className = 'position-fixed top-50 left-50 translate-middle bg-slate-900-95 border-cyan-glow radius-lg p-20 shadow-lg text-white min-w-400px z-9999';
+  take_selector_modal_element = document.createElement('div');
+  take_selector_modal_element.id = 'take_selector_modal';
+  take_selector_modal_element.className = 'position-fixed top-50 left-50 translate-middle bg-slate-900-95 border-cyan-glow radius-lg p-20 shadow-lg text-white min-w-400px z-9999';
 
-  let options_html = '';
-  if (clip.audioVersions && clip.audioVersions.length > 0) {
-    clip.audioVersions.forEach(v => {
-      const selected = v.take === clip.active_take_number ? 'selected' : '';
-      options_html += `<option value="${v.take}" ${selected}>Take ${v.take}</option>`;
+  let take_options_html_markup = '';
+  if (timeline_clip_reference.audioVersions && timeline_clip_reference.audioVersions.length > 0) {
+    timeline_clip_reference.audioVersions.forEach(version_entry => {
+      const is_selected_attribute_string = version_entry.take === timeline_clip_reference.active_take_number ? 'selected' : '';
+      take_options_html_markup += `<option value="${version_entry.take}" ${is_selected_attribute_string}>Take ${version_entry.take}</option>`;
     });
   } else {
-    options_html = `<option value="1">Take 1 (Default)</option>`;
+    take_options_html_markup = `<option value="1">Take 1 (Default)</option>`;
   }
 
-  modal.innerHTML = `
-    <h3 class="mt-0 text-gold">${clip.speaker}</h3>
-    <p class="font-italic mb-20 text-14">"${clip.text}"</p>
+  take_selector_modal_element.innerHTML = `
+    <h3 class="mt-0 text-gold">${timeline_clip_reference.speaker}</h3>
+    <p class="font-italic mb-20 text-14">"${timeline_clip_reference.text}"</p>
     <div class="mb-20">
       <label class="d-block mb-5 text-12 text-muted-cyan">Select Take</label>
       <select id="take_selector_dropdown" class="form_select_dropdown w-100">
-        ${options_html}
+        ${take_options_html_markup}
       </select>
     </div>
     <div class="d-flex justify-content-end gap-10">
       <button class="cyber_btn btn_secondary" onclick="document.getElementById('take_selector_modal').remove()">Cancel</button>
-      <button class="cyber_btn btn_primary" onclick="apply_selected_take(${clip.index_position})">Apply Take</button>
+      <button class="cyber_btn btn_primary" onclick="apply_selected_take(${timeline_clip_reference.index_position})">Apply Take</button>
     </div>
   `;
   
-  document.body.appendChild(modal);
+  document.body.appendChild(take_selector_modal_element);
 }
 
 // WHAT: Applies the selected take back to the main project state and triggers a timeline reload.
 // WHY: We must save the take decision and recalculate the block duration via the import function.
-function apply_selected_take(index_position) {
-  const dropdown = document.getElementById('take_selector_dropdown');
-  if (!dropdown) return;
-  const selected_take = parseInt(dropdown.value, 10);
+function apply_selected_take(segment_index_position) {
+  const take_selector_dropdown_element = document.getElementById('take_selector_dropdown');
+  if (!take_selector_dropdown_element) return;
+  const selected_take_number = parseInt(take_selector_dropdown_element.value, 10);
   
   if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
   
-  const segments_list = active_loaded_project_state_object.scriptSegments;
-  const segment = segments_list.find(s => s.index_position === index_position);
+  const project_script_segments_list = active_loaded_project_state_object.scriptSegments;
+  const matched_segment_record = project_script_segments_list.find(segment_candidate => segment_candidate.index_position === segment_index_position);
   
-  if (segment && segment.audioVersions) {
-    segment.audioVersions.forEach(v => {
-      v.isActive = (v.take === selected_take);
+  if (matched_segment_record && matched_segment_record.audioVersions) {
+    matched_segment_record.audioVersions.forEach(version_candidate => {
+      version_candidate.isActive = (version_candidate.take === selected_take_number);
     });
     
     // Push the state to disk so the decision persists
@@ -1396,6 +1433,9 @@ function apply_selected_take(index_position) {
   }
 }
 
+// WHAT: Dispatches a multi-track audio stitching request to the backend FFmpeg process.
+// WHY: Assembles all active takes into a continuous master audiobook mixdown file with accurate
+//      relative timeline offsets and custom pause intervals between lines.
 function trigger_export_mixdown() {
   if (timeline_clips_data.length === 0) {
     alert("No clips loaded in the timeline to export.");
@@ -1404,27 +1444,27 @@ function trigger_export_mixdown() {
   
   document.getElementById('waveform_sim_status_label').textContent = 'Rendering mixdown with FFmpeg...';
   
-  const version_selector = document.getElementById('select_import_version');
-  const is_directorial_flag = version_selector ? version_selector.value === 'directorial' : false;
+  const timeline_version_selector_element = document.getElementById('select_import_version');
+  const is_directorial_flag = timeline_version_selector_element ? timeline_version_selector_element.value === 'directorial' : false;
   
   window.audiobook_api.stitch_timeline(
     active_selected_workspace_directory_path,
     active_loaded_project_state_object.projectName,
     timeline_clips_data,
     is_directorial_flag
-  ).then(response => {
-    if (response.success) {
-      document.getElementById('waveform_sim_status_label').textContent = 'Export Saved: ' + response.mixdownAudioPath;
-      const open_btn = document.getElementById('btn_open_master_folder');
-      if (open_btn) {
-        open_btn.classList.remove('d-none');
-        open_btn.setAttribute('data-filepath', response.mixdownAudioPath);
+  ).then(ffmpeg_mixdown_response => {
+    if (ffmpeg_mixdown_response.success) {
+      document.getElementById('waveform_sim_status_label').textContent = 'Export Saved: ' + ffmpeg_mixdown_response.mixdownAudioPath;
+      const open_master_folder_button_element = document.getElementById('btn_open_master_folder');
+      if (open_master_folder_button_element) {
+        open_master_folder_button_element.classList.remove('d-none');
+        open_master_folder_button_element.setAttribute('data-filepath', ffmpeg_mixdown_response.mixdownAudioPath);
       }
     } else {
-      document.getElementById('waveform_sim_status_label').textContent = 'Export Failed: ' + response.error;
+      document.getElementById('waveform_sim_status_label').textContent = 'Export Failed: ' + ffmpeg_mixdown_response.error;
     }
-  }).catch(err => {
-    console.error("Export Error:", err);
+  }).catch(export_rejection_error => {
+    console.error("Export Error:", export_rejection_error);
     document.getElementById('waveform_sim_status_label').textContent = 'Export Failed. Check console.';
   });
 }
