@@ -32,26 +32,27 @@ A local, offline desktop application built using **Electron**, designed to autom
 The application coordinates three local AI engines without native database requirements or external dependencies like `fluent-ffmpeg`:
 
 ```
-+-------------------------------------------------------------------------------+
-|                                ELECTRON APP                                   |
-|                                                                               |
-|  +---------------------------+             +-------------------------------+  |
-|  |  Renderer (UI)            |<----------->|   Main Process                |  |
-|  |  - Script Editor & Engine |     IPC     |   - File System & Queue       |  |
-|  |  - Voice Matrix & AuK     |             |   - Multi-AI Service Bridge   |  |
-|  +---------------------------+             +-------------------------------+  |
-+---------------------------------------------------|---------------------------+
-                                                    |
-         +------------------------------------------+------------------------------------------+
-         |                                          |                                          |
-         v (Port 8765)                              v (Port 8080)                              v (Port 8188)
-+--------------------------------+         +--------------------------------+         +--------------------------------+
-|       LAYA DECISION ENGINE     |         |       LLAMA.CPP SERVER         |         |           COMFYUI              |
-|   (ModernBERT Classifier)      |         |      (llama-server.exe)        |         |      (TTS Audio Engine)        |
-|  - ~18-25ms Quote Attribution  |         |  - Pass 1: Cast Extraction     |         |  - AuK & Qwen3 Models          |
-|  - Pass 3: Acting & Emotion    |         |  - Deep Directorial Intent     |         |  - 17 Native Audio Workflows   |
-|  - Energy / Intensity Scoring  |         |  - Stage 2A Boundary Detection |         |  - Non-Destructive Take Editor |
-+--------------------------------+         +--------------------------------+         +--------------------------------+
++-------------------------------------------------------------------------------------------------+
+|                                          ELECTRON APP                                           |
+|                                                                                                 |
+|  +-----------------------------+               +---------------------------------------------+  |
+|  |  Renderer (UI)              |<------------->|   Main Process                              |  |
+|  |  - Script Editor & Engine   |      IPC      |   - File System & Audio Queue               |  |
+|  |  - Voice Matrix & AuK       |               |   - Multi-AI Service Bridge                 |  |
+|  +-----------------------------+               +---------------------------------------------+  |
++-------------------------------------------------------|-----------------------------------------+
+                                                        |
+         +--------------------------+-------------------+--------------------+--------------------+
+         |                          |                                        |                    |
+         v (Port 8765)              v (Port 8700)                            v (Port 8080)        v (Port 8188)
++------------------+       +-------------------------+              +------------------+  +-------------------+
+|   LAYA ENGINE    |       |       CLM ENGINE        |              | LLAMA.CPP SERVER |  |      COMFYUI      |
+|   (ModernBERT)   |       |   (CLM-v0.1-8B + Qwen)  |              |(llama-server.exe)|  |(TTS Audio Engine) |
+| - ~18-25ms Quote |       | - ~75-180ms System One  |              | - Pass 1: Cast   |  | - AuK & Qwen3 TTS |
+|   Attribution    |       | - Deeper literary prose |              |   Discovery      |  | - 17 Workflows    |
+| - Pass 3: Acting |       | - High-semantic subtext |              | - Deep Directing |  | - Take Editor     |
+| - Energy Scoring |       | - Cascade escalation    |              | - LLM Fallback   |  | - Voice Cloning   |
++------------------+       +-------------------------+              +------------------+  +-------------------+
 ```
 
 ---
@@ -165,20 +166,104 @@ If you prefer to start these services manually, pass `-NoAutoStart`:
 .\start.ps1 -NoAutoStart
 ```
 
-### 2. Laya Fast Decision Engine Configuration
-*   **Path**: `C:\Users\Desktop-Dev\Desktop\Laya`
-*   **Start Script**: `.\start_server.ps1` (FastAPI running on port `8765`)
-*   **Endpoint**: `POST http://127.0.0.1:8765/decide`
-*   **Health Check**: `GET http://127.0.0.1:8765/health`
-*   Configured in app Settings as **Laya Decision API Endpoint** (persisted in `localStorage`).
+### 2. Laya Fast Decision Engine Reference & Setup (Port 8765)
+*   **Overview**: A sub-25ms non-autoregressive ModernBERT classifier specialized for closed-set character dialogue attribution, emotional acting delivery, and vocal intensity scoring.
+*   **Local Directory**: `C:\Users\Desktop-Dev\Desktop\Laya`
+*   **Startup Command**:
+    ```powershell
+    cd C:\Users\Desktop-Dev\Desktop\Laya
+    .\start_server.ps1
+    ```
+*   **Network Protocol & Endpoints**:
+    *   `POST http://127.0.0.1:8765/decide`: Primary inference route accepting `{ state, questions }`.
+    *   `GET http://127.0.0.1:8765/health`: Health probe returning loaded model state.
+*   **Payload Wire Schema (TypeSafe / Jev Compatible)**:
+    ```json
+    {
+      "state": "Preceding: John turned slowly.\nSpoken: \"Where have you been?\"",
+      "questions": {
+        "speaker": {
+          "type": "choice",
+          "instructions": "Which character speaks this dialogue?",
+          "criteria": { "John": "Spoken by John", "Mary": "Spoken by Mary", "Narrator": "Exposition" }
+        },
+        "emotion": {
+          "type": "choice",
+          "instructions": "What is the emotional delivery?",
+          "criteria": { "calm": "Neutral", "angry": "Aggressive", "whisper": "Hushed" }
+        },
+        "energy": {
+          "type": "score",
+          "instructions": "Rate vocal volume and intensity",
+          "criteria": ["soft murmur", "moderate conversational volume", "shouting / forceful"]
+        }
+      }
+    }
+    ```
+*   **Hardware Profile**: Negligible RAM/VRAM footprint (< 1 GB, or pure CPU inference). Leaves 100% of GPU resources available for heavy ComfyUI speech synthesis.
+*   **QC & Empirical Calibration**:
+    *   Logs uncalibrated decisions to [`benchmarks/qc_calibration_log.jsonl`](benchmarks/qc_calibration_log.jsonl).
+    *   Run calibration optimization via: `node scripts/fit_calibration.js`.
+    *   Writes temperature constants and confidence bounds to [`benchmarks/calibrated_qc_config.json`](benchmarks/calibrated_qc_config.json).
 
-### 3. llama.cpp / llama-server Configuration
+---
+
+### 3. CLM (Contrastive Language Model v0.1-8B) Reference & Setup (Port 8700)
+*   **Overview**: A System One contrastive architecture combining a frozen `Qwen/Qwen3-8B` 4096-dimensional embedding backbone with dual 512-dimensional trained MLP projection heads (`state_head` and `action_head`, ~18.8M parameters, ~75.5 MB) evaluated via normalized cosine compatibility.
+*   **Local Directory**: `C:\Users\Desktop-Dev\Desktop\CLM`
+*   **Model Source**: [Contrastive-LM/CLM-v0.1-8B](https://huggingface.co/Contrastive-LM/CLM-v0.1-8B)
+*   **Prerequisites**: Requires an OpenAI-compatible `/v1/embeddings` endpoint returning 4096-dim embeddings for `Qwen/Qwen3-8B` on port `8090`.
+*   **Setup & Launch Modes**:
+    *   **Option A: Instant Demo / Mock Mode** (Test UI and pipelines without loading the 8B model):
+        ```powershell
+        cd C:\Users\Desktop-Dev\Desktop\CLM
+        .\run_playground_mock.ps1
+        # Or: python tools/playground_mock.py --port 8700
+        ```
+    *   **Option B: Full Production Serving**:
+        ```powershell
+        # 1. Start Qwen3-8B embedding endpoint (port 8090) using vLLM or LM Studio:
+        vllm serve Qwen/Qwen3-8B --served-model-name qwen3-8b --runner pooling --enforce-eager --max-model-len 2048 --port 8090
+        
+        # 2. Launch the CLM decision server (port 8700):
+        cd C:\Users\Desktop-Dev\Desktop\CLM
+        .\run_clm_server.ps1 -Port 8700 -EmbUrl "http://127.0.0.1:8090/v1/embeddings"
+        ```
+*   **Network Protocol & Endpoints**:
+    *   `POST http://127.0.0.1:8700/v1/systemone`: Evaluates `{ state, questions }` with calibrated choice distributions and noul probabilities.
+    *   `POST http://127.0.0.1:8700/v1/rank`: Direct candidate ranking endpoint.
+    *   `GET http://127.0.0.1:8700/health`: Embedder connectivity and cache diagnostics.
+    *   `GET http://127.0.0.1:8700/`: Interactive Web Playground.
+*   **When to Use CLM**:
+    *   **Unmarked literary prose**: Novels without quotation marks (e.g. Cormac McCarthy, James Joyce) where speakers must be inferred from subtle phrasing.
+    *   **Ambiguous pronoun chains**: When speakers alternate without explicit dialogue tags over multiple lines.
+    *   **Directorial subtext**: Fine-grained emotional undertones (sarcasm, suppressed grief, tension).
+
+---
+
+### 4. Decision Engine Comparison & Cascade Strategy
+
+| Metric | ⚡ Laya Fast (Port 8765) | 🎯 CLM-8B System One (Port 8700) | ⚡🎯 Smart Cascade (Laya → CLM) |
+| :--- | :--- | :--- | :--- |
+| **Model** | ModernBERT Classifier | Frozen Qwen3-8B + CLM Projection Heads | ModernBERT + CLM-8B Fallback |
+| **Latency** | **~18–25 ms / line** | **~75–180 ms / line** | **~25 ms avg / line** |
+| **VRAM Impact** | Negligible (< 1 GB) | Moderate (6–16 GB for 8B backbone) | Negligible for 90% of lines |
+| **Best For** | High-speed processing of standard novels | Ambiguous literary prose & deep subtext | Optimal balance of speed and precision |
+
+*   **How Smart Cascade Works**:
+    1. Laya evaluates the dialogue quote in ~20ms.
+    2. If speaker confidence is $\ge 85\%$, the decision is auto-accepted with badge `⚡ 92%`.
+    3. If speaker confidence is $< 85\%$ (ambiguous), the line is automatically escalated to CLM-8B (`POST /v1/systemone`) and badged with `⚡🎯 91%`.
+
+---
+
+### 5. llama.cpp / llama-server Configuration
 *   **Path**: `C:\llamaCPP\llama-server.exe`
 *   **Start Script**: `C:\llamaCPP\start_webui_8080.bat`
 *   **Endpoint**: `http://127.0.0.1:8080/v1` (with `/v1/chat/completions`)
 *   Load an instruction-tuned model capable of structured JSON dialogue extraction (e.g. `qwen3.5-9b`). Context size is set to `8192` with `max_tokens` clamped to `4096`.
 
-### 4. ComfyUI Configuration & Custom Paths
+### 6. ComfyUI Configuration & Custom Paths
 *   The application interfaces with ComfyUI (`http://127.0.0.1:8188`) to save and load voice presets, synthesize WAV audio clips, and execute AuK editing workflows.
 *   By default, the application resolves ComfyUI's installation directory dynamically (checking `C:\cui` first, followed by desktop output shortcuts).
 *   **Custom Configurations**: To define a custom ComfyUI installation path, create a `config.json` file in the root of this project:
@@ -189,7 +274,7 @@ If you prefer to start these services manually, pass `-NoAutoStart`:
     ```
     *(Note: This file is ignored by git so your local paths remain private.)*
 
-### 5. Importing & Testing Workflows in ComfyUI
+### 7. Importing & Testing Workflows in ComfyUI
 *   The `comfyui_workflows/` directory contains JSON templates for backend API calls (files ending with `_api.json` or `_API.json`).
 *   **Non-API versions** (files without the `_api` suffix, e.g., `AuK-01-Instruct-TTS.json`, `AuK-02-Voice-Clone.json`, `QWEN3-TTS-loadCustomVoice.json`) are also included in the same folder.
 *   You can drag-and-drop or load these non-API JSON workflows directly into the ComfyUI web UI to manually test your nodes, verify model configurations, or troubleshoot your generation pipeline visually.
