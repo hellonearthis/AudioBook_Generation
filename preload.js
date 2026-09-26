@@ -81,6 +81,46 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     });
   },
 
+  // WHAT: Query health and model loading status of the local Laya Decision Engine (port 8765).
+  // WHY: Lets the UI detect whether sub-25ms fast classification is available.
+  check_laya_status: (laya_endpoint_url) => {
+    return ipcRenderer.invoke("ai:laya-status", {
+      laya_endpoint_url: laya_endpoint_url
+    });
+  },
+
+  // WHAT: Query health and embedder status of the local CLM System One engine (port 8700).
+  // WHY: Lets the UI detect whether CLM-v0.1-8B contrastive decision server is active.
+  check_clm_status: (clm_endpoint_url) => {
+    return ipcRenderer.invoke("ai:clm-status", {
+      clm_endpoint_url: clm_endpoint_url
+    });
+  },
+
+  // WHAT: Ultra-fast Dialogue Attribution and Emotional Staging via Laya (~17-25ms forward passes).
+  // WHY: Non-autoregressive classification eliminates LLM latency and JSON hallucination risk.
+  trigger_laya_attribution: (attribution_options) => {
+    return ipcRenderer.invoke("ai:laya-attribute", attribution_options);
+  },
+
+  // WHAT: Query accumulated QC calibration logs and task decision counts.
+  // WHY: Displays empirical calibration status and sample counts in developer settings.
+  get_qc_calibration_stats: () => {
+    return ipcRenderer.invoke("ai:get-qc-calibration-stats");
+  },
+
+  // WHAT: Run empirical temperature calibration re-fit on logged decisions.
+  // WHY: Solves optimal task temperatures T dynamically from real audiobook decisions.
+  run_qc_calibration: () => {
+    return ipcRenderer.invoke("ai:run-qc-calibration");
+  },
+
+  // WHAT: Submit human verdict on a logged QC decision (Phase 2).
+  // WHY: Converts natural editorial review and card edits into labeled ground truth for calibration.
+  record_human_verdict: (record_id, verdict, notes) => {
+    return ipcRenderer.invoke("ai:record-human-verdict", { id: record_id, verdict, notes });
+  },
+
   // WHAT: Run Pass 3 to generate emotional directions / performance instructions for screenplay segments.
   // WHY: Generates parenthetical stage directions for our Instruct-TTS synthesis engine.
   trigger_emotional_staging: (preceding_context_lines, target_sentence_text, succeeding_context_lines, lm_studio_api_url_address) => {

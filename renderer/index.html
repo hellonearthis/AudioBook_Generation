@@ -204,7 +204,18 @@
           <div class="editor_pane" id="editor_pane_screenplay">
             <div class="pane_header">
               <span class="pane_header_title">2. Screenplay Script Editor</span>
-              <div class="d-flex gap-8">
+              <div class="d-flex gap-8 align-items-center">
+                <select id="attribution_engine_selector" class="form_text_field p-4-8 radius-6 text-11" title="Attribution Engine" onchange="save_global_configurations()">
+                  <option value="laya" selected>⚡ Laya Fast (~20ms)</option>
+                  <option value="clm">🎯 CLM-8B System One (~100ms)</option>
+                  <option value="cascade">⚡🎯 Cascade (Laya → CLM)</option>
+                  <option value="hybrid">⚡🧠 Hybrid (Laya + llama)</option>
+                  <option value="llm">🧠 llama.cpp (Deep LLM)</option>
+                </select>
+                <label class="unmarked_mode_toggle d-flex align-items-center gap-4 text-11 text-muted cursor-pointer" title="Enable boundary detection for literary prose without quotation marks (e.g. Cormac McCarthy)">
+                  <input type="checkbox" id="unmarked_dialogue_toggle" onchange="save_global_configurations()">
+                  <span>📖 Unmarked</span>
+                </label>
                 <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple" onclick="run_main_pipeline_pass_one_and_two()">
                   Automate Attribution
                 </button>
@@ -427,11 +438,19 @@
            ========================================================================= -->
       <footer class="p-10-40 bg-dark-overlay border-top-glass d-flex justify-content-between align-items-center text-11">
         <div class="d-flex gap-20 align-items-center">
-          <span class="text-muted">LM Studio API Endpoint:</span>
-          <input type="text" id="settings_lm_studio_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:1234/v1" onchange="save_global_configurations()">
+          <span class="text-muted">LLM Endpoint:</span>
+          <input type="text" id="settings_lm_studio_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8080/v1" onchange="save_global_configurations()" title="llama-server or OpenAI-compatible endpoint (e.g. http://127.0.0.1:8080/v1)">
         </div>
         <div class="d-flex gap-20 align-items-center">
-          <span class="text-muted">ComfyUI API Endpoint:</span>
+          <span class="text-muted">Laya Endpoint:</span>
+          <input type="text" id="settings_laya_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8765" onchange="save_global_configurations()" title="Laya Decision Engine endpoint (default: http://127.0.0.1:8765)">
+        </div>
+        <div class="d-flex gap-20 align-items-center">
+          <span class="text-muted">CLM Endpoint:</span>
+          <input type="text" id="settings_clm_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8700" onchange="save_global_configurations()" title="CLM System One endpoint (default: http://127.0.0.1:8700)">
+        </div>
+        <div class="d-flex gap-20 align-items-center">
+          <span class="text-muted">ComfyUI Endpoint:</span>
           <input type="text" id="settings_comfyui_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8188" onchange="save_global_configurations()">
         </div>
         <div>

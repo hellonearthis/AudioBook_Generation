@@ -19,6 +19,9 @@ let renderer_directorial_card_queue_status_registry = {};
 // WHAT: Populates the right script editor panel with interactive blocks representing each line.
 // WHY: Renders a screenplay script containing speakers, editable texts, acting directions, and audio playback nodes.
 function populate_screenplay_cards_in_editor_view() {
+  if (!active_loaded_project_state_object && typeof window !== "undefined" && window.active_loaded_project_state_object) {
+    active_loaded_project_state_object = window.active_loaded_project_state_object;
+  }
   const screenplay_cards_wrapper_element = document.getElementById("screenplay_segment_cards_wrapper");
   screenplay_cards_wrapper_element.innerHTML = "";
 
@@ -147,7 +150,17 @@ function populate_screenplay_cards_in_editor_view() {
             ${override_button_text}
           </button>
         </div>
-        <span class="card_type_badge ${is_tech_book ? 'd-none' : ''}">${active_script_segment_item.type}</span>
+        <div class="d-flex align-items-center gap-6">
+          ${active_script_segment_item.unmarked ? `
+            <span class="unmarked_span_badge" title="Extracted via Stage 2A Literary Boundary Detection (Unmarked Dialogue)">📖 Unmarked</span>
+          ` : ''}
+          ${(active_script_segment_item.engine === 'laya' || active_script_segment_item.engine === 'clm' || active_script_segment_item.engine === 'clm_cascade') && active_script_segment_item.confidence ? `
+            <span class="laya_confidence_badge ${active_script_segment_item.is_ambiguous ? 'low_confidence' : ''}" title="${active_script_segment_item.engine === 'clm' ? 'CLM-8B' : (active_script_segment_item.engine === 'clm_cascade' ? 'Cascade (CLM-8B)' : 'Laya')} Decision Confidence: ${(active_script_segment_item.confidence * 100).toFixed(0)}%">
+              ${active_script_segment_item.engine === 'clm' ? '🎯' : (active_script_segment_item.engine === 'clm_cascade' ? '⚡🎯' : '⚡')} ${(active_script_segment_item.confidence * 100).toFixed(0)}%
+            </span>
+          ` : ''}
+          <span class="card_type_badge ${is_tech_book ? 'd-none' : ''}">${active_script_segment_item.type}</span>
+        </div>
       </div>
 
       <textarea class="screenplay_text_input" onchange="handle_card_text_modification_event(${segment_index_counter}, this.value)" rows="2">${active_script_segment_item.text}</textarea>
@@ -600,6 +613,12 @@ async function run_tech_book_sentence_split() {
 // WHAT: Automatically divides prose blocks into speaker segments and generates staging guides.
 // WHY: Pass 2 and 3 convert unstructured txt paragraphs into dialogue screenplay records.
 async function run_main_pipeline_pass_one_and_two() {
+  if (!active_loaded_project_state_object && typeof window !== "undefined" && window.active_loaded_project_state_object) {
+    active_loaded_project_state_object = window.active_loaded_project_state_object;
+  }
+  if (!active_selected_workspace_directory_path && typeof window !== "undefined" && window.active_selected_workspace_directory_path) {
+    active_selected_workspace_directory_path = window.active_selected_workspace_directory_path;
+  }
   if (!active_loaded_project_state_object || !active_selected_workspace_directory_path) {
     return;
   }
@@ -642,6 +661,9 @@ async function run_main_pipeline_pass_one_and_two() {
   const list_of_new_segments = [];
   const discovered_characters_matrix = active_loaded_project_state_object.voiceMapping || {};
 
+  const selected_attribution_engine = document.getElementById("attribution_engine_selector")?.value || (typeof configuration_attribution_engine !== "undefined" ? configuration_attribution_engine : "laya");
+  const is_unmarked_dialogue = document.getElementById("unmarked_dialogue_toggle")?.checked || (typeof configuration_unmarked_dialogue !== "undefined" ? configuration_unmarked_dialogue : false);
+
   try {
     // WHAT: Iterating through the text in blocks.
     // WHY: Bypasses LLM context window limits.
@@ -649,79 +671,157 @@ async function run_main_pipeline_pass_one_and_two() {
       const chunk_start_index = current_chunk_index * target_chunk_size;
       const sample_text_window_block = raw_book_text_input.substring(chunk_start_index, chunk_start_index + target_chunk_size);
 
-      // WHAT: Disabling panels and showing loading overlays.
-      // WHY: Prevents user interactions while local API threads process parsing blocks.
-      screenplay_cards_wrapper_element.innerHTML = `
-        <div class="empty_state_screen vh-50">
-        <div class="status_dot state_processing w-40px h-40px"></div>
-          <h4 class="empty_state_title">Orchestrating Dialogue Attribution (Pass ${current_chunk_index + 1}/${total_attribution_chunks})...</h4>
-          <p class="empty_state_tagline">Converting paragraphs into screenplay script segments using local LLM engine. Please stand by...</p>
-        </div>
-      `;
+      let parsing_response_json = null;
 
-      // WHAT: Dispatching raw block dialogue tags.
-      // WHY: Local LLM executes attribution passes programmatically.
-      const parsing_response_json = await window.audiobook_api.trigger_dialogue_attribution(
-        sample_text_window_block,
-        configuration_lm_studio_api_url_address
-      );
+      if (["laya", "clm", "cascade", "hybrid"].includes(selected_attribution_engine)) {
+        let engine_badge_title = is_unmarked_dialogue ? "📖 2-Stage Unmarked Attribution" : "⚡ Orchestrating Laya Fast Attribution";
+        let engine_badge_desc = is_unmarked_dialogue ? "Detecting dialogue spans (Pass 2A) -> Laya ModernBERT attribution & emotional staging (Pass 2B)..." : "Executing sub-25ms non-autoregressive dialogue classification and acting staging via ModernBERT. Please stand by...";
+
+        if (selected_attribution_engine === "clm") {
+          engine_badge_title = is_unmarked_dialogue ? "📖 2-Stage Unmarked Attribution (CLM-8B)" : "🎯 Orchestrating CLM-8B Attribution";
+          engine_badge_desc = is_unmarked_dialogue ? "Detecting dialogue spans (Pass 2A) -> CLM-v0.1-8B System One attribution & emotional staging (Pass 2B)..." : "Executing contrastive decision calls and emotional staging via local CLM-v0.1-8B (port 8700). Please stand by...";
+        } else if (selected_attribution_engine === "cascade") {
+          engine_badge_title = is_unmarked_dialogue ? "📖 2-Stage Unmarked Attribution (Cascade)" : "⚡🎯 Orchestrating Smart Cascade (Laya → CLM)";
+          engine_badge_desc = is_unmarked_dialogue ? "Detecting dialogue spans (Pass 2A) -> Fast Laya attribution with CLM-8B contrastive escalation (Pass 2B)..." : "Evaluating sub-25ms ModernBERT pass with automatic CLM-8B contrastive escalation for ambiguous lines. Please stand by...";
+        }
+
+        screenplay_cards_wrapper_element.innerHTML = `
+          <div class="empty_state_screen vh-50">
+            <div class="status_dot state_processing w-40px h-40px"></div>
+            <h4 class="empty_state_title">${engine_badge_title} (Pass ${current_chunk_index + 1}/${total_attribution_chunks})...</h4>
+            <p class="empty_state_tagline">${engine_badge_desc}</p>
+          </div>
+        `;
+
+        try {
+          parsing_response_json = await window.audiobook_api.trigger_laya_attribution({
+            book_text_segment: sample_text_window_block,
+            voice_mapping_context: active_loaded_project_state_object.voiceMapping || {},
+            laya_endpoint_url: configuration_laya_api_url_address,
+            clm_endpoint_url: (typeof configuration_clm_api_url_address !== "undefined") ? configuration_clm_api_url_address : "http://127.0.0.1:8700",
+            attribution_engine: selected_attribution_engine,
+            confidence_threshold: 0.55,
+            unmarked_dialogue_mode: is_unmarked_dialogue,
+            lm_studio_api_url_address: configuration_lm_studio_api_url_address
+          });
+
+          // In hybrid mode, if Laya was offline (returned fallback_reason), seamlessly fall back to llama.cpp
+          if (selected_attribution_engine === "hybrid" && parsing_response_json && parsing_response_json.fallback_reason) {
+            console.warn("Hybrid Mode: Laya offline or fallback triggered, routing to llama.cpp.", parsing_response_json.fallback_reason);
+            screenplay_cards_wrapper_element.innerHTML = `
+              <div class="empty_state_screen vh-50">
+                <div class="status_dot state_processing w-40px h-40px"></div>
+                <h4 class="empty_state_title">🧠 Hybrid Fallback: Querying llama.cpp (Pass ${current_chunk_index + 1}/${total_attribution_chunks})...</h4>
+                <p class="empty_state_tagline">Laya engine unavailable. Converting paragraphs into screenplay script segments using local LLM engine...</p>
+              </div>
+            `;
+            parsing_response_json = await window.audiobook_api.trigger_dialogue_attribution(
+              sample_text_window_block,
+              configuration_lm_studio_api_url_address
+            );
+          }
+        } catch (laya_err) {
+          console.warn("Laya invocation error:", laya_err);
+          if (selected_attribution_engine === "hybrid") {
+            screenplay_cards_wrapper_element.innerHTML = `
+              <div class="empty_state_screen vh-50">
+                <div class="status_dot state_processing w-40px h-40px"></div>
+                <h4 class="empty_state_title">🧠 Hybrid Fallback: Querying llama.cpp (Pass ${current_chunk_index + 1}/${total_attribution_chunks})...</h4>
+                <p class="empty_state_tagline">Converting paragraphs into screenplay script segments using local LLM engine...</p>
+              </div>
+            `;
+            parsing_response_json = await window.audiobook_api.trigger_dialogue_attribution(
+              sample_text_window_block,
+              configuration_lm_studio_api_url_address
+            );
+          } else {
+            throw laya_err;
+          }
+        }
+      } else {
+        // WHAT: Disabling panels and showing loading overlays for LLM mode.
+        // WHY: Prevents user interactions while local API threads process parsing blocks.
+        screenplay_cards_wrapper_element.innerHTML = `
+          <div class="empty_state_screen vh-50">
+            <div class="status_dot state_processing w-40px h-40px"></div>
+            <h4 class="empty_state_title">🧠 Orchestrating LLM Attribution (Pass ${current_chunk_index + 1}/${total_attribution_chunks})...</h4>
+            <p class="empty_state_tagline">Converting paragraphs into screenplay script segments using local LLM engine. Please stand by...</p>
+          </div>
+        `;
+
+        // WHAT: Dispatching raw block dialogue tags to llama-server.
+        // WHY: Local LLM executes attribution passes programmatically.
+        parsing_response_json = await window.audiobook_api.trigger_dialogue_attribution(
+          sample_text_window_block,
+          configuration_lm_studio_api_url_address
+        );
+      }
 
       if (parsing_response_json && parsing_response_json.script_segments) {
         for (let segment_counter = 0; segment_counter < parsing_response_json.script_segments.length; segment_counter++) {
           const parsed_item = parsing_response_json.script_segments[segment_counter];
-        let resolved_speaker_name = parsed_item.speaker || "Narrator";
+          let resolved_speaker_name = parsed_item.speaker || "Narrator";
 
-        // WHAT: Resolving short names (e.g. "Miranda") to their full names (e.g. "Miranda Stewart") if they already exist in the matrix.
-        // WHY: Pass 1 Cast Discovery creates full names, but Pass 2 Dialogue Attribution often returns just first names, leading to duplicates.
-        if (resolved_speaker_name !== "Narrator" && resolved_speaker_name !== "Unknown") {
-          const existing_cast_keys = Object.keys(discovered_characters_matrix);
-          for (let existing_cast_key_index = 0; existing_cast_key_index < existing_cast_keys.length; existing_cast_key_index++) {
-            const existing_name = existing_cast_keys[existing_cast_key_index];
-            
-            // Ignore common titles to prevent false positive matches (e.g. "The Doctor" matching "The Deliveryman")
-            const ignored_words = ["the", "a", "an", "mr", "mrs", "ms", "miss", "dr", "sir", "madam", "uncle", "aunt"];
-            const existing_words = existing_name.toLowerCase().split(/[\s-]+/).filter(single_word_token => !ignored_words.includes(single_word_token));
-            const resolved_words = resolved_speaker_name.toLowerCase().split(/[\s-]+/).filter(single_word_token => !ignored_words.includes(single_word_token));
-            
-            const has_word_match = existing_words.some(word => resolved_words.includes(word));
-            
-            if (has_word_match) {
-              resolved_speaker_name = existing_name;
-              break;
+          // WHAT: Resolving short names (e.g. "Miranda") to their full names (e.g. "Miranda Stewart") if they already exist in the matrix.
+          // WHY: Pass 1 Cast Discovery creates full names, but Pass 2 Dialogue Attribution often returns just first names, leading to duplicates.
+          if (resolved_speaker_name !== "Narrator" && resolved_speaker_name !== "Unknown") {
+            const existing_cast_keys = Object.keys(discovered_characters_matrix);
+            for (let existing_cast_key_index = 0; existing_cast_key_index < existing_cast_keys.length; existing_cast_key_index++) {
+              const existing_name = existing_cast_keys[existing_cast_key_index];
+              
+              // Ignore common titles to prevent false positive matches (e.g. "The Doctor" matching "The Deliveryman")
+              const ignored_words = ["the", "a", "an", "mr", "mrs", "ms", "miss", "dr", "sir", "madam", "uncle", "aunt"];
+              const existing_words = existing_name.toLowerCase().split(/[\s-]+/).filter(single_word_token => !ignored_words.includes(single_word_token));
+              const resolved_words = resolved_speaker_name.toLowerCase().split(/[\s-]+/).filter(single_word_token => !ignored_words.includes(single_word_token));
+              
+              const has_word_match = existing_words.some(word => resolved_words.includes(word));
+              
+              if (has_word_match) {
+                resolved_speaker_name = existing_name;
+                break;
+              }
+            }
+          }
+          
+          // WHAT: Building structural segment descriptors with engine performance metadata.
+          // WHY: Attaches indexes, confidence, emotions, and registers discovered characters to the global map automatically.
+          const segment_descriptor = {
+            index_position: list_of_new_segments.length,
+            type: parsed_item.type,
+            speaker: resolved_speaker_name,
+            text: parsed_item.text,
+            direction: parsed_item.direction || "calm delivery",
+            confidence: typeof parsed_item.confidence === "number" ? parsed_item.confidence : null,
+            emotion: parsed_item.emotion || null,
+            energy: typeof parsed_item.energy === "number" ? parsed_item.energy : null,
+            is_ambiguous: !!parsed_item.is_ambiguous,
+            unmarked: !!parsed_item.unmarked,
+            engine: parsed_item.engine || (selected_attribution_engine === "llm" ? "llm" : (selected_attribution_engine === "clm" ? "clm" : "laya")),
+            audioPath: null,
+            audioVersions: []
+          };
+
+          list_of_new_segments.push(segment_descriptor);
+
+          // WHAT: Assigning unrecognized speakers to the Unknown fallback profile.
+          // WHY: We no longer implicitly create blank character profiles during script attribution.
+          //      If the character is missing from the global voice matrix, they default to Unknown.
+          if (segment_descriptor.speaker && segment_descriptor.speaker !== "Narrator") {
+            if (!discovered_characters_matrix[segment_descriptor.speaker]) {
+              segment_descriptor.speaker = "Unknown";
             }
           }
         }
-        
-        // WHAT: Building structural segment descriptors.
-        // WHY: Attaches indexes, and registers discovered characters to the global map automatically.
-        const segment_descriptor = {
-          index_position: list_of_new_segments.length,
-          type: parsed_item.type,
-          speaker: resolved_speaker_name,
-          text: parsed_item.text,
-          direction: parsed_item.direction || "calm delivery",
-          audioPath: null,
-          audioVersions: []
-        };
-
-        list_of_new_segments.push(segment_descriptor);
-
-        // WHAT: Assigning unrecognized speakers to the Unknown fallback profile.
-        // WHY: We no longer implicitly create blank character profiles during script attribution.
-        //      If the character is missing from the global voice matrix, they default to Unknown.
-        if (segment_descriptor.speaker && segment_descriptor.speaker !== "Narrator") {
-          if (!discovered_characters_matrix[segment_descriptor.speaker]) {
-            segment_descriptor.speaker = "Unknown";
-          }
-        }
       }
-    }
-  } // End chunk loop
+    } // End chunk loop
 
   // WHAT: Binding results back to active states.
   // WHY: Keeps UI synced and updates persistent databases on disk.
   active_loaded_project_state_object.scriptSegments = list_of_new_segments;
   active_loaded_project_state_object.voiceMapping = discovered_characters_matrix;
+  if (typeof window !== "undefined") {
+    window.active_loaded_project_state_object = active_loaded_project_state_object;
+  }
 
   await trigger_project_state_disk_flush();
 

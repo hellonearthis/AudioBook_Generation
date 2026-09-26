@@ -10,6 +10,11 @@ const ffmpegStatic = require("ffmpeg-static");
 const crypto = require("crypto");
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
+// WHAT: Initializing the independent Laya Quality Control (QC) Pipeline.
+// WHY: Validates Pass 1 cast/relationships and Pass 2/3 speaker & emotion, logging uncalibrated decisions.
+const { LayaQCPipeline } = require("./laya_qc_pipeline");
+const laya_qc_pipeline_instance = new LayaQCPipeline();
+
 // WHAT: Registering the custom "peaksaudio" protocol scheme as privileged before app is ready.
 // WHY: Peaks.js needs to fetch() audio files for Web Audio API decoding. Because the renderer
 //      runs with sandbox: true, standard file:// URLs are blocked by Chromium's security policy.
@@ -575,11 +580,11 @@ function dispatch_http_post_request(target_endpoint_url_string, request_payload_
         reject_callback_function(connection_network_error);
       });
 
-      // WHAT: Handling timeouts.
-      // WHY: Prevents infinite hanging if the LLM gets stuck.
-      native_http_request.on("timeout", () => {
+      // WHAT: Enforcing a safety timeout to prevent hanging indefinite requests.
+      // WHY: Prevents stalling if the LLM server is offline or listening on a different port.
+      native_http_request.setTimeout(600000, () => {
         native_http_request.destroy();
-        reject_callback_function(new Error("LM Studio API request timed out after 600 seconds."));
+        reject_callback_function(new Error("LLM API request timed out after 600 seconds."));
       });
 
       // WHAT: Flushing the request content payload.
@@ -592,7 +597,7 @@ function dispatch_http_post_request(target_endpoint_url_string, request_payload_
   });
 }
 
-// WHAT: Dynamic model tag resolver querying the LM Studio models registry.
+// WHAT: Dynamic model tag resolver querying the local LLM (llama-server / OpenAI-compatible) models registry.
 // WHY: Auto-resolves loaded models to prevent JSON requests from failing due to hardcoded tags.
 function retrieve_currently_loaded_model_tag(lm_studio_base_endpoint_url) {
   return new Promise((resolve_callback_function) => {
@@ -618,17 +623,17 @@ function retrieve_currently_loaded_model_tag(lm_studio_base_endpoint_url) {
             if (parsed_model_list_response && parsed_model_list_response.data && parsed_model_list_response.data.length > 0) {
               resolve_callback_function(parsed_model_list_response.data[0].id);
             } else {
-              resolve_callback_function("google/gemma-4-12b");
+              resolve_callback_function("qwen3.5-9b");
             }
           } catch {
-            resolve_callback_function("google/gemma-4-12b");
+            resolve_callback_function("qwen3.5-9b");
           }
         });
       }).on("error", () => {
-        resolve_callback_function("google/gemma-4-12b");
+        resolve_callback_function("qwen3.5-9b");
       });
     } catch {
-      resolve_callback_function("google/gemma-4-12b");
+      resolve_callback_function("qwen3.5-9b");
     }
   });
 }
@@ -700,7 +705,7 @@ ipcMain.handle("ai:extract-cast", async (ipc_event_context, request_arguments) =
         { role: "user", content: user_input_content }
       ],
       temperature: 0.2,
-      max_tokens: 16000
+      max_tokens: 4096
     });
 
     // WHAT: Validating that the LLM response contains a valid choices block array.
@@ -708,14 +713,14 @@ ipcMain.handle("ai:extract-cast", async (ipc_event_context, request_arguments) =
     if (!api_response_payload.choices || api_response_payload.choices.length === 0) {
       if (api_response_payload.error) {
         // WHAT: Safely extracting the error message regardless of its shape.
-        // WHY: LM Studio may return error as a plain string, or as an object with a .message field,
+        // WHY: The LLM server may return error as a plain string, or as an object with a .message field,
         //      or as a nested object. We use typeof to safely coerce it to a string before throwing.
         const lm_error_description = (typeof api_response_payload.error === "string")
           ? api_response_payload.error
           : (api_response_payload.error.message || JSON.stringify(api_response_payload.error));
-        throw new Error(`LM Studio API Error: ${lm_error_description}`);
+        throw new Error(`LLM API Error (llama.cpp): ${lm_error_description}`);
       }
-      throw new Error(`Invalid response structure from LM Studio: ${JSON.stringify(api_response_payload)}`);
+      throw new Error(`Invalid response structure from LLM server (llama.cpp): ${JSON.stringify(api_response_payload)}`);
     }
 
     // WHAT: Safely extracting the first choice message block returned by the LLM response choices.
@@ -737,7 +742,62 @@ ipcMain.handle("ai:extract-cast", async (ipc_event_context, request_arguments) =
     // WHAT: Routing content through the robust JSON extractor instead of bare JSON.parse.
     // WHY: Without json_object mode, chromadb-context-1 may wrap output in markdown fences or
     //      add preamble text. The extractor handles all of these cases cleanly.
-    return extract_json_from_llm_response_text(completion_content_text);
+    const parsed_cast_data = extract_json_from_llm_response_text(completion_content_text);
+
+    // WHAT: Running Gate 1 (Character Presence) and Gate 2 (Relationship Citation) QC via Laya.
+    // WHY: Validates existence against cited text and audits relationship evidence, logging uncalibrated metrics.
+    if (parsed_cast_data && Array.isArray(parsed_cast_data.cast)) {
+      try {
+        const laya_url = (request_arguments.laya_endpoint_url || "http://127.0.0.1:8765").replace(/\/+$/, "");
+        const laya_qc = new LayaQCPipeline({ layaEndpoint: laya_url });
+
+        // Gate 1: Character Presence Verification
+        for (const char_item of parsed_cast_data.cast) {
+          if (char_item.name && char_item.name.toLowerCase() !== "narrator") {
+            const intro_text = char_item.cited_intro || book_text_segment.substring(0, 300);
+            const qc_res = await laya_qc.verifyCharacterPresence({
+              characterName: char_item.name,
+              citedIntro: intro_text,
+              bookId: project_name || "default_book"
+            });
+            char_item.qc_status = {
+              id: qc_res.id,
+              decision: qc_res.decision,
+              raw_noul: qc_res.raw_probability,
+              raw_confidence: qc_res.raw_probability,
+              gate_status: qc_res.gate_status
+            };
+          }
+        }
+
+        // Gate 2: Relationship Citation Verification
+        if (Array.isArray(parsed_cast_data.relationships)) {
+          for (const rel_item of parsed_cast_data.relationships) {
+            if (rel_item.char_a && rel_item.char_b && rel_item.cited_evidence) {
+              const rel_qc = await laya_qc.verifyRelationshipCitation({
+                charA: rel_item.char_a,
+                charB: rel_item.char_b,
+                relationType: rel_item.relation_type || "unknown",
+                citedEvidence: rel_item.cited_evidence,
+                bookId: project_name || "default_book"
+              });
+              rel_item.qc_status = {
+                id: rel_qc.id,
+                decision: rel_qc.decision,
+                alert_status: rel_qc.alert_status,
+                raw_noul: rel_qc.raw_probability,
+                raw_confidence: rel_qc.raw_probability,
+                gate_status: rel_qc.gate_status
+              };
+            }
+          }
+        }
+      } catch (qc_exception) {
+        console.warn("Laya Pass 1 QC verification skipped or failed:", qc_exception.message);
+      }
+    }
+
+    return parsed_cast_data;
   } catch (api_failure_exception) {
     // WHAT: Returning a fallback payload if LM Studio is offline or throws parsing errors.
     // WHY: Enables continuous operation and lets the application degrade gracefully.
@@ -781,7 +841,7 @@ ipcMain.handle("ai:attribute-dialogue", async (ipc_event_context, request_argume
         { role: "user", content: book_text_segment }
       ],
       temperature: 0.2,
-      max_tokens: 16000
+      max_tokens: 4096
     });
 
     // WHAT: Validating that the LLM response contains a valid choices block array.
@@ -789,14 +849,14 @@ ipcMain.handle("ai:attribute-dialogue", async (ipc_event_context, request_argume
     if (!api_response_payload.choices || api_response_payload.choices.length === 0) {
       if (api_response_payload.error) {
         // WHAT: Safely extracting the error message regardless of its shape.
-        // WHY: LM Studio may return error as a plain string, or as an object with a .message field,
+        // WHY: The LLM server may return error as a plain string, or as an object with a .message field,
         //      or as a nested object. We use typeof to safely coerce it to a string before throwing.
         const lm_error_description = (typeof api_response_payload.error === "string")
           ? api_response_payload.error
           : (api_response_payload.error.message || JSON.stringify(api_response_payload.error));
-        throw new Error(`LM Studio API Error: ${lm_error_description}`);
+        throw new Error(`LLM API Error (llama.cpp): ${lm_error_description}`);
       }
-      throw new Error(`Invalid response structure from LM Studio: ${JSON.stringify(api_response_payload)}`);
+      throw new Error(`Invalid response structure from LLM server (llama.cpp): ${JSON.stringify(api_response_payload)}`);
     }
 
     // WHAT: Safely extracting the message block from the LLM choices.
@@ -815,6 +875,55 @@ ipcMain.handle("ai:attribute-dialogue", async (ipc_event_context, request_argume
     //      add preamble text. The extractor handles all of these cases cleanly.
     const parsed_json = extract_json_from_llm_response_text(completion_content_text);
     const extracted_script_blocks = Array.isArray(parsed_json) ? parsed_json : (parsed_json.script_segments || []);
+
+    // WHAT: Running Gate 3 (Narrow-Window Speaker Attribution) and Gate 4 (Decomposed Binary Emotion) QC.
+    // WHY: Provides independent verification without Qwen labels, logging raw uncalibrated probabilities for calibration.
+    try {
+      const laya_url = (request_arguments.laya_endpoint_url || "http://127.0.0.1:8765").replace(/\/+$/, "");
+      const laya_qc = new LayaQCPipeline({ layaEndpoint: laya_url });
+      const candidate_chars = request_arguments.voice_mapping_context ? Object.keys(request_arguments.voice_mapping_context) : ["Narrator", "Character"];
+      if (!candidate_chars.includes("Narrator")) candidate_chars.push("Narrator");
+
+      for (let s_idx = 0; s_idx < extracted_script_blocks.length; s_idx++) {
+        const seg = extracted_script_blocks[s_idx];
+        if (seg.type === "dialogue") {
+          const pre_text = s_idx > 0 ? (extracted_script_blocks[s_idx - 1].text || "").slice(-150) : "";
+          const qc_res = await laya_qc.verifySpeakerAttribution({
+            spokenText: seg.text,
+            precedingText: pre_text,
+            candidateCharacters: candidate_chars,
+            qwenSpeaker: seg.speaker,
+            bookId: request_arguments.project_name || "default_book"
+          });
+
+          seg.qc_verification = {
+            id: qc_res.id,
+            laya_choice: qc_res.laya_choice,
+            is_agreement: qc_res.is_agreement,
+            raw_confidence: qc_res.raw_probability,
+            gate_status: qc_res.gate_status
+          };
+
+          if (seg.direction) {
+            const emo_qc = await laya_qc.verifyEmotion({
+              spokenText: seg.text,
+              contextText: pre_text,
+              qwenEmotion: seg.direction,
+              bookId: request_arguments.project_name || "default_book"
+            });
+            seg.qc_emotion = {
+              id: emo_qc.id,
+              decision: emo_qc.decision,
+              raw_noul: emo_qc.raw_probability,
+              gate_status: emo_qc.gate_status
+            };
+          }
+        }
+      }
+    } catch (qc_exception) {
+      console.warn("Laya Pass 2 QC verification skipped or failed:", qc_exception.message);
+    }
+
     return { script_segments: extracted_script_blocks };
   } catch (api_failure_exception) {
     console.error("Dialogue attribution failed, executing rule-based local parser.", api_failure_exception);
@@ -879,6 +988,651 @@ ipcMain.handle("ai:attribute-dialogue", async (ipc_event_context, request_argume
     }
 
     return { script_segments: fallback_script_segments };
+  }
+});
+
+// =========================================================================
+// LAYA DECISION ENGINE INTEGRATION (SUB-25MS NON-AUTOREGRESSIVE PIPELINE)
+// =========================================================================
+
+// WHAT: Checks health status of the local Laya Decision Engine (FastAPI on port 8765).
+// WHY: Allows the frontend to report whether sub-25ms non-autoregressive classification is ready.
+ipcMain.handle("ai:laya-status", async (ipc_event_context, request_arguments) => {
+  const laya_endpoint_url = (request_arguments && request_arguments.laya_endpoint_url) || "http://127.0.0.1:8765";
+  return new Promise((resolve_callback_function) => {
+    try {
+      const ipv4_safe_url = normalize_localhost_url_to_ipv4_address(laya_endpoint_url);
+      const parsed_url = new URL(ipv4_safe_url);
+      const health_path = parsed_url.pathname.endsWith("/") ? `${parsed_url.pathname}health` : `${parsed_url.pathname}/health`;
+
+      const health_request = http_client_library.get({
+        hostname: parsed_url.hostname,
+        port: parsed_url.port || 8765,
+        path: health_path,
+        timeout: 2000,
+        headers: { "Accept": "application/json" }
+      }, (native_response) => {
+        let chunks = "";
+        native_response.on("data", (c) => { chunks += c; });
+        native_response.on("end", () => {
+          try {
+            const parsed_body = JSON.parse(chunks);
+            resolve_callback_function({
+              online: native_response.statusCode === 200,
+              statusCode: native_response.statusCode,
+              device: parsed_body.device || "unknown",
+              loaded_models: parsed_body.loaded_models || []
+            });
+          } catch {
+            resolve_callback_function({ online: native_response.statusCode === 200, statusCode: native_response.statusCode });
+          }
+        });
+      });
+
+      health_request.on("error", () => {
+        resolve_callback_function({ online: false, error: "Connection refused" });
+      });
+
+      health_request.on("timeout", () => {
+        health_request.destroy();
+        resolve_callback_function({ online: false, error: "Request timed out" });
+      });
+    } catch (err) {
+      resolve_callback_function({ online: false, error: err.message });
+    }
+  });
+});
+
+// WHAT: Resolves clean /decide path for Laya ModernBERT server.
+function resolve_laya_decide_url(base_url) {
+  let clean = (base_url || "http://127.0.0.1:8765").trim().replace(/\/+$/, "");
+  if (!clean.endsWith("/decide")) {
+    clean = `${clean}/decide`;
+  }
+  return clean;
+}
+
+// WHAT: Resolves clean /v1/systemone path for CLM server.
+function resolve_clm_systemone_url(base_url) {
+  let clean = (base_url || "http://127.0.0.1:8700").trim().replace(/\/+$/, "");
+  if (!clean.endsWith("/v1/systemone")) {
+    if (clean.endsWith("/v1")) {
+      clean = `${clean}/systemone`;
+    } else {
+      clean = `${clean}/v1/systemone`;
+    }
+  }
+  return clean;
+}
+
+// WHAT: Checks health status of the local CLM Decision Engine (FastAPI on port 8700).
+// WHY: Allows the frontend to report whether CLM-v0.1-8B contrastive decision server is ready.
+ipcMain.handle("ai:clm-status", async (ipc_event_context, request_arguments) => {
+  const clm_endpoint_url = (request_arguments && request_arguments.clm_endpoint_url) || "http://127.0.0.1:8700";
+  return new Promise((resolve_callback_function) => {
+    try {
+      const ipv4_safe_url = normalize_localhost_url_to_ipv4_address(clm_endpoint_url);
+      const parsed_url = new URL(ipv4_safe_url);
+      const health_path = parsed_url.pathname.endsWith("/") ? `${parsed_url.pathname}health` : `${parsed_url.pathname}/health`;
+
+      const health_request = http_client_library.get({
+        hostname: parsed_url.hostname,
+        port: parsed_url.port || 8700,
+        path: health_path,
+        timeout: 2000,
+        headers: { "Accept": "application/json" }
+      }, (native_response) => {
+        let chunks = "";
+        native_response.on("data", (c) => { chunks += c; });
+        native_response.on("end", () => {
+          try {
+            const parsed_body = JSON.parse(chunks);
+            resolve_callback_function({
+              online: native_response.statusCode === 200,
+              statusCode: native_response.statusCode,
+              embedder: parsed_body.embedder || "unknown",
+              status: parsed_body.status || "ok"
+            });
+          } catch {
+            resolve_callback_function({ online: native_response.statusCode === 200, statusCode: native_response.statusCode });
+          }
+        });
+      });
+
+      health_request.on("error", (err) => {
+        resolve_callback_function({ online: false, error: err.message || "Connection refused" });
+      });
+
+      health_request.on("timeout", () => {
+        health_request.destroy();
+        resolve_callback_function({ online: false, error: "Request timed out" });
+      });
+    } catch (err) {
+      resolve_callback_function({ online: false, error: err.message });
+    }
+  });
+});
+
+// WHAT: Returns current calibration log stats (logged decision counts, task breakdown).
+// WHY: Informs UI how many real decisions have accumulated toward empirical calibration.
+ipcMain.handle("ai:get-qc-calibration-stats", async () => {
+  const records = laya_qc_pipeline_instance.loadLoggedDecisions();
+  const task_summary = {};
+  let ground_truth_count = 0;
+
+  for (const r of records) {
+    if (!task_summary[r.task]) {
+      task_summary[r.task] = { total: 0, with_ground_truth: 0, agreements: 0 };
+    }
+    task_summary[r.task].total++;
+    if (r.ground_truth !== null && r.ground_truth !== undefined) {
+      task_summary[r.task].with_ground_truth++;
+      ground_truth_count++;
+    }
+    if (r.is_agreement) {
+      task_summary[r.task].agreements++;
+    }
+  }
+
+  // Check if a fitted config already exists
+  const config_path = path_library.join(__dirname, "benchmarks", "calibrated_qc_config.json");
+  let fitted_profile = null;
+  if (filesystem_library.existsSync(config_path)) {
+    try {
+      fitted_profile = JSON.parse(filesystem_library.readFileSync(config_path, "utf8"));
+    } catch (e) {}
+  }
+
+  return {
+    total_records: records.length,
+    annotated_count: ground_truth_count,
+    tasks: task_summary,
+    fitted_profile: fitted_profile
+  };
+});
+
+// WHAT: Runs empirical temperature calibration fitting across accumulated decisions.
+// WHY: Fits temperature T using negative log likelihood line search, avoiding asserted model-card constants.
+ipcMain.handle("ai:run-qc-calibration", async () => {
+  const fit_script_path = path_library.join(__dirname, "scripts", "fit_calibration.js");
+  return new Promise((resolve, reject) => {
+    child_process_library.exec(`node "${fit_script_path}"`, (error, stdout, stderr) => {
+      const config_path = path_library.join(__dirname, "benchmarks", "calibrated_qc_config.json");
+      let fitted_profile = null;
+      if (filesystem_library.existsSync(config_path)) {
+        try {
+          fitted_profile = JSON.parse(filesystem_library.readFileSync(config_path, "utf8"));
+        } catch (e) {}
+      }
+      resolve({
+        success: !error,
+        output: stdout,
+        error: error ? (stderr || error.message) : null,
+        fitted_profile: fitted_profile
+      });
+    });
+  });
+});
+
+// WHAT: Records a human verdict on a logged decision record (Phase 2).
+// WHY: Captures real human corrections/approvals from UI interactions as ground truth for calibration.
+ipcMain.handle("ai:record-human-verdict", async (ipc_event_context, request_arguments) => {
+  const { id, verdict, notes } = request_arguments || {};
+  if (!id) return { success: false, error: "Record ID required" };
+  const updated = laya_qc_pipeline_instance.recordHumanVerdict(id, !!verdict, notes || null);
+  return { success: updated, id, verdict: !!verdict };
+});
+
+// WHAT: Syntactic register & speech-tag rule parser for unmarked literary prose (e.g. Cormac McCarthy style).
+// WHY: If quotation marks are omitted, this isolates spoken utterances from narration beats and speech tags ("he said").
+function parse_unmarked_dialogue_by_rules(paragraph_string) {
+  if (!paragraph_string || !paragraph_string.trim()) return [];
+
+  const spans = [];
+  // Split paragraph into sentence clauses by terminal punctuation (. ? !)
+  const sentences = paragraph_string.split(/(?<=[.?!])\s+/);
+
+  // Common speech verbs in literary prose
+  const speech_verb_pattern = "(?:said|asked|replied|whispered|muttered|cried|shouted|yelled|breathed|growled|murmured|gasped|snapped|called|demanded|told|answered)";
+  const speech_pronoun_pattern = "(?:he|she|they|the boy|the man|the girl|the woman|the doctor|the soldier|the kid|one of them|someone)";
+
+  // Suffix tag pattern: e.g. "We need to go, he said." or "Where are you going? he asked." or "Leave it he said."
+  const suffix_tag_regex = new RegExp(`^(.+?)(?:,|\\s+)?\\s+(${speech_pronoun_pattern}\\s+${speech_verb_pattern}|${speech_verb_pattern}\\s+${speech_pronoun_pattern})([.?!]?.*)$`, "i");
+
+  // Prefix tag pattern: e.g. "He said, we need to go."
+  const prefix_tag_regex = new RegExp(`^(${speech_pronoun_pattern}\\s+${speech_verb_pattern}|${speech_verb_pattern}\\s+${speech_pronoun_pattern})(?:,|:)?\\s+(.+)$`, "i");
+
+  // Conversational markers at sentence start (strong sign of direct speech without quotes)
+  const conversational_prefix_regex = /^(?:where|what|why|who|how|when|are you|is it|can we|will we|do you|don't|did you|look|listen|come on|hurry|wait|yes|no|yeah|nah|hell|god|oh|please)\b/i;
+
+  let pending_narrator_text = "";
+
+  for (let s_idx = 0; s_idx < sentences.length; s_idx++) {
+    const raw_sentence = sentences[s_idx].trim();
+    if (!raw_sentence) continue;
+
+    let match = null;
+
+    // Case 1: Suffix speech tag (e.g. "We have to leave he said.")
+    if ((match = suffix_tag_regex.exec(raw_sentence)) !== null) {
+      const dialogue_part = match[1].trim().replace(/,\s*$/, "");
+      const tag_part = (match[2] + (match[3] || "")).trim();
+
+      if (pending_narrator_text) {
+        spans.push({ type: "narrator", text: pending_narrator_text });
+        pending_narrator_text = "";
+      }
+
+      if (dialogue_part) {
+        spans.push({ type: "dialogue", text: dialogue_part, unmarked: true });
+      }
+      if (tag_part) {
+        pending_narrator_text = tag_part;
+      }
+      continue;
+    }
+
+    // Case 2: Prefix speech tag (e.g. "He said we have to leave.")
+    if ((match = prefix_tag_regex.exec(raw_sentence)) !== null) {
+      const tag_part = match[1].trim();
+      const dialogue_part = match[2].trim();
+
+      if (pending_narrator_text) {
+        pending_narrator_text += " " + tag_part;
+      } else {
+        pending_narrator_text = tag_part;
+      }
+
+      spans.push({ type: "narrator", text: pending_narrator_text });
+      pending_narrator_text = "";
+
+      if (dialogue_part) {
+        spans.push({ type: "dialogue", text: dialogue_part, unmarked: true });
+      }
+      continue;
+    }
+
+    // Case 3: Sentence with direct conversational question or imperative marker
+    if (raw_sentence.endsWith("?") || conversational_prefix_regex.test(raw_sentence)) {
+      if (pending_narrator_text) {
+        spans.push({ type: "narrator", text: pending_narrator_text });
+        pending_narrator_text = "";
+      }
+      spans.push({ type: "dialogue", text: raw_sentence, unmarked: true });
+      continue;
+    }
+
+    // Otherwise, standard narration prose
+    if (pending_narrator_text) {
+      pending_narrator_text += " " + raw_sentence;
+    } else {
+      pending_narrator_text = raw_sentence;
+    }
+  }
+
+  if (pending_narrator_text) {
+    spans.push({ type: "narrator", text: pending_narrator_text });
+  }
+
+  return spans;
+}
+
+// WHAT: Detects spoken dialogue spans vs narration in literary text without quotation marks.
+// WHY: Stage 2A boundary detection isolates character lines from speech tags before Laya attribution.
+async function detect_unmarked_spans(paragraph_string, lm_studio_api_url) {
+  if (!paragraph_string || !paragraph_string.trim()) return [];
+
+  // Try LLM-based Stage 2A span detection first if llama-server endpoint is provided
+  if (lm_studio_api_url) {
+    try {
+      const span_prompt_path = path_library.join(__dirname, "prompts", "unmarked_span_detection.txt");
+      if (filesystem_library.existsSync(span_prompt_path)) {
+        const span_instruction_prompt = filesystem_library.readFileSync(span_prompt_path, "utf8");
+        const active_model_tag = await retrieve_currently_loaded_model_tag(lm_studio_api_url);
+        const response_payload = await dispatch_http_post_request(lm_studio_api_url, {
+          model: active_model_tag,
+          messages: [
+            { role: "system", content: span_instruction_prompt },
+            { role: "user", content: paragraph_string }
+          ],
+          temperature: 0.1,
+          max_tokens: 2048
+        });
+
+        if (response_payload && response_payload.choices && response_payload.choices.length > 0) {
+          const content = response_payload.choices[0].message.content.trim();
+          const parsed = extract_json_from_llm_response_text(content);
+          const spans_array = Array.isArray(parsed) ? parsed : (parsed.spans || parsed.script_segments || []);
+          if (spans_array.length > 0) {
+            return spans_array.map(s => ({
+              type: s.type === "dialogue" ? "dialogue" : "narrator",
+              text: (s.text || "").trim(),
+              unmarked: s.type === "dialogue"
+            })).filter(s => s.text);
+          }
+        }
+      }
+    } catch (llm_span_error) {
+      console.warn("Stage 2A LLM span detection failed, falling back to rule-based register parser.", llm_span_error.message);
+    }
+  }
+
+  // Fallback: Syntactic register & speech-tag rule parser for unmarked dialogue
+  return parse_unmarked_dialogue_by_rules(paragraph_string);
+}
+
+// WHAT: Ultra-fast Dialogue Attribution & Emotional Staging via Laya (~17-25ms forward passes).
+// WHY: Solves attribution and acting directions as a closed-set ModernBERT classification problem.
+//      Supports both standard quoted text and unmarked literary prose via decoupled Stage 2A boundary detection.
+ipcMain.handle("ai:laya-attribute", async (ipc_event_context, request_arguments) => {
+  const raw_text = request_arguments.book_text_segment || "";
+  const book_text_segment = raw_text.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+  const attribution_engine = request_arguments.attribution_engine || "laya"; // "laya" | "clm" | "cascade" | "hybrid"
+  const laya_endpoint_url = (request_arguments.laya_endpoint_url || "http://127.0.0.1:8765").replace(/\/+$/, "");
+  const clm_endpoint_url = (request_arguments.clm_endpoint_url || "http://127.0.0.1:8700").replace(/\/+$/, "");
+  const laya_decide_target_url = resolve_laya_decide_url(laya_endpoint_url);
+  const clm_systemone_target_url = resolve_clm_systemone_url(clm_endpoint_url);
+  const confidence_threshold = typeof request_arguments.confidence_threshold === "number" ? request_arguments.confidence_threshold : 0.55;
+  const is_unmarked_mode = !!request_arguments.unmarked_dialogue_mode;
+  const lm_studio_api_url_address = request_arguments.lm_studio_api_url_address || "http://127.0.0.1:8080/v1/chat/completions";
+
+  // Build candidate speaker criteria dictionary from the active Voice Matrix
+  const candidate_speaker_criteria = {
+    "Narrator": "narrative exposition, scene description, setting, third-person commentary, or unquoted thoughts"
+  };
+
+  const cast_names = Object.keys(voice_mapping_context);
+  if (cast_names.length > 0) {
+    cast_names.forEach((name) => {
+      const char_meta = voice_mapping_context[name] || {};
+      const gender = char_meta.gender ? `${char_meta.gender} voice` : "";
+      const age = char_meta.age ? `${char_meta.age}` : "";
+      const traits = char_meta.traits ? `traits: ${char_meta.traits}` : "";
+      candidate_speaker_criteria[name] = `dialogue spoken by ${name}, ${[gender, age, traits].filter(Boolean).join(", ")}`;
+    });
+  } else {
+    candidate_speaker_criteria["Character"] = "general spoken dialogue spoken by an active character";
+  }
+
+  const emotion_palette_criteria = {
+    "calm": "neutral, steady, composed, matter-of-fact",
+    "whisper": "soft whisper, secretive, intimate, hushed, breathy",
+    "fearful": "scared, terrified, trembling, anxious, panicking",
+    "angry": "shouting, aggressive, furious, irritated, sharp",
+    "sad": "sorrowful, weeping, grieving, subdued, low energy",
+    "happy": "cheerful, delighted, upbeat, laughing, warm",
+    "excited": "energetic, eager, enthusiastic, overjoyed",
+    "surprised": "shocked, startled, stunned, disbelief"
+  };
+
+  const quotation_regex = /"([^"]+)"/g;
+  const script_segments = [];
+  const start_timestamp = Date.now();
+  let laya_queries_count = 0;
+
+  try {
+    const paragraphs_list = book_text_segment.split(/\n+/).map(p => p.trim()).filter(Boolean);
+
+    for (let p_idx = 0; p_idx < paragraphs_list.length; p_idx++) {
+      const paragraph_string = paragraphs_list[p_idx];
+      const quote_tasks = [];
+
+      if (is_unmarked_mode) {
+        // Stage 2A: Detect dialogue spans in unmarked literary text
+        const paragraph_spans = await detect_unmarked_spans(paragraph_string, lm_studio_api_url_address);
+
+        for (let s_idx = 0; s_idx < paragraph_spans.length; s_idx++) {
+          const span_item = paragraph_spans[s_idx];
+          if (span_item.type === "narrator") {
+            script_segments.push({
+              type: "narrator",
+              speaker: "Narrator",
+              text: span_item.text,
+              direction: "calm, steady narration",
+              confidence: 1.0,
+              engine: "narrator"
+            });
+          } else {
+            // Context before and after this span within the paragraph
+            const span_pos = paragraph_string.indexOf(span_item.text);
+            const context_before = span_pos > 0 ? paragraph_string.substring(Math.max(0, span_pos - 120), span_pos).trim() : "";
+            const span_end = span_pos >= 0 ? span_pos + span_item.text.length : 0;
+            const context_after = span_end > 0 ? paragraph_string.substring(span_end, Math.min(paragraph_string.length, span_end + 120)).trim() : "";
+
+            quote_tasks.push({
+              quote_text: span_item.text,
+              context_state: {
+                quote: span_item.text,
+                preceding_context: context_before,
+                following_context: context_after,
+                full_paragraph: paragraph_string
+              },
+              unmarked: true
+            });
+          }
+        }
+      } else {
+        // Standard quoted text: regex boundary extractor
+        let match = null;
+        let last_index = 0;
+
+        while ((match = quotation_regex.exec(paragraph_string)) !== null) {
+          // Collect pre-quote narration
+          if (match.index > last_index) {
+            const pre_text = paragraph_string.substring(last_index, match.index).trim();
+            if (pre_text) {
+              script_segments.push({
+                type: "narrator",
+                speaker: "Narrator",
+                text: pre_text,
+                direction: "calm, steady narration",
+                confidence: 1.0,
+                engine: "narrator"
+              });
+            }
+          }
+
+          const quote_text = match[1].trim();
+          const quote_start = match.index;
+          const quote_end = quotation_regex.lastIndex;
+
+          const context_before = paragraph_string.substring(Math.max(0, quote_start - 120), quote_start).trim();
+          const context_after = paragraph_string.substring(quote_end, Math.min(paragraph_string.length, quote_end + 120)).trim();
+
+          quote_tasks.push({
+            quote_text,
+            context_state: {
+              quote: quote_text,
+              preceding_context: context_before,
+              following_context: context_after,
+              full_paragraph: paragraph_string
+            },
+            unmarked: false
+          });
+
+          last_index = quotation_regex.lastIndex;
+        }
+
+        // Collect post-quote narration
+        if (last_index < paragraph_string.length) {
+          const post_text = paragraph_string.substring(last_index).trim();
+          if (post_text) {
+            script_segments.push({
+              type: "narrator",
+              speaker: "Narrator",
+              text: post_text,
+              direction: "calm, steady narration",
+              confidence: 1.0,
+              engine: "narrator"
+            });
+          }
+        }
+
+        // If no quotes existed in this paragraph, treat entire paragraph as narrator
+        if (quote_tasks.length === 0 && paragraph_string) {
+          script_segments.push({
+            type: "narrator",
+            speaker: "Narrator",
+            text: paragraph_string,
+            direction: "calm, steady narration",
+            confidence: 1.0,
+            engine: "narrator"
+          });
+        }
+      }
+
+      // Query decision engine in parallel for all quotes in this paragraph
+      if (quote_tasks.length > 0) {
+        laya_queries_count += quote_tasks.length;
+        const laya_predictions = await Promise.all(
+          quote_tasks.map(async (task_item) => {
+            const decide_payload = {
+              state: task_item.context_state,
+              questions: {
+                speaker: {
+                  type: "choice",
+                  instructions: "Which character speaks this dialogue based on the surrounding context and speech tags?",
+                  criteria: candidate_speaker_criteria
+                },
+                emotion: {
+                  type: "choice",
+                  instructions: "What is the emotional tone or delivery style for this spoken dialogue?",
+                  criteria: emotion_palette_criteria
+                },
+                energy: {
+                  type: "score",
+                  instructions: "Rate the vocal intensity or volume of this spoken line",
+                  criteria: ["soft / intimate murmur", "moderate / normal conversational volume", "intense / shouting / forceful"]
+                }
+              }
+            };
+
+            if (attribution_engine === "clm") {
+              const clm_response = await dispatch_http_post_request(clm_systemone_target_url, decide_payload);
+              return {
+                quote_text: task_item.quote_text,
+                unmarked: task_item.unmarked,
+                answers: clm_response.answers || {},
+                engine: "clm"
+              };
+            }
+
+            // Default or primary engine: Laya Fast ModernBERT
+            const laya_response = await dispatch_http_post_request(laya_decide_target_url, decide_payload);
+            let active_answers = laya_response.answers || {};
+            let resolved_engine = "laya";
+
+            // Cascade Engine: If Laya confidence is low (< 0.85), escalate to CLM-8B
+            if (attribution_engine === "cascade") {
+              const speaker_ans = active_answers.speaker || {};
+              const conf = typeof speaker_ans.confidence === "number" ? speaker_ans.confidence : 0.5;
+              if (conf < 0.85) {
+                try {
+                  const clm_response = await dispatch_http_post_request(clm_systemone_target_url, decide_payload);
+                  if (clm_response && clm_response.answers && clm_response.answers.speaker) {
+                    active_answers = clm_response.answers;
+                    resolved_engine = "clm_cascade";
+                  }
+                } catch (clm_cascade_error) {
+                  console.warn("Cascade escalation to CLM failed, keeping Laya prediction:", clm_cascade_error.message);
+                }
+              }
+            }
+
+            return {
+              quote_text: task_item.quote_text,
+              unmarked: task_item.unmarked,
+              answers: active_answers,
+              engine: resolved_engine
+            };
+          })
+        );
+
+        laya_predictions.forEach((pred) => {
+          const speaker_answer = pred.answers.speaker || {};
+          const emotion_answer = pred.answers.emotion || {};
+          const energy_answer = pred.answers.energy || {};
+
+          let resolved_speaker = speaker_answer.choice || "Character";
+          const speaker_confidence = typeof speaker_answer.confidence === "number" ? speaker_answer.confidence : 0.5;
+          const detected_emotion = emotion_answer.choice || "calm";
+          const energy_score = typeof energy_answer.score === "number" ? energy_answer.score : 1.0;
+
+          // Format directorial description aligned with AuK and acting requirements
+          let delivery_description = `${detected_emotion} delivery, ${energy_score > 1.3 ? "high intensity" : (energy_score < 0.7 ? "soft subdued tone" : "moderate conversational energy")}`;
+          if (detected_emotion === "whisper") {
+            delivery_description = "soft intimate whisper, hushed breathy delivery";
+          }
+
+          script_segments.push({
+            type: "dialogue",
+            speaker: resolved_speaker,
+            text: pred.quote_text,
+            direction: delivery_description,
+            confidence: speaker_confidence,
+            emotion: detected_emotion,
+            energy: energy_score,
+            is_ambiguous: speaker_confidence < confidence_threshold,
+            unmarked: !!pred.unmarked,
+            engine: pred.engine || "laya"
+          });
+        });
+      }
+    }
+
+    const elapsed_duration_ms = Date.now() - start_timestamp;
+    return {
+      script_segments,
+      unmarked_mode: is_unmarked_mode,
+      performance: {
+        total_segments: script_segments.length,
+        laya_queries: laya_queries_count,
+        elapsed_ms: elapsed_duration_ms,
+        avg_ms_per_query: laya_queries_count > 0 ? Number((elapsed_duration_ms / laya_queries_count).toFixed(1)) : 0
+      }
+    };
+  } catch (laya_error) {
+    if (request_arguments.attribution_engine === "hybrid") {
+      return {
+        script_segments: [],
+        fallback_reason: `Connection refused to decision engine: ${laya_error.message}`
+      };
+    }
+    console.error("Attribution engine failed, falling back to local rule-based parser.", laya_error);
+    const fallback_script_segments = [];
+    const paragraphs_list = book_text_segment.split(/\n+/);
+    for (let p_idx = 0; p_idx < paragraphs_list.length; p_idx++) {
+      const p_str = paragraphs_list[p_idx].trim();
+      if (!p_str) continue;
+
+      if (is_unmarked_mode) {
+        const spans = parse_unmarked_dialogue_by_rules(p_str);
+        spans.forEach(s => {
+          if (s.type === "narrator") {
+            fallback_script_segments.push({ type: "narrator", speaker: "Narrator", text: s.text, direction: "calm, steady narration" });
+          } else {
+            fallback_script_segments.push({ type: "dialogue", speaker: "Character", text: s.text, direction: "expressive delivery", confidence: 0.5, unmarked: true });
+          }
+        });
+      } else {
+        const q_regex = /"([^"]+)"/g;
+        let m = null;
+        let last_pos = 0;
+        while ((m = q_regex.exec(p_str)) !== null) {
+          if (m.index > last_pos) {
+            const pre = p_str.substring(last_pos, m.index).trim();
+            if (pre) fallback_script_segments.push({ type: "narrator", speaker: "Narrator", text: pre, direction: "calm, steady narration" });
+          }
+          fallback_script_segments.push({ type: "dialogue", speaker: "Character", text: m[1], direction: "expressive delivery", confidence: 0.5 });
+          last_pos = q_regex.lastIndex;
+        }
+        if (last_pos < p_str.length) {
+          const post = p_str.substring(last_pos).trim();
+          if (post) fallback_script_segments.push({ type: "narrator", speaker: "Narrator", text: post, direction: "calm, steady narration" });
+        }
+      }
+    }
+    return { script_segments: fallback_script_segments, fallback_reason: laya_error.message, unmarked_mode: is_unmarked_mode };
   }
 });
 
@@ -1500,9 +2254,9 @@ Succeeding context: ${succeeding_context_lines.join(" | ")}`;
         const lm_error_description = (typeof api_response_payload.error === "string")
           ? api_response_payload.error
           : (api_response_payload.error.message || JSON.stringify(api_response_payload.error));
-        throw new Error(`LM Studio API Error: ${lm_error_description}`);
+        throw new Error(`LLM API Error (llama.cpp): ${lm_error_description}`);
       }
-      throw new Error(`Invalid response structure from LM Studio: ${JSON.stringify(api_response_payload)}`);
+      throw new Error(`Invalid response structure from LLM server: ${JSON.stringify(api_response_payload)}`);
     }
 
     // WHAT: Safely extracting the message block from the LLM choices list.
@@ -1512,7 +2266,7 @@ Succeeding context: ${succeeding_context_lines.join(" | ")}`;
     // WHAT: Verifying if the LLM coach refused to staged emotional directions.
     // WHY: Prevents reading null content fields, gracefully falling back to natural narration.
     if (active_choices_message_object.refusal) {
-      throw new Error(`LM Studio request was refused: ${active_choices_message_object.refusal}`);
+      throw new Error(`LLM request was refused: ${active_choices_message_object.refusal}`);
     }
 
     const completion_content_text = active_choices_message_object.content.trim();
@@ -1564,15 +2318,15 @@ Merge the styles of Cell 1 and Cell 2 to create a single, unified directorial st
         const lm_error_description = (typeof api_response_payload.error === "string")
           ? api_response_payload.error
           : (api_response_payload.error.message || JSON.stringify(api_response_payload.error));
-        throw new Error(`LM Studio API Error: ${lm_error_description}`);
+        throw new Error(`LLM API Error (llama.cpp): ${lm_error_description}`);
       }
-      throw new Error(`Invalid response structure from LM Studio: ${JSON.stringify(api_response_payload)}`);
+      throw new Error(`Invalid response structure from LLM server: ${JSON.stringify(api_response_payload)}`);
     }
 
     const active_choices_message_object = api_response_payload.choices[0].message;
 
     if (active_choices_message_object.refusal) {
-      throw new Error(`LM Studio request was refused: ${active_choices_message_object.refusal}`);
+      throw new Error(`LLM request was refused: ${active_choices_message_object.refusal}`);
     }
 
     const completion_content_text = active_choices_message_object.content.trim();

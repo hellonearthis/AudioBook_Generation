@@ -1,0 +1,293 @@
+/** @jest-environment jsdom */
+const filesystem_library = require("fs");
+const path_library = require("path");
+
+const editor_script_content = filesystem_library.readFileSync(
+  path_library.resolve(__dirname, "../renderer/js/editor.js"),
+  "utf8"
+);
+const app_script_content = filesystem_library.readFileSync(
+  path_library.resolve(__dirname, "../renderer/js/app.js"),
+  "utf8"
+);
+
+describe("Laya Fast Decision Engine Integration", () => {
+  beforeEach(() => {
+    // Set up minimal required DOM for editor and settings
+    document.body.innerHTML = `
+      <textarea id="raw_source_book_textarea_editor">"Hello there," said John. "We must hurry!" Jane whispered in terror.</textarea>
+      <select id="attribution_engine_selector">
+        <option value="laya" selected>⚡ Laya Fast (~20ms)</option>
+        <option value="clm">🎯 CLM-8B System One (~100ms)</option>
+        <option value="cascade">⚡🎯 Cascade (Laya → CLM)</option>
+        <option value="hybrid">⚡🧠 Hybrid (Laya + llama)</option>
+        <option value="llm">🧠 llama.cpp (Deep LLM)</option>
+      </select>
+      <input id="settings_lm_studio_endpoint_input" value="http://127.0.0.1:8080/v1" />
+      <input id="settings_comfyui_endpoint_input" value="http://127.0.0.1:8188" />
+      <input id="settings_laya_endpoint_input" value="http://127.0.0.1:8765" />
+      <input id="settings_clm_endpoint_input" value="http://127.0.0.1:8700" />
+      <div id="screenplay_segment_cards_wrapper"></div>
+      <div id="project_selection_cards_grid"></div>
+      <span id="active_workspace_directory_display_label"></span>
+      <span id="sidebar_active_workspace_name"></span>
+    `;
+
+    // Clear and mock localStorage
+    localStorage.clear();
+
+    // Mock electron API
+    window.audiobook_api = {
+      trigger_laya_attribution: jest.fn(),
+      trigger_dialogue_attribution: jest.fn(),
+      check_laya_status: jest.fn(),
+      save_audiobook_project_state: jest.fn().mockResolvedValue(true),
+      subscribe_to_generation_status_updates: jest.fn(),
+      subscribe_to_lm_studio_warnings: jest.fn()
+    };
+
+    // Mock project state
+    window.active_loaded_project_state_object = {
+      projectName: "TestBook",
+      voiceMapping: {
+        "Narrator": {},
+        "John": { gender: "Male", age: "Adult", traits: "bold and direct" },
+        "Jane": { gender: "Female", age: "Young Adult", traits: "cautious" }
+      },
+      scriptSegments: []
+    };
+
+    window.trigger_project_state_disk_flush = jest.fn().mockResolvedValue(true);
+    window.populate_voice_matrix_configuration_cards = jest.fn();
+    window.refresh_synthesis_progress_tracking_meters = jest.fn();
+    window.confirm = jest.fn().mockReturnValue(true);
+
+    // Global variables from app.js / editor.js
+    window.active_selected_workspace_directory_path = "/mock/workspace";
+    window.configuration_lm_studio_api_url_address = "http://127.0.0.1:8080/v1/chat/completions";
+    window.configuration_laya_api_url_address = "http://127.0.0.1:8765";
+    window.configuration_comfyui_api_url_address = "http://127.0.0.1:8188";
+    window.configuration_attribution_engine = "laya";
+
+    // Load scripts into jsdom window context together so top-level script variables are shared
+    window.eval(app_script_content + "\n" + editor_script_content);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe("Engine Configuration & LocalStorage Persistence", () => {
+    it("saves Laya endpoint and engine selection to localStorage", () => {
+      document.getElementById("settings_laya_endpoint_input").value = "http://localhost:8765";
+      document.getElementById("attribution_engine_selector").value = "hybrid";
+
+      save_global_configurations();
+
+      expect(localStorage.getItem("setting_laya_url")).toBe("http://127.0.0.1:8765");
+      expect(localStorage.getItem("setting_clm_url")).toBe("http://127.0.0.1:8700");
+      expect(localStorage.getItem("setting_attribution_engine")).toBe("hybrid");
+      expect(window.configuration_laya_api_url_address).toBe("http://127.0.0.1:8765");
+      expect(window.configuration_clm_api_url_address).toBe("http://127.0.0.1:8700");
+      expect(window.configuration_attribution_engine).toBe("hybrid");
+    });
+
+    it("saves and persists CLM engine configuration", () => {
+      document.getElementById("settings_clm_endpoint_input").value = "http://localhost:8700";
+      document.getElementById("attribution_engine_selector").value = "clm";
+
+      save_global_configurations();
+
+      expect(localStorage.getItem("setting_clm_url")).toBe("http://127.0.0.1:8700");
+      expect(localStorage.getItem("setting_attribution_engine")).toBe("clm");
+      expect(window.configuration_clm_api_url_address).toBe("http://127.0.0.1:8700");
+      expect(window.configuration_attribution_engine).toBe("clm");
+    });
+  });
+
+  describe("Dialogue Attribution Routing", () => {
+    it("routes to Laya when engine is set to 'laya'", async () => {
+      document.getElementById("attribution_engine_selector").value = "laya";
+
+      window.audiobook_api.trigger_laya_attribution.mockResolvedValueOnce({
+        script_segments: [
+          { type: "dialogue", speaker: "John", text: "Hello there,", direction: "calm delivery, moderate conversational energy", confidence: 0.92, emotion: "calm", energy: 1.0, is_ambiguous: false, engine: "laya" },
+          { type: "narrator", speaker: "Narrator", text: "said John.", direction: "calm, steady narration", confidence: 1.0, engine: "narrator" },
+          { type: "dialogue", speaker: "Jane", text: "We must hurry!", direction: "fearful delivery, high intensity", confidence: 0.88, emotion: "fearful", energy: 1.5, is_ambiguous: false, engine: "laya" },
+          { type: "narrator", speaker: "Narrator", text: "Jane whispered in terror.", direction: "calm, steady narration", confidence: 1.0, engine: "narrator" }
+        ],
+        performance: { elapsed_ms: 38, laya_queries: 2 }
+      });
+
+      await run_main_pipeline_pass_one_and_two();
+
+      expect(window.audiobook_api.trigger_laya_attribution).toHaveBeenCalledTimes(1);
+      expect(window.audiobook_api.trigger_dialogue_attribution).not.toHaveBeenCalled();
+
+      const options_passed = window.audiobook_api.trigger_laya_attribution.mock.calls[0][0];
+      expect(options_passed.voice_mapping_context).toHaveProperty("John");
+      expect(options_passed.voice_mapping_context).toHaveProperty("Jane");
+      expect(options_passed.confidence_threshold).toBe(0.55);
+
+      // Verify segments populated in active state
+      expect(window.active_loaded_project_state_object.scriptSegments.length).toBe(4);
+      expect(window.active_loaded_project_state_object.scriptSegments[0].speaker).toBe("John");
+      expect(window.active_loaded_project_state_object.scriptSegments[0].engine).toBe("laya");
+      expect(window.active_loaded_project_state_object.scriptSegments[0].confidence).toBe(0.92);
+      expect(window.active_loaded_project_state_object.scriptSegments[2].speaker).toBe("Jane");
+      expect(window.active_loaded_project_state_object.scriptSegments[2].emotion).toBe("fearful");
+    });
+
+    it("routes to llama.cpp LLM when engine is set to 'llm'", async () => {
+      document.getElementById("attribution_engine_selector").value = "llm";
+
+      window.audiobook_api.trigger_dialogue_attribution.mockResolvedValueOnce({
+        script_segments: [
+          { type: "dialogue", speaker: "John", text: "Hello there,", direction: "calm" },
+          { type: "narrator", speaker: "Narrator", text: "said John.", direction: "neutral" }
+        ]
+      });
+
+      await run_main_pipeline_pass_one_and_two();
+
+      expect(window.audiobook_api.trigger_dialogue_attribution).toHaveBeenCalledTimes(1);
+      expect(window.audiobook_api.trigger_laya_attribution).not.toHaveBeenCalled();
+      expect(window.active_loaded_project_state_object.scriptSegments[0].engine).toBe("llm");
+    });
+
+    it("falls back to llama.cpp in 'hybrid' mode if Laya is offline", async () => {
+      document.getElementById("attribution_engine_selector").value = "hybrid";
+
+      // Laya reports fallback_reason (e.g. connection refused)
+      window.audiobook_api.trigger_laya_attribution.mockResolvedValueOnce({
+        script_segments: [],
+        fallback_reason: "Connection refused to Laya server on 8765"
+      });
+
+      window.audiobook_api.trigger_dialogue_attribution.mockResolvedValueOnce({
+        script_segments: [
+          { type: "dialogue", speaker: "John", text: "Hello there,", direction: "calm" },
+          { type: "narrator", speaker: "Narrator", text: "said John.", direction: "neutral" }
+        ]
+      });
+
+      await run_main_pipeline_pass_one_and_two();
+
+      expect(window.audiobook_api.trigger_laya_attribution).toHaveBeenCalledTimes(1);
+      expect(window.audiobook_api.trigger_dialogue_attribution).toHaveBeenCalledTimes(1);
+      expect(window.active_loaded_project_state_object.scriptSegments.length).toBe(2);
+    });
+
+    it("routes to CLM when engine is set to 'clm'", async () => {
+      document.getElementById("attribution_engine_selector").value = "clm";
+
+      window.audiobook_api.trigger_laya_attribution.mockResolvedValueOnce({
+        script_segments: [
+          { type: "dialogue", speaker: "John", text: "Hello there,", direction: "calm delivery", confidence: 0.94, emotion: "calm", energy: 1.0, is_ambiguous: false, engine: "clm" },
+          { type: "narrator", speaker: "Narrator", text: "said John.", direction: "calm, steady narration", confidence: 1.0, engine: "narrator" }
+        ],
+        performance: { elapsed_ms: 110, decision_queries: 1 }
+      });
+
+      await run_main_pipeline_pass_one_and_two();
+
+      expect(window.audiobook_api.trigger_laya_attribution).toHaveBeenCalledTimes(1);
+      const options_passed = window.audiobook_api.trigger_laya_attribution.mock.calls[0][0];
+      expect(options_passed.attribution_engine).toBe("clm");
+      expect(options_passed.clm_endpoint_url).toBe("http://127.0.0.1:8700");
+      expect(window.active_loaded_project_state_object.scriptSegments[0].engine).toBe("clm");
+      expect(window.active_loaded_project_state_object.scriptSegments[0].confidence).toBe(0.94);
+    });
+
+    it("routes to Cascade when engine is set to 'cascade'", async () => {
+      document.getElementById("attribution_engine_selector").value = "cascade";
+
+      window.audiobook_api.trigger_laya_attribution.mockResolvedValueOnce({
+        script_segments: [
+          { type: "dialogue", speaker: "Jane", text: "We must hurry!", direction: "fearful delivery", confidence: 0.89, emotion: "fearful", energy: 1.4, is_ambiguous: false, engine: "clm_cascade" }
+        ],
+        performance: { elapsed_ms: 65, decision_queries: 1 }
+      });
+
+      await run_main_pipeline_pass_one_and_two();
+
+      expect(window.audiobook_api.trigger_laya_attribution).toHaveBeenCalledTimes(1);
+      const options_passed = window.audiobook_api.trigger_laya_attribution.mock.calls[0][0];
+      expect(options_passed.attribution_engine).toBe("cascade");
+      expect(window.active_loaded_project_state_object.scriptSegments[0].engine).toBe("clm_cascade");
+    });
+  });
+
+  describe("Screenplay Card UI Rendering with Laya Metadata", () => {
+    it("renders laya_confidence_badge with percentage and style class", () => {
+      window.active_loaded_project_state_object.scriptSegments = [
+        {
+          index_position: 0,
+          type: "dialogue",
+          speaker: "John",
+          text: "Confident line",
+          direction: "calm delivery",
+          confidence: 0.95,
+          is_ambiguous: false,
+          engine: "laya"
+        },
+        {
+          index_position: 1,
+          type: "dialogue",
+          speaker: "Jane",
+          text: "Ambiguous line",
+          direction: "hesitant delivery",
+          confidence: 0.45,
+          is_ambiguous: true,
+          engine: "laya"
+        }
+      ];
+
+      populate_screenplay_cards_in_editor_view();
+
+      const cards_container = document.getElementById("screenplay_segment_cards_wrapper");
+      const badges = cards_container.querySelectorAll(".laya_confidence_badge");
+
+      expect(badges.length).toBe(2);
+      expect(badges[0].textContent).toContain("⚡ 95%");
+      expect(badges[0].classList.contains("low_confidence")).toBe(false);
+
+      expect(badges[1].textContent).toContain("⚡ 45%");
+      expect(badges[1].classList.contains("low_confidence")).toBe(true);
+    });
+
+    it("renders badges for CLM (🎯) and Cascade (⚡🎯)", () => {
+      window.active_loaded_project_state_object.scriptSegments = [
+        {
+          index_position: 0,
+          type: "dialogue",
+          speaker: "John",
+          text: "CLM line",
+          direction: "calm delivery",
+          confidence: 0.88,
+          is_ambiguous: false,
+          engine: "clm"
+        },
+        {
+          index_position: 1,
+          type: "dialogue",
+          speaker: "Jane",
+          text: "Cascade line",
+          direction: "intense delivery",
+          confidence: 0.91,
+          is_ambiguous: false,
+          engine: "clm_cascade"
+        }
+      ];
+
+      populate_screenplay_cards_in_editor_view();
+
+      const cards_container = document.getElementById("screenplay_segment_cards_wrapper");
+      const badges = cards_container.querySelectorAll(".laya_confidence_badge");
+
+      expect(badges.length).toBe(2);
+      expect(badges[0].textContent).toContain("🎯 88%");
+      expect(badges[1].textContent).toContain("⚡🎯 91%");
+    });
+  });
+});

@@ -12,18 +12,27 @@
     WHAT: Switch parameter to launch the app using nodemon hot-reload.
     WHY: Lets developers edit UI or renderer scripts and see changes reload immediately.
 
+.PARAMETER NoAutoStart
+    WHAT: Switch parameter to disable automatic launching of offline AI servers.
+    WHY: Keeps start.ps1 in probe-only check mode if you prefer managing processes manually.
+
 .EXAMPLE
     .\start.ps1
-    Launches the standard application (npm start).
+    Auto-starts missing AI services (ComfyUI & llama-server) and launches the application.
 
 .EXAMPLE
     .\start.ps1 -Dev
-    Launches the application in hot-reloading dev mode (npm run dev).
+    Auto-starts missing AI services and launches the application in dev mode.
+
+.EXAMPLE
+    .\start.ps1 -NoAutoStart
+    Probes connectivity without automatically launching offline services.
 #>
 
 [CmdletBinding()]
 param (
-    [switch]$Dev
+    [switch]$Dev,
+    [switch]$NoAutoStart
 )
 
 # WHAT: Set strict error handling and resolve the script directory path.
@@ -63,32 +72,140 @@ if (-not (Test-Path -Path $node_modules_directory_path)) {
     Write-Host "[OK] Local dependencies installed." -ForegroundColor Green
 }
 
-# WHAT: Check connectivity to the local ComfyUI API endpoint (127.0.0.1:8188).
-# WHY: Voice synthesis requires ComfyUI to be active; warning the user early saves troubleshooting time.
+# -------------------------------------------------------------------------
+# 1. ComfyUI (Audio TTS Engine - Port 8188)
+# -------------------------------------------------------------------------
 $comfyui_endpoint_address = "http://127.0.0.1:8188/system_stats"
+$comfyui_is_running = $false
+
 try {
     $comfyui_connection_probe = Invoke-WebRequest -Uri $comfyui_endpoint_address -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
     if ($comfyui_connection_probe.StatusCode -eq 200) {
         Write-Host "[OK] ComfyUI server is reachable at 127.0.0.1:8188" -ForegroundColor Green
-    } else {
-        Write-Host "[WARN] ComfyUI returned unexpected HTTP status: $($comfyui_connection_probe.StatusCode)" -ForegroundColor Yellow
+        $comfyui_is_running = $true
     }
-} catch {
-    Write-Host "[INFO] ComfyUI is currently offline (127.0.0.1:8188). You can still run Mock Mode or start ComfyUI later." -ForegroundColor DarkGray
+} catch {}
+
+if (-not $comfyui_is_running) {
+    $comfyui_launcher_script = "C:\cui\goLow.ps1"
+    if (-not $NoAutoStart -and (Test-Path -Path $comfyui_launcher_script)) {
+        Write-Host "[NOTICE] ComfyUI is offline. Auto-launching C:\cui\goLow.ps1 in a new window..." -ForegroundColor Yellow
+        Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass -File `"$comfyui_launcher_script`"" -WorkingDirectory "C:\cui"
+        Start-Sleep -Seconds 3
+        try {
+            $probe_after_cui = Invoke-WebRequest -Uri $comfyui_endpoint_address -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            if ($probe_after_cui.StatusCode -eq 200) {
+                Write-Host "[OK] ComfyUI server initialized at 127.0.0.1:8188" -ForegroundColor Green
+                $comfyui_is_running = $true
+            }
+        } catch {
+            Write-Host "[INFO] ComfyUI launched in a separate window; initializing models..." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[INFO] ComfyUI is currently offline (127.0.0.1:8188). (Mock Mode will be available)." -ForegroundColor DarkGray
+    }
 }
 
-# WHAT: Check connectivity to the local LM Studio API endpoint (127.0.0.1:1234).
-# WHY: Dialogue attribution and cast extraction require LM Studio with an active model loaded.
-$lm_studio_endpoint_address = "http://127.0.0.1:1234/v1/models"
+# -------------------------------------------------------------------------
+# 2. llama.cpp (Attribution & Staging Engine - Port 8080)
+# -------------------------------------------------------------------------
+$llama_endpoint_address = "http://127.0.0.1:8080/v1/models"
+$llama_is_running = $false
+
 try {
-    $lm_studio_connection_probe = Invoke-WebRequest -Uri $lm_studio_endpoint_address -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
-    if ($lm_studio_connection_probe.StatusCode -eq 200) {
-        Write-Host "[OK] LM Studio server is reachable at 127.0.0.1:1234" -ForegroundColor Green
-    } else {
-        Write-Host "[WARN] LM Studio returned unexpected HTTP status: $($lm_studio_connection_probe.StatusCode)" -ForegroundColor Yellow
+    $llama_connection_probe = Invoke-WebRequest -Uri $llama_endpoint_address -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+    if ($llama_connection_probe.StatusCode -eq 200) {
+        Write-Host "[OK] llama.cpp server is reachable at 127.0.0.1:8080" -ForegroundColor Green
+        $llama_is_running = $true
     }
-} catch {
-    Write-Host "[INFO] LM Studio is currently offline (127.0.0.1:1234). Fallback regex parsing will be used if needed." -ForegroundColor DarkGray
+} catch {}
+
+if (-not $llama_is_running) {
+    $llama_bat_path = "C:\llamaCPP\start_webui_8080.bat"
+    if (-not $NoAutoStart -and (Test-Path -Path $llama_bat_path)) {
+        Write-Host "[NOTICE] llama-server is offline. Auto-launching C:\llamaCPP\start_webui_8080.bat in a new window..." -ForegroundColor Yellow
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$llama_bat_path`"" -WorkingDirectory "C:\llamaCPP"
+        Start-Sleep -Seconds 3
+        try {
+            $probe_after_llama = Invoke-WebRequest -Uri $llama_endpoint_address -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+            if ($probe_after_llama.StatusCode -eq 200) {
+                Write-Host "[OK] llama.cpp server initialized at 127.0.0.1:8080" -ForegroundColor Green
+                $llama_is_running = $true
+            }
+        } catch {
+            Write-Host "[INFO] llama-server launched in a separate window; loading model weights..." -ForegroundColor Yellow
+        }
+    } else {
+        # Check if LM Studio is running as fallback on 1234
+        $lm_studio_endpoint_address = "http://127.0.0.1:1234/v1/models"
+        $lm_studio_is_running = $false
+        try {
+            $lm_studio_connection_probe = Invoke-WebRequest -Uri $lm_studio_endpoint_address -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+            if ($lm_studio_connection_probe.StatusCode -eq 200) {
+                Write-Host "[OK] LM Studio server detected at 127.0.0.1:1234" -ForegroundColor Green
+                $lm_studio_is_running = $true
+            }
+        } catch {}
+
+        if (-not $lm_studio_is_running) {
+            Write-Host "[INFO] llama.cpp server is offline (127.0.0.1:8080). Launch C:\llamaCPP\start_webui_8080.bat. Fallback regex parsing will be used if needed." -ForegroundColor DarkGray
+        }
+    }
+}
+
+# -------------------------------------------------------------------------
+# 3. Laya Decision Engine (Fast Attribution & Staging - Port 8765)
+# -------------------------------------------------------------------------
+$laya_endpoint_address = "http://127.0.0.1:8765/health"
+$laya_is_running = $false
+
+try {
+    $laya_connection_probe = Invoke-WebRequest -Uri $laya_endpoint_address -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+    if ($laya_connection_probe.StatusCode -eq 200) {
+        Write-Host "[OK] Laya decision engine is reachable at 127.0.0.1:8765" -ForegroundColor Green
+        $laya_is_running = $true
+    }
+} catch {}
+
+if (-not $laya_is_running) {
+    $laya_script_path = "C:\Users\Desktop-Dev\Desktop\Laya\start_server.ps1"
+    if (-not $NoAutoStart -and (Test-Path -Path $laya_script_path)) {
+        Write-Host "[NOTICE] Laya is offline. Auto-launching C:\Users\Desktop-Dev\Desktop\Laya\start_server.ps1 in a new window..." -ForegroundColor Yellow
+        Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass -File `"$laya_script_path`"" -WorkingDirectory "C:\Users\Desktop-Dev\Desktop\Laya"
+        Start-Sleep -Seconds 3
+        try {
+            $probe_after_laya = Invoke-WebRequest -Uri $laya_endpoint_address -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+            if ($probe_after_laya.StatusCode -eq 200) {
+                Write-Host "[OK] Laya decision engine initialized at 127.0.0.1:8765" -ForegroundColor Green
+                $laya_is_running = $true
+            }
+        } catch {
+            Write-Host "[INFO] Laya launched in a separate window; warming up model..." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[INFO] Laya is currently offline (127.0.0.1:8765). (llama-server or regex fallback will be used)." -ForegroundColor DarkGray
+    }
+}
+
+# -------------------------------------------------------------------------
+# 4. CLM Decision Engine (Contrastive Language Model - Port 8700)
+# -------------------------------------------------------------------------
+$clm_endpoint_address = "http://127.0.0.1:8700/health"
+$clm_is_running = $false
+
+try {
+    $clm_connection_probe = Invoke-WebRequest -Uri $clm_endpoint_address -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+    if ($clm_connection_probe.StatusCode -eq 200) {
+        Write-Host "[OK] CLM decision engine is reachable at 127.0.0.1:8700" -ForegroundColor Green
+        $clm_is_running = $true
+    }
+} catch {}
+
+if (-not $clm_is_running) {
+    $clm_script_path = "C:\Users\Desktop-Dev\Desktop\CLM\run_clm_server.ps1"
+    if (-not $NoAutoStart -and (Test-Path -Path $clm_script_path)) {
+        Write-Host "[INFO] CLM is currently offline (127.0.0.1:8700). Launch C:\Users\Desktop-Dev\Desktop\CLM\run_clm_server.ps1 when needed." -ForegroundColor DarkGray
+    }
 }
 
 Write-Host ""

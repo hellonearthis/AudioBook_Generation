@@ -1,0 +1,58 @@
+[
+  {
+    "id": "mccarthy_the_road",
+    "title": "The Road (Cormac McCarthy)",
+    "description": "Sparse suffix tags and alternating minimalist dialogue turns without quotation marks.",
+    "characters": ["The Man", "The Boy", "Narrator"],
+    "text": "Can I ask you something? he said.\nYes. Of course you can.\nAre we going to die?\nSometime. Not now.\nAnd we're still the good guys?\nYes.\nAnd we will always be?\nYes. Always.\nOkay.",
+    "ground_truth_spans": [
+      { "text": "Can I ask you something?", "type": "dialogue", "speaker": "The Boy" },
+      { "text": "he said.", "type": "narrator", "speaker": "Narrator" },
+      { "text": "Yes. Of course you can.", "type": "dialogue", "speaker": "The Man" },
+      { "text": "Are we going to die?", "type": "dialogue", "speaker": "The Boy" },
+      { "text": "Sometime. Not now.", "type": "dialogue", "speaker": "The Man" },
+      { "text": "And we're still the good guys?", "type": "dialogue", "speaker": "The Boy" },
+      { "text": "Yes.", "type": "dialogue", "speaker": "The Man" },
+      { "text": "And we will always be?", "type": "dialogue", "speaker": "The Boy" },
+      { "text": "Yes. Always.", "type": "dialogue", "speaker": "The Man" },
+      { "text": "Okay.", "type": "dialogue", "speaker": "The Boy" }
+    ]
+  },
+  {
+    "id": "mccarthy_no_country",
+    "title": "No Country for Old Men (Cormac McCarthy)",
+    "description": "Rapid multi-turn conversational exchange with zero dialogue tags and trailing scene narration.",
+    "characters": ["Anton Chigurh", "Proprietor", "Narrator"],
+    "text": "You need to put it up.\nWhat's that?\nThe coin. Don't put it in your pocket.\nWhy? It's your lucky coin.\nAnything can be a coin. It's just a coin.\nWhere did you want me to put it?\nAnywhere not in your pocket. Or it will get mixed in with the others and become just a coin. Which it is.\nThe man looked at him. He took the quarter from the counter and held it in his hand.",
+    "ground_truth_spans": [
+      { "text": "You need to put it up.", "type": "dialogue", "speaker": "Anton Chigurh" },
+      { "text": "What's that?", "type": "dialogue", "speaker": "Proprietor" },
+      { "text": "The coin. Don't put it in your pocket.", "type": "dialogue", "speaker": "Anton Chigurh" },
+      { "text": "Why? It's your lucky coin.", "type": "dialogue", "speaker": "Proprietor" },
+      { "text": "Anything can be a coin. It's just a coin.", "type": "dialogue", "speaker": "Anton Chigurh" },
+      { "text": "Where did you want me to put it?", "type": "dialogue", "speaker": "Proprietor" },
+      { "text": "Anywhere not in your pocket. Or it will get mixed in with the others and become just a coin. Which it is.", "type": "dialogue", "speaker": "Anton Chigurh" },
+      { "text": "The man looked at him. He took the quarter from the counter and held it in his hand.", "type": "narrator", "speaker": "Narrator" }
+    ]
+  },
+  {
+    "id": "selby_free_indirect",
+    "title": "Free Indirect & Direct Speech (Selby / Joyce Style)",
+    "description": "Direct speech sentences woven seamlessly into narrative prose and speech tags without quotes.",
+    "characters": ["Harry", "Marion", "Narrator"],
+    "text": "He turned the corner and felt the chill cut through his thin jacket. Where have you been Harry? She stood by the stoop with her arms crossed. I was looking for work he said. Work. What kind of work? Any kind. You think money grows on trees? Nobody thinks that. Just give me some coffee. There is no coffee left.",
+    "ground_truth_spans": [
+      { "text": "He turned the corner and felt the chill cut through his thin jacket.", "type": "narrator", "speaker": "Narrator" },
+      { "text": "Where have you been Harry?", "type": "dialogue", "speaker": "Marion" },
+      { "text": "She stood by the stoop with her arms crossed.", "type": "narrator", "speaker": "Narrator" },
+      { "text": "I was looking for work", "type": "dialogue", "speaker": "Harry" },
+      { "text": "he said.", "type": "narrator", "speaker": "Narrator" },
+      { "text": "Work. What kind of work?", "type": "dialogue", "speaker": "Marion" },
+      { "text": "Any kind.", "type": "dialogue", "speaker": "Harry" },
+      { "text": "You think money grows on trees?", "type": "dialogue", "speaker": "Marion" },
+      { "text": "Nobody thinks that.", "type": "dialogue", "speaker": "Harry" },
+      { "text": "Just give me some coffee.", "type": "dialogue", "speaker": "Harry" },
+      { "text": "There is no coffee left.", "type": "dialogue", "speaker": "Marion" }
+    ]
+  }
+]

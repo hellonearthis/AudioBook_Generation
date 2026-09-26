@@ -4,19 +4,31 @@
 
 // WHAT: Storing absolute path to workspace directory selected by user.
 // WHY: We need to know where the parent projects folder is located to query and build project state JSONs.
-let active_selected_workspace_directory_path = null;
-
-// WHAT: Storing the active, currently loaded project's JSON state data.
-// WHY: Contains character maps, voice parameters, raw text blocks, and parsed segments for editing and synthesis.
-let active_loaded_project_state_object = null;
+let active_selected_workspace_directory_path = (typeof window !== "undefined" && window.active_selected_workspace_directory_path) || null;
+let active_loaded_project_state_object = (typeof window !== "undefined" && window.active_loaded_project_state_object) || null;
 
 // WHAT: Storing standard API access routes.
 // WHY: We deliberately use 127.0.0.1 instead of "localhost" here.
-//      Node.js v17+ resolves "localhost" as IPv6 (::1) by default, but LM Studio
+//      Node.js v17+ resolves "localhost" as IPv6 (::1) by default, but llama-server
 //      and ComfyUI listen on IPv4 (0.0.0.0 / 127.0.0.1). Using the literal IP
 //      guarantees the TCP handshake always hits the correct network stack.
-let configuration_lm_studio_api_url_address = "http://127.0.0.1:1234/v1/chat/completions";
-let configuration_comfyui_api_url_address = "http://127.0.0.1:8188";
+let configuration_lm_studio_api_url_address = (typeof window !== "undefined" && window.configuration_lm_studio_api_url_address) || "http://127.0.0.1:8080/v1/chat/completions";
+let configuration_laya_api_url_address = (typeof window !== "undefined" && window.configuration_laya_api_url_address) || "http://127.0.0.1:8765";
+let configuration_clm_api_url_address = (typeof window !== "undefined" && window.configuration_clm_api_url_address) || "http://127.0.0.1:8700";
+let configuration_comfyui_api_url_address = (typeof window !== "undefined" && window.configuration_comfyui_api_url_address) || "http://127.0.0.1:8188";
+let configuration_attribution_engine = (typeof window !== "undefined" && window.configuration_attribution_engine) || "laya"; // "laya" | "clm" | "cascade" | "hybrid" | "llm"
+let configuration_unmarked_dialogue = (typeof window !== "undefined" && typeof window.configuration_unmarked_dialogue === "boolean") ? window.configuration_unmarked_dialogue : false;
+
+if (typeof window !== "undefined") {
+  window.active_selected_workspace_directory_path = active_selected_workspace_directory_path;
+  window.active_loaded_project_state_object = active_loaded_project_state_object;
+  window.configuration_lm_studio_api_url_address = configuration_lm_studio_api_url_address;
+  window.configuration_laya_api_url_address = configuration_laya_api_url_address;
+  window.configuration_clm_api_url_address = configuration_clm_api_url_address;
+  window.configuration_comfyui_api_url_address = configuration_comfyui_api_url_address;
+  window.configuration_attribution_engine = configuration_attribution_engine;
+  window.configuration_unmarked_dialogue = configuration_unmarked_dialogue;
+}
 
 // =========================================================================
 // NAVIGATIONAL SYSTEM - TAB SWITCHING
@@ -85,15 +97,28 @@ window.addEventListener("DOMContentLoaded", () => {
   // WHAT: Reading stored settings from browser localStorage database.
   // WHY: Allows preserving paths across sessions without maintaining external files.
   let cached_lm_studio_endpoint = localStorage.getItem("setting_lm_studio_url");
+  let cached_laya_endpoint = localStorage.getItem("setting_laya_url");
   let cached_comfyui_endpoint = localStorage.getItem("setting_comfyui_url");
+  let cached_attribution_engine = localStorage.getItem("setting_attribution_engine");
+  const cached_unmarked_dialogue = localStorage.getItem("setting_unmarked_dialogue");
   const cached_workspace_path = localStorage.getItem("setting_active_workspace_path");
 
-  // WHAT: Normalizing any stale "localhost" strings from cached localStorage entries.
-  // WHY: The user may have saved settings in a previous session that used "localhost".
-  //      We rewrite those to "127.0.0.1" immediately so the save_global_configurations
-  //      call below builds correct IPv4-safe URLs from the first millisecond of boot.
+  // WHAT: Normalizing any stale "localhost" strings or legacy LM Studio port (1234) from cached localStorage entries.
+  // WHY: The user may have saved settings in a previous session that used "localhost" or port 1234.
+  //      We rewrite those to "127.0.0.1" and migrate to port 8080 (llama-server) so the app immediately
+  //      connects to the active local LLM runtime without requiring manual user reconfiguration.
   if (cached_lm_studio_endpoint) {
     cached_lm_studio_endpoint = cached_lm_studio_endpoint.replace(/^(https?:\/\/)localhost/i, "$1127.0.0.1");
+    if (cached_lm_studio_endpoint.includes(":1234")) {
+      cached_lm_studio_endpoint = cached_lm_studio_endpoint.replace(":1234", ":8080");
+    }
+  }
+  if (cached_laya_endpoint) {
+    cached_laya_endpoint = cached_laya_endpoint.replace(/^(https?:\/\/)localhost/i, "$1127.0.0.1");
+  }
+  let cached_clm_endpoint = localStorage.getItem("setting_clm_url");
+  if (cached_clm_endpoint) {
+    cached_clm_endpoint = cached_clm_endpoint.replace(/^(https?:\/\/)localhost/i, "$1127.0.0.1");
   }
   if (cached_comfyui_endpoint) {
     cached_comfyui_endpoint = cached_comfyui_endpoint.replace(/^(https?:\/\/)localhost/i, "$1127.0.0.1");
@@ -102,8 +127,20 @@ window.addEventListener("DOMContentLoaded", () => {
   if (cached_lm_studio_endpoint) {
     document.getElementById("settings_lm_studio_endpoint_input").value = cached_lm_studio_endpoint;
   }
+  if (cached_laya_endpoint && document.getElementById("settings_laya_endpoint_input")) {
+    document.getElementById("settings_laya_endpoint_input").value = cached_laya_endpoint;
+  }
+  if (cached_clm_endpoint && document.getElementById("settings_clm_endpoint_input")) {
+    document.getElementById("settings_clm_endpoint_input").value = cached_clm_endpoint;
+  }
   if (cached_comfyui_endpoint) {
     document.getElementById("settings_comfyui_endpoint_input").value = cached_comfyui_endpoint;
+  }
+  if (cached_attribution_engine && document.getElementById("attribution_engine_selector")) {
+    document.getElementById("attribution_engine_selector").value = cached_attribution_engine;
+  }
+  if (cached_unmarked_dialogue !== null && document.getElementById("unmarked_dialogue_toggle")) {
+    document.getElementById("unmarked_dialogue_toggle").checked = cached_unmarked_dialogue === "true";
   }
 
   // WHAT: Calling settings parsing immediately.
@@ -150,11 +187,19 @@ window.addEventListener("DOMContentLoaded", () => {
 function save_global_configurations() {
   const lm_studio_raw_address_value = document.getElementById("settings_lm_studio_endpoint_input").value.trim();
   const comfyui_raw_address_value = document.getElementById("settings_comfyui_endpoint_input").value.trim();
+  const laya_input_el = document.getElementById("settings_laya_endpoint_input");
+  const laya_raw_address_value = laya_input_el ? laya_input_el.value.trim() : "http://127.0.0.1:8765";
+  const clm_input_el = document.getElementById("settings_clm_endpoint_input");
+  const clm_raw_address_value = clm_input_el ? clm_input_el.value.trim() : "http://127.0.0.1:8700";
+  const engine_selector_el = document.getElementById("attribution_engine_selector");
+  const selected_engine = engine_selector_el ? engine_selector_el.value : "laya";
+  const unmarked_toggle_el = document.getElementById("unmarked_dialogue_toggle");
+  const is_unmarked_active = unmarked_toggle_el ? unmarked_toggle_el.checked : false;
 
   // WHAT: Normalizing "localhost" to the literal IPv4 loopback address "127.0.0.1".
   // WHY: Node.js v17+ changed DNS resolution so that "localhost" resolves to the
-  //      IPv6 address ::1 first. LM Studio and ComfyUI only bind to IPv4, so the
-  //      connection is refused unless we use the literal 127.0.0.1 string instead.
+  //      IPv6 address ::1 first. LM Studio, llama-server, Laya, and ComfyUI only bind
+  //      to IPv4, so the connection is refused unless we use the literal 127.0.0.1 string.
   const normalized_lm_studio_address = lm_studio_raw_address_value.replace(
     /^(https?:\/\/)localhost/i,
     "$1127.0.0.1"
@@ -163,16 +208,41 @@ function save_global_configurations() {
     /^(https?:\/\/)localhost/i,
     "$1127.0.0.1"
   );
+  const normalized_laya_address = laya_raw_address_value.replace(
+    /^(https?:\/\/)localhost/i,
+    "$1127.0.0.1"
+  );
+  const normalized_clm_address = clm_raw_address_value.replace(
+    /^(https?:\/\/)localhost/i,
+    "$1127.0.0.1"
+  );
 
   // WHAT: Transforming raw inputs to clean endpoints.
   // WHY: Standardizes URL paths for our node HTTP requests.
   configuration_lm_studio_api_url_address = `${normalized_lm_studio_address}/chat/completions`;
   configuration_comfyui_api_url_address = normalized_comfyui_address;
+  configuration_laya_api_url_address = normalized_laya_address;
+  configuration_clm_api_url_address = normalized_clm_address;
+  configuration_attribution_engine = selected_engine;
+  configuration_unmarked_dialogue = is_unmarked_active;
+
+  if (typeof window !== "undefined") {
+    window.configuration_lm_studio_api_url_address = configuration_lm_studio_api_url_address;
+    window.configuration_comfyui_api_url_address = configuration_comfyui_api_url_address;
+    window.configuration_laya_api_url_address = configuration_laya_api_url_address;
+    window.configuration_clm_api_url_address = configuration_clm_api_url_address;
+    window.configuration_attribution_engine = configuration_attribution_engine;
+    window.configuration_unmarked_dialogue = configuration_unmarked_dialogue;
+  }
 
   // WHAT: Backing up configuration parameters to browser memory blocks.
   // WHY: Preserves selections next time application boots.
   localStorage.setItem("setting_lm_studio_url", normalized_lm_studio_address);
   localStorage.setItem("setting_comfyui_url", normalized_comfyui_address);
+  localStorage.setItem("setting_laya_url", normalized_laya_address);
+  localStorage.setItem("setting_clm_url", normalized_clm_address);
+  localStorage.setItem("setting_attribution_engine", selected_engine);
+  localStorage.setItem("setting_unmarked_dialogue", is_unmarked_active ? "true" : "false");
 }
 
 // =========================================================================

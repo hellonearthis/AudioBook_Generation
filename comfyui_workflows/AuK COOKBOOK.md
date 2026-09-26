@@ -2,15 +2,36 @@
 
 AuK uses a unified ChatML-style input format, with each task specified by a natural-language instruction and audio supplied when required. This guide provides English and Chinese instruction templates, along with CLI and Python examples.
 
-For ComfyUI, use these instruction templates in **AuK Generate / Edit** and
-connect reference/source audio as described in the [ComfyUI guide](COMFYUI.md).
-With PE enabled, `generation_seconds=0` enables automatic duration estimation;
-with PE disabled, supply a positive duration. The ComfyUI integration also
-checks a shared 30-second source/reference-plus-target budget, so long examples
-may require shorter audio clips.
+For ComfyUI, use these instruction templates in the **AuK Generate / Edit** node and connect reference/source audio as described in the [ComfyUI Workflow Setup](../README.md#external-services--workflows-setup).
+- **Two Workflow Formats**: This directory contains **human-readable canvas workflows** (`.json`) designed for visual inspection and manual testing directly inside the ComfyUI web interface, and companion **API payloads** (`_api.json`) used programmatically by the desktop app backend.
+- **Duration & PE**: In the `AuKGenerateEdit` node, setting `duration_mode="Auto Estimate (TTS Recommended)"` (or `generation_seconds=0` with Prompt Expansion) enables automatic duration estimation. With manual duration, supply a positive duration in seconds.
+- **Audio Budget**: ComfyUI enforces a shared 30-second source/reference-plus-target budget, so longer synthesis requests require shorter reference audio clips.
+
+## ComfyUI Workflows & Task Directory
+
+| Section | Task Name | Human-Readable Canvas (`.json`) | App Backend API (`_api.json`) | Parameter Constraints / Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **1.1** | Zero-shot TTS | [`AuK-02-Voice-Clone.json`](AuK-02-Voice-Clone.json) | [`AuK-02-Voice-Clone_api.json`](AuK-02-Voice-Clone_api.json) | Reference audio required; `gen_seconds > 0` |
+| **1.2** | Instruct TTS | [`AuK-01-Instruct-TTS.json`](AuK-01-Instruct-TTS.json) | [`AuK-01-Instruct-TTS_api.json`](AuK-01-Instruct-TTS_api.json) | No reference audio; text prompt description |
+| **2.1** | Speech Content Editing | [`AuK-03-Speech-Content-Editing.json`](AuK-03-Speech-Content-Editing.json) | [`AuK-03-Speech-Content-Editing_api.json`](AuK-03-Speech-Content-Editing_api.json) | Replace / Insert / Remove syntax |
+| **2.2** | Lyric Editing | [`AuK-04-Lyric-Editing.json`](AuK-04-Lyric-Editing.json) | [`AuK-04-Lyric-Editing_api.json`](AuK-04-Lyric-Editing_api.json) | Isolated a cappella singing input required |
+| **3.1** | Pitch Editing | [`AuK-05-Pitch-Editing.json`](AuK-05-Pitch-Editing.json) | [`AuK-05-Pitch-Editing_api.json`](AuK-05-Pitch-Editing_api.json) | Discrete semitone shifts: `±1, ±2, ±3` semitones |
+| **3.2** | Speed Editing | [`AuK-06-Speed-Editing.json`](AuK-06-Speed-Editing.json) | [`AuK-06-Speed-Editing_api.json`](AuK-06-Speed-Editing_api.json) | Multipliers: `0.5x, 0.75x, 1.25x, 1.5x, 2.0x` |
+| **3.3** | Volume Editing | [`AuK-07-Volume-Editing.json`](AuK-07-Volume-Editing.json) | [`AuK-07-Volume-Editing_api.json`](AuK-07-Volume-Editing_api.json) | Discrete decibels: `±5, ±10, ±15` dB |
+| **4.1** | Emotion Editing | [`AuK-08-Emotion-Editing.json`](AuK-08-Emotion-Editing.json) | [`AuK-08-Emotion-Editing_api.json`](AuK-08-Emotion-Editing_api.json) | `happy`, `sad`, `angry`, `fearful`, `excited`, etc. |
+| **4.2** | Timbre Editing | [`AuK-09-Timbre-Editing.json`](AuK-09-Timbre-Editing.json) | [`AuK-09-Timbre-Editing_api.json`](AuK-09-Timbre-Editing_api.json) | Timbre description text prompt |
+| **4.3** | De-accent | [`AuK-10-De-accent.json`](AuK-10-De-accent.json) | [`AuK-10-De-accent_api.json`](AuK-10-De-accent_api.json) | Softens regional accent / standardizes delivery |
+| **4.4** | Nonverbal Sound Editing | [`AuK-11-Nonverbal-Sound-Editing.json`](AuK-11-Nonverbal-Sound-Editing.json) | [`AuK-11-Nonverbal-Sound-Editing_api.json`](AuK-11-Nonverbal-Sound-Editing_api.json) | Add/remove coughs, laughs, breaths |
+| **4.5** | Whisper Conversion | [`AuK-12-Whisper-Conversion.json`](AuK-12-Whisper-Conversion.json) | [`AuK-12-Whisper-Conversion_api.json`](AuK-12-Whisper-Conversion_api.json) | Normal speech ↔ soft intimate whisper |
+| **5.1** | Speech Enhancement | [`AuK-13-Speech-Enhancement.json`](AuK-13-Speech-Enhancement.json) | [`AuK-13-Speech-Enhancement_api.json`](AuK-13-Speech-Enhancement_api.json) | Denoise, dereverberate, clarity enhancement |
+| **5.1** | Audio Quality Restoration | [`AuK-14-Audio-Quality-Restoration.json`](AuK-14-Audio-Quality-Restoration.json) | [`AuK-14-Audio-Quality-Restoration_api.json`](AuK-14-Audio-Quality-Restoration_api.json) | Fix telephone effect, clipping, muffled audio |
+| **5.2** | Speaker Separation | [`AuK-15-Speaker-Separation.json`](AuK-15-Speaker-Separation.json) | [`AuK-15-Speaker-Separation_api.json`](AuK-15-Speaker-Separation_api.json) | Keeps speaker by talking order (e.g. 1st, 2nd) |
+| **5.3** | Music / Vocal Separation | [`AuK-16-Music-Vocal-Separation.json`](AuK-16-Music-Vocal-Separation.json) | [`AuK-16-Music-Vocal-Separation_api.json`](AuK-16-Music-Vocal-Separation_api.json) | Extract singing vocals or all speech from music |
+| **5.4** | Target Speaker Extraction | [`AuK-17-Target-Speaker-Extraction.json`](AuK-17-Target-Speaker-Extraction.json) | [`AuK-17-Target-Speaker-Extraction_api.json`](AuK-17-Target-Speaker-Extraction_api.json) | Isolates speaker based on what phrase they spoke |
 
 ## Contents
 
+- [ComfyUI Workflows & Task Directory](#comfyui-workflows--task-directory)
 - [Python API Setup](#python-api-setup)
 - [1. Speech Generation](#1-speech-generation)
   - [1.1 Zero-shot TTS](#11-zero-shot-tts)
@@ -117,6 +138,7 @@ Generate speech from a voice description alone — no reference audio.
 
 **Template**
 - EN: Generate speech based on the following description: "{voice description}". The content to speak is: "{text}".
+  *(Alternative accepted phrasing: `Based on the following description: "{voice description}", generate speech content "{text}".`)*
 - CN: 请基于下面的描述: "{声音描述}",生成语音内容"{文本}".
 
 **CLI example**
@@ -215,64 +237,70 @@ run_auk(
 ## 3. Acoustic Editing
 
 ### 3.1 Pitch Editing
-
-Raise/lower the pitch by semitones; same-length output.
-
-**Template**
-- EN: Raise the pitch by {1/2/3} semitones. | Lower the pitch by {1/2/3} semitones.
-- CN: 将音调升高{1/2/3}个半音。 | 将音调降低{1/2/3}个半音。
-
-**CLI example**
-```bash
-auk-infer \
-    --audio assets/demo-input-audio/pitch/pitch-1-input.wav \
-    --instruction "Raise the pitch by 2 semitones." \
-    --output out_pitch.wav
-```
-
-**Python API example**
-```python
-run_auk(
-    "Raise the pitch by 2 semitones.",
-    "out_pitch.wav",
-    audio_path="assets/demo-input-audio/pitch/pitch-1-input.wav",
-)
-```
-
-### 3.2 Speed Editing
-
-Adjust speaking rate; output length scales with the speed factor.
-
-**Template**
-- EN: Adjust the speech speed to {0.5/0.75/1.25/1.5/2.0}x.
-- CN: 将语速调整为{0.5/0.75/1.25/1.5/2.0}倍。
-
-**CLI example**
-```bash
-auk-infer \
-    --audio assets/demo-input-audio/speed/speed-edit-1-input.wav \
-    --instruction "Adjust the speech speed to 1.5x." \
-    --output out_speed.wav \
-    --gen_seconds 6.86   # speed changes duration; set the expected target length
-```
-
-**Python API example**
-```python
-run_auk(
-    "Adjust the speech speed to 1.5x.",
-    "out_speed.wav",
-    audio_path="assets/demo-input-audio/speed/speed-edit-1-input.wav",
-    gen_seconds=6.86,
-)
-```
-
-### 3.3 Volume Editing
-
-Raise/lower the volume by decibels; same-length output.
-
-**Template**
-- EN: Increase the volume by {5/10/15} dB. | Decrease the volume by {5/10/15} dB.
-- CN: 将音量升高{5/10/15}分贝。 | 将音量降低{5/10/15}分贝。
+ 
+ Raise/lower the pitch by semitones; same-length output.
+ 
+ > **Parameter constraints:** AuK's underlying acoustic adjustment natively supports discrete semitone shifts of `±1, ±2, or ±3` semitones (`0` produces no change).
+ 
+ **Template**
+ - EN: Raise the pitch by {1/2/3} semitones. | Lower the pitch by {1/2/3} semitones.
+ - CN: 将音调升高{1/2/3}个半音。 | 将音调降低{1/2/3}个半音。
+ 
+ **CLI example**
+ ```bash
+ auk-infer \
+     --audio assets/demo-input-audio/pitch/pitch-1-input.wav \
+     --instruction "Raise the pitch by 2 semitones." \
+     --output out_pitch.wav
+ ```
+ 
+ **Python API example**
+ ```python
+ run_auk(
+     "Raise the pitch by 2 semitones.",
+     "out_pitch.wav",
+     audio_path="assets/demo-input-audio/pitch/pitch-1-input.wav",
+ )
+ ```
+ 
+ ### 3.2 Speed Editing
+ 
+ Adjust speaking rate; output length scales with the speed factor.
+ 
+ > **Parameter constraints:** AuK natively supports discrete speed multipliers of `{0.5, 0.75, 1.25, 1.5, 2.0}x` (`1.0x` produces no change). Output duration scales to `original duration / multiplier`.
+ 
+ **Template**
+ - EN: Adjust the speech speed to {0.5/0.75/1.25/1.5/2.0}x.
+ - CN: 将语速调整为{0.5/0.75/1.25/1.5/2.0}倍。
+ 
+ **CLI example**
+ ```bash
+ auk-infer \
+     --audio assets/demo-input-audio/speed/speed-edit-1-input.wav \
+     --instruction "Adjust the speech speed to 1.5x." \
+     --output out_speed.wav \
+     --gen_seconds 6.86   # speed changes duration; set the expected target length
+ ```
+ 
+ **Python API example**
+ ```python
+ run_auk(
+     "Adjust the speech speed to 1.5x.",
+     "out_speed.wav",
+     audio_path="assets/demo-input-audio/speed/speed-edit-1-input.wav",
+     gen_seconds=6.86,
+ )
+ ```
+ 
+ ### 3.3 Volume Editing
+ 
+ Raise/lower the volume by decibels; same-length output.
+ 
+ > **Parameter constraints:** AuK natively supports discrete volume shifts of `±5, ±10, or ±15` dB (`0 dB` produces no change).
+ 
+ **Template**
+ - EN: Increase the volume by {5/10/15} dB. | Decrease the volume by {5/10/15} dB.
+ - CN: 将音量升高{5/10/15}分贝。 | 将音量降低{5/10/15}分贝。
 
 **CLI example**
 ```bash

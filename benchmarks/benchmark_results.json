@@ -1,0 +1,987 @@
+[
+  {
+    "passage_id": "mccarthy_the_road",
+    "title": "The Road (Cormac McCarthy)",
+    "arms": [
+      {
+        "arm": "Arm 1A: Pure Heuristic Rules",
+        "spans": [
+          {
+            "type": "dialogue",
+            "text": "Can I ask you something?",
+            "tag": "",
+            "speaker": "The Man"
+          },
+          {
+            "type": "narrator",
+            "text": "he said.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes.",
+            "tag": "",
+            "speaker": "The Boy"
+          },
+          {
+            "type": "narrator",
+            "text": "Of course you can.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Are we going to die?",
+            "tag": "",
+            "speaker": "The Man"
+          },
+          {
+            "type": "dialogue",
+            "text": "Sometime.",
+            "tag": "",
+            "speaker": "The Boy"
+          },
+          {
+            "type": "narrator",
+            "text": "Not now.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "And we're still the good guys?",
+            "tag": "",
+            "speaker": "The Man"
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes.",
+            "tag": "",
+            "speaker": "The Boy"
+          },
+          {
+            "type": "dialogue",
+            "text": "And we will always be?",
+            "tag": "",
+            "speaker": "The Man"
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes.",
+            "tag": "",
+            "speaker": "The Boy"
+          },
+          {
+            "type": "narrator",
+            "text": "Always. Okay.",
+            "speaker": "Narrator"
+          }
+        ],
+        "total_time_ms": 0.8395999999999972,
+        "llm_time_ms": 0,
+        "laya_time_ms": 0,
+        "http_calls": 0,
+        "precision": 100,
+        "recall": 74.1,
+        "f1": 85.1,
+        "iou": 74.1,
+        "speaker_accuracy": 0,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 12,
+        "dialogue_spans_count": 8
+      },
+      {
+        "arm": "Arm 1B: Rule Boundary + Laya",
+        "spans": [
+          {
+            "type": "dialogue",
+            "text": "Can I ask you something?",
+            "tag": "",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "he said.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes.",
+            "tag": "",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "Of course you can.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Are we going to die?",
+            "tag": "",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Sometime.",
+            "tag": "",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "Not now.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "And we're still the good guys?",
+            "tag": "",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes.",
+            "tag": "",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "And we will always be?",
+            "tag": "",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes.",
+            "tag": "",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "Always. Okay.",
+            "speaker": "Narrator"
+          }
+        ],
+        "total_time_ms": 56.656800000000004,
+        "llm_time_ms": 0,
+        "laya_time_ms": 56.51210000000001,
+        "http_calls": 8,
+        "precision": 100,
+        "recall": 74.1,
+        "f1": 85.1,
+        "iou": 74.1,
+        "speaker_accuracy": 17.9,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 12,
+        "dialogue_spans_count": 8
+      },
+      {
+        "arm": "Arm 2: Decoupled (LLM Boundary + Laya)",
+        "spans": [
+          {
+            "type": "dialogue",
+            "text": "Can I ask you something?",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "he said.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes. Of course you can.",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Are we going to die?",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Sometime. Not now.",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "And we're still the good guys?",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes.",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "And we will always be?",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes. Always.",
+            "speaker": "The Man",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Okay.",
+            "speaker": "The Man",
+            "confidence": 0.5
+          }
+        ],
+        "total_time_ms": 4273.6771,
+        "llm_time_ms": 4254.9433,
+        "laya_time_ms": 18.490700000000288,
+        "http_calls": 10,
+        "precision": 100,
+        "recall": 100,
+        "f1": 100,
+        "iou": 100,
+        "speaker_accuracy": 36.1,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 10,
+        "dialogue_spans_count": 9
+      },
+      {
+        "arm": "Arm 3: Joint LLM (1-Pass Span + Speaker)",
+        "spans": [
+          {
+            "type": "narrator",
+            "text": "Can I ask you something?",
+            "speaker": "Narrator",
+            "emotion": "calm",
+            "energy": 0.3
+          },
+          {
+            "type": "narrator",
+            "text": "he said.",
+            "speaker": "Narrator",
+            "emotion": "calm",
+            "energy": 0.2
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes. Of course you can.",
+            "speaker": "The Man",
+            "emotion": "calm",
+            "energy": 0.4
+          },
+          {
+            "type": "dialogue",
+            "text": "Are we going to die?",
+            "speaker": "The Boy",
+            "emotion": "fearful",
+            "energy": 0.6
+          },
+          {
+            "type": "dialogue",
+            "text": "Sometime. Not now.",
+            "speaker": "The Man",
+            "emotion": "calm",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "And we're still the good guys?",
+            "speaker": "The Boy",
+            "emotion": "fearful",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes.",
+            "speaker": "The Man",
+            "emotion": "calm",
+            "energy": 0.4
+          },
+          {
+            "type": "dialogue",
+            "text": "And we will always be?",
+            "speaker": "The Boy",
+            "emotion": "fearful",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Yes. Always.",
+            "speaker": "The Man",
+            "emotion": "calm",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Okay.",
+            "speaker": "The Boy",
+            "emotion": "calm",
+            "energy": 0.4
+          }
+        ],
+        "total_time_ms": 8027.3367,
+        "llm_time_ms": 8027.3367,
+        "laya_time_ms": 0,
+        "http_calls": 1,
+        "precision": 100,
+        "recall": 84.8,
+        "f1": 91.8,
+        "iou": 84.8,
+        "speaker_accuracy": 100,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 10,
+        "dialogue_spans_count": 8
+      }
+    ]
+  },
+  {
+    "passage_id": "mccarthy_no_country",
+    "title": "No Country for Old Men (Cormac McCarthy)",
+    "arms": [
+      {
+        "arm": "Arm 1A: Pure Heuristic Rules",
+        "spans": [
+          {
+            "type": "narrator",
+            "text": "You need to put it up.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "What's that?",
+            "tag": "",
+            "speaker": "Anton Chigurh"
+          },
+          {
+            "type": "narrator",
+            "text": "The coin.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Don't put it in your pocket.",
+            "tag": "",
+            "speaker": "Proprietor"
+          },
+          {
+            "type": "dialogue",
+            "text": "Why?",
+            "tag": "",
+            "speaker": "Anton Chigurh"
+          },
+          {
+            "type": "narrator",
+            "text": "It's your lucky coin.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Anything can be a coin.",
+            "tag": "",
+            "speaker": "Proprietor"
+          },
+          {
+            "type": "narrator",
+            "text": "It's just a coin.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Where did you want me to put it?",
+            "tag": "",
+            "speaker": "Anton Chigurh"
+          },
+          {
+            "type": "narrator",
+            "text": "Anywhere not in your pocket. Or it will get mixed in with the others and become just a coin. Which it is. The man looked at him. He took the quarter from the counter and held it in his hand.",
+            "speaker": "Narrator"
+          }
+        ],
+        "total_time_ms": 0.8127999999996973,
+        "llm_time_ms": 0,
+        "laya_time_ms": 0,
+        "http_calls": 0,
+        "precision": 100,
+        "recall": 35.9,
+        "f1": 52.8,
+        "iou": 35.9,
+        "speaker_accuracy": 0,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 10,
+        "dialogue_spans_count": 5
+      },
+      {
+        "arm": "Arm 1B: Rule Boundary + Laya",
+        "spans": [
+          {
+            "type": "narrator",
+            "text": "You need to put it up.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "What's that?",
+            "tag": "",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "The coin.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Don't put it in your pocket.",
+            "tag": "",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Why?",
+            "tag": "",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "It's your lucky coin.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Anything can be a coin.",
+            "tag": "",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "It's just a coin.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Where did you want me to put it?",
+            "tag": "",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "Anywhere not in your pocket. Or it will get mixed in with the others and become just a coin. Which it is. The man looked at him. He took the quarter from the counter and held it in his hand.",
+            "speaker": "Narrator"
+          }
+        ],
+        "total_time_ms": 12.108000000000175,
+        "llm_time_ms": 0,
+        "laya_time_ms": 12.05370000000039,
+        "http_calls": 5,
+        "precision": 100,
+        "recall": 35.9,
+        "f1": 52.8,
+        "iou": 35.9,
+        "speaker_accuracy": 51.5,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 10,
+        "dialogue_spans_count": 5
+      },
+      {
+        "arm": "Arm 2: Decoupled (LLM Boundary + Laya)",
+        "spans": [
+          {
+            "type": "dialogue",
+            "text": "You need to put it up.",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "What's that?",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "The coin. Don't put it in your pocket.",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Why?",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "It's your lucky coin.",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Anything can be a coin.",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "It's just a coin.",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Where did you want me to put it?",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Anywhere not in your pocket.",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Or it will get mixed in with the others and become just a coin.",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Which it is.",
+            "speaker": "Anton Chigurh",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "The man looked at him. He took the quarter from the counter and held it in his hand.",
+            "speaker": "Narrator"
+          }
+        ],
+        "total_time_ms": 5384.095599999999,
+        "llm_time_ms": 5363.6837,
+        "laya_time_ms": 20.18719999998939,
+        "http_calls": 12,
+        "precision": 100,
+        "recall": 98.6,
+        "f1": 99.3,
+        "iou": 98.6,
+        "speaker_accuracy": 74.6,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 12,
+        "dialogue_spans_count": 11
+      },
+      {
+        "arm": "Arm 3: Joint LLM (1-Pass Span + Speaker)",
+        "spans": [
+          {
+            "type": "dialogue",
+            "text": "You need to put it up.",
+            "speaker": "Anton Chigurh",
+            "emotion": "calm",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "What's that?",
+            "speaker": "Proprietor",
+            "emotion": "surprised",
+            "energy": 0.6
+          },
+          {
+            "type": "dialogue",
+            "text": "The coin. Don't put it in your pocket.",
+            "speaker": "Anton Chigurh",
+            "emotion": "calm",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Why? It's your lucky coin.",
+            "speaker": "Proprietor",
+            "emotion": "happy",
+            "energy": 0.4
+          },
+          {
+            "type": "dialogue",
+            "text": "Anything can be a coin. It's just a coin.",
+            "speaker": "Anton Chigurh",
+            "emotion": "calm",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Where did you want me to put it?",
+            "speaker": "Proprietor",
+            "emotion": "fearful",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Anywhere not in your pocket. Or it will get mixed in with the others and become just a coin. Which it is.",
+            "speaker": "Anton Chigurh",
+            "emotion": "calm",
+            "energy": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "The man looked at him. He took the quarter from the counter and held it in his hand.",
+            "speaker": "Narrator",
+            "emotion": "calm",
+            "energy": 0.4
+          }
+        ],
+        "total_time_ms": 7558.192200000001,
+        "llm_time_ms": 7558.192200000001,
+        "laya_time_ms": 0,
+        "http_calls": 1,
+        "precision": 100,
+        "recall": 100,
+        "f1": 100,
+        "iou": 100,
+        "speaker_accuracy": 100,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 8,
+        "dialogue_spans_count": 7
+      }
+    ]
+  },
+  {
+    "passage_id": "selby_free_indirect",
+    "title": "Free Indirect & Direct Speech (Selby / Joyce Style)",
+    "arms": [
+      {
+        "arm": "Arm 1A: Pure Heuristic Rules",
+        "spans": [
+          {
+            "type": "narrator",
+            "text": "He turned the corner and felt the chill cut through his thin jacket.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Where have you been Harry?",
+            "tag": "",
+            "speaker": "Harry"
+          },
+          {
+            "type": "narrator",
+            "text": "She stood by the stoop with her arms crossed.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "I was looking for work",
+            "tag": "he said.",
+            "speaker": "Marion"
+          },
+          {
+            "type": "narrator",
+            "text": "he said. Work.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "What kind of work?",
+            "tag": "",
+            "speaker": "Harry"
+          },
+          {
+            "type": "narrator",
+            "text": "Any kind.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "You think money grows on trees?",
+            "tag": "",
+            "speaker": "Marion"
+          },
+          {
+            "type": "narrator",
+            "text": "Nobody thinks that. Just give me some coffee. There is no coffee left.",
+            "speaker": "Narrator"
+          }
+        ],
+        "total_time_ms": 0.15879999999742722,
+        "llm_time_ms": 0,
+        "laya_time_ms": 0,
+        "http_calls": 0,
+        "precision": 100,
+        "recall": 53.9,
+        "f1": 70,
+        "iou": 53.9,
+        "speaker_accuracy": 32,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 9,
+        "dialogue_spans_count": 4
+      },
+      {
+        "arm": "Arm 1B: Rule Boundary + Laya",
+        "spans": [
+          {
+            "type": "narrator",
+            "text": "He turned the corner and felt the chill cut through his thin jacket.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Where have you been Harry?",
+            "tag": "",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "She stood by the stoop with her arms crossed.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "I was looking for work",
+            "tag": "he said.",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "he said. Work.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "What kind of work?",
+            "tag": "",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "Any kind.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "You think money grows on trees?",
+            "tag": "",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "Nobody thinks that. Just give me some coffee. There is no coffee left.",
+            "speaker": "Narrator"
+          }
+        ],
+        "total_time_ms": 18.573700000000827,
+        "llm_time_ms": 0,
+        "laya_time_ms": 18.497400000003836,
+        "http_calls": 4,
+        "precision": 100,
+        "recall": 53.9,
+        "f1": 70,
+        "iou": 53.9,
+        "speaker_accuracy": 22.7,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 9,
+        "dialogue_spans_count": 4
+      },
+      {
+        "arm": "Arm 2: Decoupled (LLM Boundary + Laya)",
+        "spans": [
+          {
+            "type": "narrator",
+            "text": "He turned the corner and felt the chill cut through his thin jacket.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Where have you been Harry?",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "She stood by the stoop with her arms crossed.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "I was looking for work",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "narrator",
+            "text": "he said.",
+            "speaker": "Narrator"
+          },
+          {
+            "type": "dialogue",
+            "text": "Work.",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "What kind of work?",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Any kind.",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "You think money grows on trees?",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Nobody thinks that.",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Just give me some coffee.",
+            "speaker": "Harry",
+            "confidence": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "There is no coffee left.",
+            "speaker": "Harry",
+            "confidence": 0.5
+          }
+        ],
+        "total_time_ms": 5040.1643,
+        "llm_time_ms": 5023.286100000001,
+        "laya_time_ms": 16.542899999993097,
+        "http_calls": 10,
+        "precision": 100,
+        "recall": 99.4,
+        "f1": 99.7,
+        "iou": 99.4,
+        "speaker_accuracy": 41.9,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 12,
+        "dialogue_spans_count": 9
+      },
+      {
+        "arm": "Arm 3: Joint LLM (1-Pass Span + Speaker)",
+        "spans": [
+          {
+            "type": "narrator",
+            "text": "He turned the corner and felt the chill cut through his thin jacket.",
+            "speaker": "Narrator",
+            "emotion": "calm",
+            "energy": 0.4
+          },
+          {
+            "type": "dialogue",
+            "text": "Where have you been Harry?",
+            "speaker": "Marion",
+            "emotion": "angry",
+            "energy": 0.6
+          },
+          {
+            "type": "narrator",
+            "text": "She stood by the stoop with her arms crossed.",
+            "speaker": "Narrator",
+            "emotion": "calm",
+            "energy": 0.4
+          },
+          {
+            "type": "dialogue",
+            "text": "I was looking for work",
+            "speaker": "Harry",
+            "emotion": "calm",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Work.",
+            "speaker": "Marion",
+            "emotion": "angry",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "What kind of work?",
+            "speaker": "Marion",
+            "emotion": "angry",
+            "energy": 0.6
+          },
+          {
+            "type": "dialogue",
+            "text": "Any kind.",
+            "speaker": "Harry",
+            "emotion": "calm",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "You think money grows on trees?",
+            "speaker": "Marion",
+            "emotion": "angry",
+            "energy": 0.7
+          },
+          {
+            "type": "dialogue",
+            "text": "Nobody thinks that.",
+            "speaker": "Harry",
+            "emotion": "calm",
+            "energy": 0.5
+          },
+          {
+            "type": "dialogue",
+            "text": "Just give me some coffee.",
+            "speaker": "Harry",
+            "emotion": "sad",
+            "energy": 0.4
+          },
+          {
+            "type": "dialogue",
+            "text": "There is no coffee left.",
+            "speaker": "Marion",
+            "emotion": "angry",
+            "energy": 0.6
+          }
+        ],
+        "total_time_ms": 8895.887899999998,
+        "llm_time_ms": 8895.887899999998,
+        "laya_time_ms": 0,
+        "http_calls": 1,
+        "precision": 100,
+        "recall": 99.4,
+        "f1": 99.7,
+        "iou": 99.4,
+        "speaker_accuracy": 100,
+        "speech_tag_bleeds": 0,
+        "predicted_spans_count": 11,
+        "dialogue_spans_count": 9
+      }
+    ]
+  }
+]
