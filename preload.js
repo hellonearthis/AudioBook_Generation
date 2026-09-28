@@ -175,7 +175,7 @@ contextBridge.exposeInMainWorld("audiobook_api", {
 
   // WHAT: Run the new Directorial Orchestration Pipeline to generate Intent-rich segments and 8D Vectors.
   // WHY: Pass 2 & 3 merger converts prose text into a directorial script using our specialized system prompt.
-  trigger_directorial_script_generation: (book_text_segment, lm_studio_api_url_address, workspace_directory_path, project_name, voice_mapping_context, forced_speaker_id = null, sliding_window_context = null) => {
+  trigger_directorial_script_generation: (book_text_segment, lm_studio_api_url_address, workspace_directory_path, project_name, voice_mapping_context, forced_speaker_id = null, sliding_window_context = null, relationships_context = null) => {
     // WHAT: Dispatching book segment to the new IPC channel on the backend.
     // WHY: Keeps LLM processing safe and off the main UI rendering thread.
     return ipcRenderer.invoke("ai:generate-directorial-script", {
@@ -185,7 +185,19 @@ contextBridge.exposeInMainWorld("audiobook_api", {
       project_name: project_name,
       voice_mapping_context: voice_mapping_context,
       forced_speaker_id: forced_speaker_id,
-      sliding_window_context: sliding_window_context
+      sliding_window_context: sliding_window_context,
+      relationships_context: relationships_context
+    });
+  },
+
+  // WHAT: Run Pass 2.5 Relationship State Engine to detect state transitions between character pairs.
+  // WHY: Updates chronological relationship timelines in project_state so Pass 3 directorial staging receives active relationship state.
+  run_relationship_delta_pass: (scene_segments, current_relationships, active_scene_cast, lm_studio_api_url_address) => {
+    return ipcRenderer.invoke("ai:run-relationship-delta-pass", {
+      scene_segments: scene_segments,
+      current_relationships: current_relationships,
+      active_scene_cast: active_scene_cast,
+      lm_studio_api_url_address: lm_studio_api_url_address
     });
   },
 

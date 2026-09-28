@@ -290,4 +290,195 @@ describe("Laya Fast Decision Engine Integration", () => {
       expect(badges[1].textContent).toContain("⚡🎯 91%");
     });
   });
+
+  describe("Non-Destructive Attribution, Diff Review & User Locking", () => {
+    it("preserves audio takes and locked speaker assignments across re-attribution", async () => {
+      // WHAT: Verifying non-destructive re-attribution.
+      // WHY: Existing audio takes and user locks must not be wiped out when Automate Attribution is rerun.
+      window.active_loaded_project_state_object.scriptSegments = [
+        {
+          index_position: 0,
+          type: "dialogue",
+          speaker: "John",
+          text: "I am definitely John.",
+          audioPath: "/audio/take1.wav",
+          audioVersions: [{ take: 1, filePath: "/audio/take1.wav", isActive: true }],
+          is_user_locked: true
+        }
+      ];
+
+      document.getElementById("raw_source_book_textarea_editor").value = '"I am definitely John."';
+      document.getElementById("attribution_engine_selector").value = "laya";
+
+      // Laya tries to attribute to Jane
+      window.audiobook_api.trigger_laya_attribution.mockResolvedValueOnce({
+        script_segments: [
+          { type: "dialogue", speaker: "Jane", text: "I am definitely John.", confidence: 0.90 }
+        ]
+      });
+
+      await run_main_pipeline_pass_one_and_two();
+
+      const updated_segments = window.active_loaded_project_state_object.scriptSegments;
+      expect(updated_segments.length).toBe(1);
+      // Because it was user-locked to John, it remains John
+      expect(updated_segments[0].speaker).toBe("John");
+      expect(updated_segments[0].is_user_locked).toBe(true);
+      // Audio versions are preserved
+      expect(updated_segments[0].audioVersions.length).toBe(1);
+      expect(updated_segments[0].audioPath).toBe("/audio/take1.wav");
+    });
+
+    it("renders bulk diff banner and inline diff pill for divergent AI attributions", () => {
+      window.active_loaded_project_state_object.scriptSegments = [
+        {
+          index_position: 0,
+          type: "dialogue",
+          speaker: "John",
+          text: "I might be Jane.",
+          confidence: 0.88,
+          proposed_diff: {
+            previous_speaker: "John",
+            proposed_speaker: "Jane",
+            confidence: 0.88
+          }
+        }
+      ];
+
+      populate_screenplay_cards_in_editor_view();
+
+      const container = document.getElementById("screenplay_segment_cards_wrapper");
+      const bulk_banner = container.querySelector(".bulk_attribution_diff_banner");
+      expect(bulk_banner).not.toBeNull();
+      expect(bulk_banner.textContent).toContain("1 Diffs Found");
+
+      const diff_pill = container.querySelector(".attribution_diff_pill");
+      expect(diff_pill).not.toBeNull();
+      expect(diff_pill.textContent).toContain("John");
+      expect(diff_pill.textContent).toContain("Jane");
+    });
+
+    it("accepts diff, de-activates previous audio takes, and flags Column 3 directorial sync", () => {
+      window.active_loaded_project_state_object.scriptSegments = [
+        {
+          index_position: 0,
+          type: "dialogue",
+          speaker: "John",
+          text: "I might be Jane.",
+          audioPath: "/audio/old_take.wav",
+          audioVersions: [{ take: 1, filePath: "/audio/old_take.wav", isActive: true }],
+          proposed_diff: {
+            previous_speaker: "John",
+            proposed_speaker: "Jane",
+            confidence: 0.92
+          }
+        }
+      ];
+
+      window.active_loaded_project_state_object.directorialSegments = [
+        {
+          index_position: 0,
+          type: "dialogue",
+          speaker: "John",
+          text: "I might be Jane.",
+          delivery: { pitch: "medium", pacing: "normal" }
+        }
+      ];
+
+      accept_attribution_diff(0);
+
+      const segment = window.active_loaded_project_state_object.scriptSegments[0];
+      expect(segment.speaker).toBe("Jane");
+      expect(segment.proposed_diff).toBeUndefined();
+      // Audio versions safely retained, not deleted
+      expect(segment.audioVersions.length).toBe(1);
+      expect(segment.audioVersions[0].isActive).toBe(false);
+      expect(segment.audioPath).toBeNull();
+
+      // Column 3 directorial segment updated & flagged for re-sync
+      const directorial_segment = window.active_loaded_project_state_object.directorialSegments[0];
+      expect(directorial_segment.speaker).toBe("Jane");
+      expect(directorial_segment.needs_resync).toBe(true);
+    });
+
+    it("dismisses diff, retaining current speaker baseline", () => {
+      window.active_loaded_project_state_object.scriptSegments = [
+        {
+          index_position: 0,
+          type: "dialogue",
+          speaker: "John",
+          text: "Stay as John.",
+          proposed_diff: {
+            previous_speaker: "John",
+            proposed_speaker: "Jane",
+            confidence: 0.70
+          }
+        }
+      ];
+
+      dismiss_attribution_diff(0);
+
+      const segment = window.active_loaded_project_state_object.scriptSegments[0];
+      expect(segment.speaker).toBe("John");
+      expect(segment.proposed_diff).toBeUndefined();
+    });
+
+    it("bulk accepts and bulk dismisses diffs correctly", () => {
+      window.active_loaded_project_state_object.scriptSegments = [
+        {
+          index_position: 0,
+          speaker: "John",
+          proposed_diff: { previous_speaker: "John", proposed_speaker: "Jane" }
+        },
+        {
+          index_position: 1,
+          speaker: "Jane",
+          proposed_diff: { previous_speaker: "Jane", proposed_speaker: "John" }
+        }
+      ];
+
+      bulk_accept_all_attribution_diffs();
+
+      expect(window.active_loaded_project_state_object.scriptSegments[0].speaker).toBe("Jane");
+      expect(window.active_loaded_project_state_object.scriptSegments[1].speaker).toBe("John");
+      expect(window.active_loaded_project_state_object.scriptSegments[0].proposed_diff).toBeUndefined();
+      expect(window.active_loaded_project_state_object.scriptSegments[1].proposed_diff).toBeUndefined();
+
+      // Reset with new diffs and test bulk dismiss
+      window.active_loaded_project_state_object.scriptSegments[0].proposed_diff = { previous_speaker: "Jane", proposed_speaker: "Narrator" };
+      bulk_dismiss_all_attribution_diffs();
+      expect(window.active_loaded_project_state_object.scriptSegments[0].speaker).toBe("Jane");
+      expect(window.active_loaded_project_state_object.scriptSegments[0].proposed_diff).toBeUndefined();
+    });
+
+    it("locks segment and flags directorial sync on manual speaker dropdown selection", () => {
+      window.active_loaded_project_state_object.scriptSegments = [
+        {
+          index_position: 0,
+          type: "dialogue",
+          speaker: "John",
+          text: "Manual reassignment line."
+        }
+      ];
+
+      window.active_loaded_project_state_object.directorialSegments = [
+        {
+          index_position: 0,
+          type: "dialogue",
+          speaker: "John",
+          text: "Manual reassignment line."
+        }
+      ];
+
+      handle_card_speaker_modification_event(0, "Jane");
+
+      const segment = window.active_loaded_project_state_object.scriptSegments[0];
+      expect(segment.speaker).toBe("Jane");
+      expect(segment.is_user_locked).toBe(true);
+
+      const directorial_segment = window.active_loaded_project_state_object.directorialSegments[0];
+      expect(directorial_segment.speaker).toBe("Jane");
+      expect(directorial_segment.needs_resync).toBe(true);
+    });
+  });
 });

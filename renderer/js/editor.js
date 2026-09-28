@@ -23,6 +23,9 @@ function populate_screenplay_cards_in_editor_view() {
     active_loaded_project_state_object = window.active_loaded_project_state_object;
   }
   const screenplay_cards_wrapper_element = document.getElementById("screenplay_segment_cards_wrapper");
+  if (!screenplay_cards_wrapper_element) {
+    return;
+  }
   screenplay_cards_wrapper_element.innerHTML = "";
 
   if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments || active_loaded_project_state_object.scriptSegments.length === 0) {
@@ -55,6 +58,29 @@ function populate_screenplay_cards_in_editor_view() {
 
   // WHAT: Looping through segments.
   // WHY: Renders individual screenplay elements sequentially.
+  // WHAT: Inspecting active script segments for unreviewed classifier proposed diffs.
+  // WHY: Displays a bulk action bar at the top of Column 2 allowing 1-click batch acceptance or dismissal.
+  const active_attribution_diffs_list = active_loaded_project_state_object.scriptSegments.filter(
+    (single_segment) => single_segment && single_segment.proposed_diff
+  );
+
+  if (active_attribution_diffs_list.length > 0) {
+    const bulk_diff_banner_element = document.createElement("div");
+    bulk_diff_banner_element.className = "bulk_attribution_diff_banner";
+    bulk_diff_banner_element.id = "bulk_attribution_diff_banner_node";
+    bulk_diff_banner_element.innerHTML = `
+      <div class="diff_banner_info_group">
+        <span class="diff_banner_badge">⚡ ${active_attribution_diffs_list.length} Diffs Found</span>
+        <span class="diff_banner_label">Classifier proposes alternative speaker attributions against reference baseline.</span>
+      </div>
+      <div class="diff_banner_actions_group">
+        <button class="diff_banner_btn diff_banner_btn_accept" onclick="bulk_accept_all_attribution_diffs()" title="Accept all proposed speaker diffs">✓ Accept All Diffs</button>
+        <button class="diff_banner_btn diff_banner_btn_dismiss" onclick="bulk_dismiss_all_attribution_diffs()" title="Keep current speaker assignments for all diffs">✕ Dismiss All</button>
+      </div>
+    `;
+    screenplay_cards_wrapper_element.appendChild(bulk_diff_banner_element);
+  }
+
   for (let segment_index_counter = 0; segment_index_counter < active_loaded_project_state_object.scriptSegments.length; segment_index_counter++) {
     const active_script_segment_item = active_loaded_project_state_object.scriptSegments[segment_index_counter];
     active_script_segment_item.index_position = segment_index_counter; // ensure strict mapping indexes
@@ -96,7 +122,7 @@ function populate_screenplay_cards_in_editor_view() {
     // WHY: Enables version control for each cell so users can preview and active-select different takes.
     let take_select_options_html = "";
     if (active_script_segment_item.audioVersions && active_script_segment_item.audioVersions.length > 0) {
-      take_select_options_html += `<select class="take_select_pill" onchange="handle_card_take_change_event(${segment_index_counter}, this.value, false)">`;
+      take_select_options_html += `<select class="take_select_pill" onchange="handle_card_take_change_event(${segment_index_counter}, this.value, false)" title="Switch active audio take">`;
       for (let version_counter = 0; version_counter < active_script_segment_item.audioVersions.length; version_counter++) {
         const take_version_item = active_script_segment_item.audioVersions[version_counter];
         const selected_attribute_flag = take_version_item.isActive ? "selected" : "";
@@ -139,7 +165,7 @@ function populate_screenplay_cards_in_editor_view() {
       <div class="screenplay_card_meta_header">
         <div class="d-flex align-items-center gap-8">
           <span class="text-11 text-muted font-mono" title="Line Number">Line ${segment_index_counter}</span>
-          <select class="speaker_select_pill" onchange="handle_card_speaker_modification_event(${segment_index_counter}, this.value)">
+          <select class="speaker_select_pill" onchange="handle_card_speaker_modification_event(${segment_index_counter}, this.value)" title="Assign character voice to this line">
             ${character_select_options_html}
           </select>
           <button class="focus_anchor_btn" title="Focus and sync raw text & columns" onclick="highlight_synchronize_active_segment(${segment_index_counter}, false)">
@@ -151,6 +177,9 @@ function populate_screenplay_cards_in_editor_view() {
           </button>
         </div>
         <div class="d-flex align-items-center gap-6">
+          ${active_script_segment_item.is_user_locked ? `
+            <span class="user_locked_badge" title="Speaker assignment locked by user (Protected Ground Truth)">🔒 Locked</span>
+          ` : ''}
           ${active_script_segment_item.unmarked ? `
             <span class="unmarked_span_badge" title="Extracted via Stage 2A Literary Boundary Detection (Unmarked Dialogue)">📖 Unmarked</span>
           ` : ''}
@@ -162,6 +191,16 @@ function populate_screenplay_cards_in_editor_view() {
           <span class="card_type_badge ${is_tech_book ? 'd-none' : ''}">${active_script_segment_item.type}</span>
         </div>
       </div>
+
+      ${active_script_segment_item.proposed_diff ? `
+        <div class="attribution_diff_pill" id="attribution_diff_pill_${segment_index_counter}">
+          <span class="diff_pill_label">⚡ Diff: <span class="diff_speaker_old">${active_script_segment_item.proposed_diff.previous_speaker}</span> ➔ <span class="diff_speaker_new">${active_script_segment_item.proposed_diff.proposed_speaker}</span> <span class="diff_confidence_pct">(${Math.round((active_script_segment_item.proposed_diff.confidence || 0.85) * 100)}%)</span></span>
+          <div class="diff_pill_buttons_group">
+            <button class="diff_pill_btn diff_accept_btn" onclick="accept_attribution_diff(${segment_index_counter})" title="Accept proposed speaker (${active_script_segment_item.proposed_diff.proposed_speaker})">✓ Accept</button>
+            <button class="diff_pill_btn diff_dismiss_btn" onclick="dismiss_attribution_diff(${segment_index_counter})" title="Keep current speaker (${active_script_segment_item.proposed_diff.previous_speaker})">✕ Keep ${active_script_segment_item.proposed_diff.previous_speaker}</button>
+          </div>
+        </div>
+      ` : ''}
 
       <textarea class="screenplay_text_input" onchange="handle_card_text_modification_event(${segment_index_counter}, this.value)" rows="2">${active_script_segment_item.text}</textarea>
 
@@ -434,17 +473,40 @@ async function trigger_delete_all_takes(index_position_of_card, is_directorial_s
 }
 
 // WHAT: Hooking speaker change selections on individual screenplay cards.
-// WHY: Updates the runtime state and triggers immediate disk serialization.
+// WHY: Updates the runtime state, flags the segment as protected user-locked ground truth, and triggers immediate disk serialization.
 function handle_card_speaker_modification_event(index_position_of_card, newly_selected_speaker_name) {
-  if (active_loaded_project_state_object) {
-    active_loaded_project_state_object.scriptSegments[index_position_of_card].speaker = newly_selected_speaker_name;
-    
+  if (active_loaded_project_state_object && active_loaded_project_state_object.scriptSegments) {
+    const target_screenplay_segment = active_loaded_project_state_object.scriptSegments[index_position_of_card];
+    if (!target_screenplay_segment) {
+      return;
+    }
+
+    const previous_speaker_name = target_screenplay_segment.speaker;
+    target_screenplay_segment.speaker = newly_selected_speaker_name;
+    // WHAT: Locking segment to user choice.
+    // WHY: Manual user edits are protected ground truth and cannot be overwritten by automated attribution runs.
+    target_screenplay_segment.is_user_locked = true;
+    delete target_screenplay_segment.proposed_diff;
+
     // WHAT: Changing structural tag types.
     // WHY: If changed to Narrator, sets segment type back to narrator block structures.
     if (newly_selected_speaker_name === "Narrator") {
-      active_loaded_project_state_object.scriptSegments[index_position_of_card].type = "narrator";
+      target_screenplay_segment.type = "narrator";
     } else {
-      active_loaded_project_state_object.scriptSegments[index_position_of_card].type = "dialogue";
+      target_screenplay_segment.type = "dialogue";
+    }
+
+    // WHAT: Flagging downstream Column 3 directorial cards if speaker assignment changed.
+    // WHY: Informs the director that staging and emotional delivery may need re-synchronization.
+    if (
+      previous_speaker_name !== newly_selected_speaker_name &&
+      active_loaded_project_state_object.directorialSegments &&
+      active_loaded_project_state_object.directorialSegments[index_position_of_card]
+    ) {
+      const corresponding_directorial_segment = active_loaded_project_state_object.directorialSegments[index_position_of_card];
+      corresponding_directorial_segment.speaker = newly_selected_speaker_name;
+      corresponding_directorial_segment.needs_resync = true;
+      populate_directorial_cards_in_editor_view();
     }
 
     // WHAT: Rerendering current cards structure.
@@ -452,6 +514,102 @@ function handle_card_speaker_modification_event(index_position_of_card, newly_se
     populate_screenplay_cards_in_editor_view();
     trigger_project_state_disk_flush();
   }
+}
+
+// WHAT: Accepting an AI proposed speaker diff on a specific screenplay card.
+// WHY: Updates the active speaker to the proposed character while safely preserving previous audio takes in history.
+function accept_attribution_diff(index_position_of_card) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) {
+    return;
+  }
+  const target_screenplay_segment = active_loaded_project_state_object.scriptSegments[index_position_of_card];
+  if (!target_screenplay_segment || !target_screenplay_segment.proposed_diff) {
+    return;
+  }
+
+  const proposed_new_speaker_name = target_screenplay_segment.proposed_diff.proposed_speaker;
+  target_screenplay_segment.speaker = proposed_new_speaker_name;
+
+  if (proposed_new_speaker_name === "Narrator") {
+    target_screenplay_segment.type = "narrator";
+  } else {
+    target_screenplay_segment.type = "dialogue";
+  }
+
+  // WHAT: Downstream audio continuity protection (Option 1).
+  // WHY: Previous synthesized takes remain safely preserved in audioVersions history (marked inactive, never deleted).
+  if (Array.isArray(target_screenplay_segment.audioVersions)) {
+    for (let version_counter = 0; version_counter < target_screenplay_segment.audioVersions.length; version_counter++) {
+      target_screenplay_segment.audioVersions[version_counter].isActive = false;
+    }
+  }
+  target_screenplay_segment.audioPath = null;
+
+  // WHAT: Flagging corresponding Column 3 directorial segment for re-synchronization.
+  // WHY: The acting intent and delivery instructions need to align with the new character identity.
+  if (
+    active_loaded_project_state_object.directorialSegments &&
+    active_loaded_project_state_object.directorialSegments[index_position_of_card]
+  ) {
+    const corresponding_directorial_segment = active_loaded_project_state_object.directorialSegments[index_position_of_card];
+    corresponding_directorial_segment.speaker = proposed_new_speaker_name;
+    corresponding_directorial_segment.needs_resync = true;
+    populate_directorial_cards_in_editor_view();
+  }
+
+  delete target_screenplay_segment.proposed_diff;
+
+  trigger_project_state_disk_flush();
+  populate_screenplay_cards_in_editor_view();
+}
+
+// WHAT: Dismissing an AI proposed speaker diff, keeping the current speaker baseline.
+// WHY: Discards the classifier's suggestion and retains the existing reference character.
+function dismiss_attribution_diff(index_position_of_card) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) {
+    return;
+  }
+  const target_screenplay_segment = active_loaded_project_state_object.scriptSegments[index_position_of_card];
+  if (!target_screenplay_segment || !target_screenplay_segment.proposed_diff) {
+    return;
+  }
+
+  delete target_screenplay_segment.proposed_diff;
+
+  trigger_project_state_disk_flush();
+  populate_screenplay_cards_in_editor_view();
+}
+
+// WHAT: Bulk accepting all outstanding proposed speaker diffs in one operation.
+// WHY: Streamlines reviewing when an improved model pass has systematically corrected multiple lines.
+function bulk_accept_all_attribution_diffs() {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) {
+    return;
+  }
+  const total_script_segments_list = active_loaded_project_state_object.scriptSegments;
+  for (let segment_counter = 0; segment_counter < total_script_segments_list.length; segment_counter++) {
+    const single_segment_item = total_script_segments_list[segment_counter];
+    if (single_segment_item && single_segment_item.proposed_diff) {
+      accept_attribution_diff(segment_counter);
+    }
+  }
+}
+
+// WHAT: Bulk dismissing all outstanding proposed speaker diffs.
+// WHY: Allows the user to reject all classifier modifications and stick with existing ground truth.
+function bulk_dismiss_all_attribution_diffs() {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) {
+    return;
+  }
+  const total_script_segments_list = active_loaded_project_state_object.scriptSegments;
+  for (let segment_counter = 0; segment_counter < total_script_segments_list.length; segment_counter++) {
+    const single_segment_item = total_script_segments_list[segment_counter];
+    if (single_segment_item && single_segment_item.proposed_diff) {
+      delete single_segment_item.proposed_diff;
+    }
+  }
+  trigger_project_state_disk_flush();
+  populate_screenplay_cards_in_editor_view();
 }
 
 // WHAT: Updating text changes dynamically.
@@ -623,13 +781,12 @@ async function run_main_pipeline_pass_one_and_two() {
     return;
   }
 
-  // WHAT: Prompting the user with a confirmation dialog before running dialogue attribution.
-  // WHY: Dialogue attribution parses raw text and completely replaces any current screenplay segments.
-  //      We want to make sure the user explicitly approves this potentially destructive action.
-  const user_explicit_confirmation_flag = confirm("Are you sure you want to run Automate Attribution? This will overwrite your existing screenplay segments and casting assignments.");
-  if (!user_explicit_confirmation_flag) {
-    return;
-  }
+  // WHAT: Non-destructive dialogue attribution baseline.
+  // WHY: Dialogue attribution preserves existing screenplay segments as reference ground truth,
+  //      protecting user-locked lines and generating reviewable diffs for AI-modified lines.
+  const existing_script_segments_list = (active_loaded_project_state_object && Array.isArray(active_loaded_project_state_object.scriptSegments))
+    ? active_loaded_project_state_object.scriptSegments
+    : [];
 
   // WHAT: Grabbing raw text and removing soft line-breaks (orphan newlines) from copy-pastes.
   // WHY: Fixes formatting issues where newlines break sentences mid-thought, which confuses the LLM parser.
@@ -697,6 +854,7 @@ async function run_main_pipeline_pass_one_and_two() {
           parsing_response_json = await window.audiobook_api.trigger_laya_attribution({
             book_text_segment: sample_text_window_block,
             voice_mapping_context: active_loaded_project_state_object.voiceMapping || {},
+            existing_script_segments: existing_script_segments_list,
             laya_endpoint_url: configuration_laya_api_url_address,
             clm_endpoint_url: (typeof configuration_clm_api_url_address !== "undefined") ? configuration_clm_api_url_address : "http://127.0.0.1:8700",
             attribution_engine: selected_attribution_engine,
@@ -782,23 +940,63 @@ async function run_main_pipeline_pass_one_and_two() {
               }
             }
           }
+
+          // WHAT: Non-destructive correlation with prior screenplay segment.
+          // WHY: Preserves user-locked ground truth, maintains audio take histories, and generates reviewable diffs.
+          const matched_existing_segment = existing_script_segments_list.find((candidate_segment) => {
+            if (candidate_segment.id && parsed_item.id && candidate_segment.id === parsed_item.id) {
+              return true;
+            }
+            if (candidate_segment.text && parsed_item.text) {
+              return candidate_segment.text.trim() === parsed_item.text.trim();
+            }
+            return false;
+          }) || existing_script_segments_list[list_of_new_segments.length];
+
+          let segment_proposed_diff = parsed_item.proposed_diff || null;
+          let final_assigned_speaker = resolved_speaker_name;
+          const is_segment_locked = !!(parsed_item.is_user_locked || (matched_existing_segment && matched_existing_segment.is_user_locked));
+
+          if (is_segment_locked && matched_existing_segment && matched_existing_segment.speaker) {
+            // User-locked lines are protected ground truth and cannot be overwritten
+            final_assigned_speaker = matched_existing_segment.speaker;
+            segment_proposed_diff = null;
+          } else if (
+            matched_existing_segment &&
+            matched_existing_segment.speaker &&
+            matched_existing_segment.speaker !== "Unknown" &&
+            matched_existing_segment.speaker !== resolved_speaker_name
+          ) {
+            // Classifier proposes a different speaker from existing baseline: generate reviewable diff
+            segment_proposed_diff = {
+              previous_speaker: matched_existing_segment.speaker,
+              proposed_speaker: resolved_speaker_name,
+              confidence: typeof parsed_item.confidence === "number" ? parsed_item.confidence : 0.85,
+              engine: parsed_item.engine || selected_attribution_engine
+            };
+            final_assigned_speaker = matched_existing_segment.speaker;
+          }
           
-          // WHAT: Building structural segment descriptors with engine performance metadata.
-          // WHY: Attaches indexes, confidence, emotions, and registers discovered characters to the global map automatically.
+          // WHAT: Building structural segment descriptors with engine performance metadata and audio version preservation.
+          // WHY: Attaches indexes, confidence, emotions, and keeps existing audio take history safely intact.
           const segment_descriptor = {
             index_position: list_of_new_segments.length,
-            type: parsed_item.type,
-            speaker: resolved_speaker_name,
+            type: (final_assigned_speaker === "Narrator") ? "narrator" : (parsed_item.type || "dialogue"),
+            speaker: final_assigned_speaker,
             text: parsed_item.text,
-            direction: parsed_item.direction || "calm delivery",
-            confidence: typeof parsed_item.confidence === "number" ? parsed_item.confidence : null,
-            emotion: parsed_item.emotion || null,
-            energy: typeof parsed_item.energy === "number" ? parsed_item.energy : null,
-            is_ambiguous: !!parsed_item.is_ambiguous,
+            direction: parsed_item.direction || (matched_existing_segment && matched_existing_segment.direction) || "calm delivery",
+            confidence: is_segment_locked ? 1.0 : (typeof parsed_item.confidence === "number" ? parsed_item.confidence : null),
+            emotion: parsed_item.emotion || (matched_existing_segment && matched_existing_segment.emotion) || null,
+            energy: typeof parsed_item.energy === "number" ? parsed_item.energy : (matched_existing_segment && matched_existing_segment.energy) || null,
+            is_ambiguous: is_segment_locked ? false : (!!parsed_item.is_ambiguous || !!segment_proposed_diff),
             unmarked: !!parsed_item.unmarked,
             engine: parsed_item.engine || (selected_attribution_engine === "llm" ? "llm" : (selected_attribution_engine === "clm" ? "clm" : "laya")),
-            audioPath: null,
-            audioVersions: []
+            audioPath: matched_existing_segment ? (matched_existing_segment.audioPath || null) : null,
+            audioVersions: (matched_existing_segment && Array.isArray(matched_existing_segment.audioVersions)) ? matched_existing_segment.audioVersions : [],
+            workflowOverride: matched_existing_segment ? (matched_existing_segment.workflowOverride || null) : null,
+            qwen_style: matched_existing_segment ? (matched_existing_segment.qwen_style || null) : null,
+            is_user_locked: is_segment_locked,
+            proposed_diff: segment_proposed_diff
           };
 
           list_of_new_segments.push(segment_descriptor);
@@ -819,6 +1017,32 @@ async function run_main_pipeline_pass_one_and_two() {
   // WHY: Keeps UI synced and updates persistent databases on disk.
   active_loaded_project_state_object.scriptSegments = list_of_new_segments;
   active_loaded_project_state_object.voiceMapping = discovered_characters_matrix;
+
+  // WHAT: Pass 2.5 Relationship State Engine pass.
+  // WHY: Carries relationship state forward across the attributed segments, detecting any dynamic shifts.
+  if (window.audiobook_api && typeof window.audiobook_api.run_relationship_delta_pass === "function") {
+    try {
+      const active_cast_members = Object.keys(discovered_characters_matrix)
+        .filter((character_name) => character_name !== "Narrator")
+        .map((character_name) => ({ id: character_name, name: character_name }));
+
+      if (active_cast_members.length >= 2) {
+        const delta_response = await window.audiobook_api.run_relationship_delta_pass(
+          list_of_new_segments,
+          active_loaded_project_state_object.relationships || [],
+          active_cast_members,
+          configuration_lm_studio_api_url_address
+        );
+
+        if (delta_response && Array.isArray(delta_response.updated_relationships)) {
+          active_loaded_project_state_object.relationships = delta_response.updated_relationships;
+        }
+      }
+    } catch (delta_error) {
+      console.warn("Pass 2.5 Relationship Delta pass non-fatal warning:", delta_error.message);
+    }
+  }
+
   if (typeof window !== "undefined") {
     window.active_loaded_project_state_object = active_loaded_project_state_object;
   }
@@ -1577,6 +1801,9 @@ function play_individual_line_clip(index_position_of_card) {
 // WHY: Renders a highly detailed directorial screenplay detailing intents, delivery options, and Zonos emotion sliders.
 function populate_directorial_cards_in_editor_view() {
   const directorial_cards_wrapper_element = document.getElementById("directorial_segment_cards_wrapper");
+  if (!directorial_cards_wrapper_element) {
+    return;
+  }
   directorial_cards_wrapper_element.innerHTML = "";
 
   if (!active_loaded_project_state_object || !active_loaded_project_state_object.directorialSegments || active_loaded_project_state_object.directorialSegments.length === 0) {
@@ -1642,7 +1869,7 @@ function populate_directorial_cards_in_editor_view() {
     // WHY: Enables version control for Column 3 cards so directors can select and compile their favorite takes.
     let take_select_options_html = "";
     if (active_script_segment_item.audioVersions && active_script_segment_item.audioVersions.length > 0) {
-      take_select_options_html += `<select class="take_select_pill" onchange="handle_card_take_change_event(${segment_index_counter}, this.value, true)">`;
+      take_select_options_html += `<select class="take_select_pill" onchange="handle_card_take_change_event(${segment_index_counter}, this.value, true)" title="Switch active audio take">`;
       for (let version_counter = 0; version_counter < active_script_segment_item.audioVersions.length; version_counter++) {
         const take_version_item = active_script_segment_item.audioVersions[version_counter];
         const selected_attribute_flag = take_version_item.isActive ? "selected" : "";
@@ -1655,7 +1882,7 @@ function populate_directorial_cards_in_editor_view() {
       <div class="screenplay_card_meta_header">
         <div class="d-flex align-items-center gap-8">
           <span class="text-11 text-muted font-mono opacity-80" title="Line Number">#${segment_index_counter}</span>
-          <select class="speaker_select_pill" onchange="handle_directorial_speaker_modification_event(${segment_index_counter}, this.value)">
+          <select class="speaker_select_pill" onchange="handle_directorial_speaker_modification_event(${segment_index_counter}, this.value)" title="Assign character voice to this line">
             ${character_select_options_html}
           </select>
           <button class="focus_anchor_btn" title="Focus and sync raw text & columns" onclick="highlight_synchronize_active_segment(${segment_index_counter}, true)">
@@ -1666,8 +1893,12 @@ function populate_directorial_cards_in_editor_view() {
             ${directorial_override_button_text}
           </button>
         </div>
+        <div class="d-flex align-items-center gap-6">
+          ${active_script_segment_item.needs_resync ? `
+            <span class="directorial_resync_badge" title="Speaker attribution was modified in Script Editor. Run Script Doctor or update direction to re-sync.">⚠️ Needs Re-sync</span>
+          ` : ''}
+          <span class="card_type_badge text-gold bg-gold-glow">${active_script_segment_item.type}</span>
         </div>
-        <span class="card_type_badge text-gold bg-gold-glow">${active_script_segment_item.type}</span>
       </div>
 
       <textarea class="screenplay_text_input" onchange="handle_directorial_text_modification_event(${segment_index_counter}, this.value)" rows="2">${active_script_segment_item.text}</textarea>
@@ -1802,7 +2033,8 @@ async function handle_directorial_speaker_modification_event(index_position_of_c
         active_loaded_project_state_object.projectName,
         active_loaded_project_state_object.voiceMapping || {},
         newly_selected_speaker_name,
-        sliding_window_context
+        sliding_window_context,
+        active_loaded_project_state_object.relationships || []
       );
 
       if (single_line_style_response_json && single_line_style_response_json.script_segments && single_line_style_response_json.script_segments.length > 0) {
@@ -1889,7 +2121,10 @@ async function run_directorial_orchestration_extraction_pipeline() {
         configuration_lm_studio_api_url_address,
         active_selected_workspace_directory_path,
         active_loaded_project_state_object.projectName,
-        discovered_characters_matrix
+        discovered_characters_matrix,
+        null,
+        null,
+        active_loaded_project_state_object.relationships || []
       );
 
       if (directorial_response_json && directorial_response_json.script_segments) {

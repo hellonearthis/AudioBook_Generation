@@ -115,4 +115,48 @@ describe('Universal Custom Floating Tooltip Engine', () => {
     }));
     expect(tooltip.classList.contains('visible')).toBe(false);
   });
+
+  test('displays custom tooltip for buttons using aria-label fallback when title is omitted', () => {
+    // WHAT: Testing fallback tooltip discovery using the aria-label attribute.
+    // WHY: Accessible buttons with aria-label must automatically display styled cyber tooltips.
+    window.initialize_universal_custom_tooltip_engine();
+    const test_button_element = document.createElement('button');
+    test_button_element.id = 'button_with_aria_label';
+    test_button_element.setAttribute('aria-label', 'Open Audio Settings');
+    document.getElementById('test_container').appendChild(test_button_element);
+
+    const mouse_over_event = new MouseEvent('mouseover', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 75,
+      clientY: 120
+    });
+    test_button_element.dispatchEvent(mouse_over_event);
+
+    const floating_tooltip_element = document.getElementById('cyber_floating_tooltip');
+    expect(floating_tooltip_element.classList.contains('visible')).toBe(true);
+    expect(floating_tooltip_element.textContent).toBe('Open Audio Settings');
+  });
+
+  test('displays custom tooltip for buttons using button text content fallback', () => {
+    // WHAT: Testing fallback tooltip discovery using visible text content.
+    // WHY: Guarantees that any plain button without title or aria-label still displays an informative tooltip.
+    window.initialize_universal_custom_tooltip_engine();
+    const test_button_element = document.createElement('button');
+    test_button_element.id = 'button_with_plain_text';
+    test_button_element.textContent = 'Apply Transformation';
+    document.getElementById('test_container').appendChild(test_button_element);
+
+    const mouse_over_event = new MouseEvent('mouseover', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 120,
+      clientY: 160
+    });
+    test_button_element.dispatchEvent(mouse_over_event);
+
+    const floating_tooltip_element = document.getElementById('cyber_floating_tooltip');
+    expect(floating_tooltip_element.classList.contains('visible')).toBe(true);
+    expect(floating_tooltip_element.textContent).toBe('Apply Transformation');
+  });
 });

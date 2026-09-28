@@ -9,6 +9,9 @@ DIVISION OF LABOUR:
 AVAILABLE CAST DICTIONARY & RELATIONSHIPS:
 {{CAST_GUIDE_CONTEXT}}
 
+ACTIVE INTERPERSONAL RELATIONSHIP STATES TIMELINE:
+{{RELATIONSHIP_TIMELINE_CONTEXT}}
+
 CRITICAL RULES FOR SPEAKER CORRELATION:
 - Directorial segments MUST match the speakers in the AVAILABLE CAST DICTIONARY. 
 - Use local context to map pronouns accurately to the exact cast dictionary ID. Do not duplicate name variants.

@@ -120,19 +120,42 @@ Unlike static relationship labels, character dynamics evolve across chapters:
   ]
 }
 ```
+*   **Timeline Delta Detection (`run_relationship_delta_pass`)**: Evaluates scene transitions against `prompts/relationship_delta.txt` to detect emerging dynamic shifts, triggers, and evidence segments.
 *   **State Resolution (`resolve_relationship_state_at_position`)**: Automatically resolves the active relational tone, power dynamic, and status for any line based on its current chapter and segment position.
 *   **Relational Delivery Conditioning**: Directly feeds the resolved relationship state into AuK's directorial instructions for authentic dramatic tension.
 
-### Pass 2: Dialogue Attribution & Script Parsing
-Attributes prose blocks to narrator or character speakers using the selected engine:
+### Pass 2: Dialogue Attribution & Non-Destructive Script Parsing
+Attributes prose blocks to narrator or character speakers while preserving existing cards and user edits:
+*   **Deterministic Rules Engine**:
+    *   *Speech-Tag Proximity*: High-confidence matching for adjacent tags (`"You knew," said Maren quietly`).
+    *   *Monologue Continuation*: Detects unclosed quotes spanning across paragraph breaks without changing speakers.
+    *   *Vocative Address Penalty*: Direct character address (e.g. `"Josh, look out!"`) identifies the addressed character as a listener rather than the speaker.
+    *   *Conversational Alternation*: Evaluates 2-person A/B conversational rhythm bonuses.
+*   **Multi-Model Classifier Quiz with Position-Bias Cancellation**:
+    *   Constructs constrained multiple-choice quizzes presenting only active scene cast members (plus `unknown`, never silent `Narrator`).
+    *   Queries classifiers (Laya ModernBERT and CLM-8B) with both forward and reversed option orderings to eliminate option position bias.
 *   **⚡ Laya Fast (~20ms)**: Uses local ModernBERT non-autoregressive decision calls against active cast profiles. Completely avoids LLM latency, token limits, and JSON hallucination errors.
+*   **🎯 CLM-8B System One (~100ms)**: Contrastive decision model for nuanced literary prose and subtle dialogue subtext.
+*   **⚡🎯 Cascade (Laya → CLM)**: Fast ModernBERT handles high-confidence lines; ambiguous quotes (< 85% confidence) escalate to CLM-8B.
 *   **⚡🧠 Hybrid (Laya + llama)**: Runs Laya for maximum speed; if Laya encounters connection issues or is offline, it seamlessly falls back to llama.cpp.
 *   **🧠 llama.cpp**: Uses the local GGUF model via llama-server for full open-ended generative extraction.
-*   **📖 Unmarked Dialogue (Literary Mode)**: When enabled, raw text is first processed through Stage 2A boundary detection (via `prompts/unmarked_span_detection.txt` or a syntactic speech-tag rule engine) to isolate spoken segments from surrounding narration without modifying original text. Spoken spans are then fed into Stage 2B (Laya Decision Engine) for sub-25ms attribution, emotional staging, and energy scoring.
-*   *Offline Fallback*: If both local AI services are offline, a built-in regex parser automatically separates narrator exposition and quoted lines (`"Speech"`).
+*   **📖 Unmarked Dialogue (Literary Mode)**: Stage 2A boundary detection isolates dialogue spans from narration, followed by Stage 2B attribution and emotional staging.
+
+### Non-Destructive Attribution Reference & Diff System
+Re-running **Automate Attribution** or changing attribution engines never destroys your existing screenplay or synthesized audio:
+*   **Existing Screenplay as Ground Truth**: The current screenplay is preserved as the reference baseline. Destructive confirmation dialogs have been eliminated.
+*   **Protected User Locks (`🔒 Locked`)**: Any line manually assigned or adjusted by the user in the speaker dropdown is locked (`is_user_locked: true`). Automated attribution passes strictly preserve locked lines as authoritative ground truth.
+*   **Inline Diff Pills**: When an AI classifier proposes an alternative speaker for an existing line, an inline diff pill appears on the card header:
+    `[⚡ Diff: Josh ➔ Maren (88%)] [✓ Accept] [✕ Keep Josh]`
+    *   *Clicking `✓ Accept`*: Switches the speaker to the proposed character, safely archives previous takes in history, flags Column 3 for re-sync, and dismisses the pill.
+    *   *Clicking `✕ Keep`*: Retains the current speaker assignment and dismisses the diff suggestion.
+*   **Top Bulk Review Banner**: When diffs are detected across the script, a summary banner appears at the top of Column 2:
+    `⚡ X Diffs Found · [✓ Accept All Diffs] [✕ Keep All Existing]`
+*   **Downstream Audio Continuity**: Accepting a diff or changing a speaker **never deletes** existing audio takes. All previous takes remain safely archived in `audioVersions` history (de-activated for current playback, but instantly accessible).
+*   **Directorial Synchronization (`⚠️ Needs Re-sync`)**: Changing a line's speaker flags the corresponding Column 3 directorial card with a high-contrast badge so the director knows staging and delivery instructions should be re-aligned.
 
 ### Pass 3: Emotional Staging & Directorial Guides
-Extracts emotional delivery instructions (`whisper`, `fearful`, `angry`, `calm`, etc.) and vocal intensity metrics (`energy` score). These are mapped to parenthetical directions and AuK performance cues to drive expressive TTS synthesis.
+Extracts emotional delivery instructions (`whisper`, `fearful`, `angry`, `calm`, etc.) and vocal intensity metrics (`energy` score). These are mapped to parenthetical directions, AuK-08 emotion editing vectors, and AuK performance cues to drive expressive TTS synthesis.
 
 ### Pass 4: Voice Casting & Speech Synthesis
 Maintains a sequential queue in the background process to feed text, actor directions, and voice reference clips to ComfyUI.
@@ -162,14 +185,15 @@ Enables two-stage attribution for literary texts lacking quotation marks:
 *   Screens displaying unmarked dialogue items render a distinct `📖 Unmarked` badge on each card.
 
 ### "Automate Attribution" (Pane 2 Header)
-Runs the attribution pipeline directly against the raw book text **already saved** inside the project state. Use this when:
+Runs non-destructive attribution directly against the raw book text. Use this when:
 *   You have just opened a project for the first time and want to generate screenplay cards.
-*   You want to re-run attribution with a different engine without re-typing source text.
+*   You want to re-run attribution with a different engine (e.g. testing Laya vs CLM) and review generated speaker diffs.
+*   Manual user locks (`🔒 Locked`) and previous audio takes are always preserved.
 
 ### "Reparse Text" (Pane 1 Header)
 Does two things in sequence:
 1. **Saves** whatever text is currently typed in the left raw-source textarea back into the project's `rawBookText` field (flushing it to `project_state.json` on disk).
-2. **Then** runs the exact same attribution pipeline as **Automate Attribution**.
+2. **Then** runs the non-destructive attribution pipeline as **Automate Attribution**.
 
 Use this when:
 *   You have **manually edited, trimmed, or cleaned** the raw source text in the left pane and want the screenplay cards to reflect your changes.

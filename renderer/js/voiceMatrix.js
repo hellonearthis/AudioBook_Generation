@@ -397,7 +397,7 @@ function populate_voice_matrix_configuration_cards() {
           <div class="form_input_group mb-0 mt-10">
             <label class="form_input_label text-10 text-muted mb-4">ComfyUI Voice Integration</label>
             <div class="d-flex gap-10 align-items-center">
-              <button id="save_custom_voice_btn_${character_name_string}" class="cyber_btn btn_secondary text-11 flex-grow-1" onclick="save_custom_voice_to_comfyui('${character_name_string.replace(/'/g, "\\'")}')">💾 Save to ComfyUI</button>
+              <button id="save_custom_voice_btn_${character_name_string}" class="cyber_btn btn_secondary text-11 flex-grow-1" onclick="save_custom_voice_to_comfyui('${character_name_string.replace(/'/g, "\\'")}')" title="Save character vocal profile and prompt parameters to ComfyUI">💾 Save to ComfyUI</button>
             </div>
           </div>
         ` : ""}
@@ -406,7 +406,7 @@ function populate_voice_matrix_configuration_cards() {
           <div class="d-flex align-items-center gap-6 p-8 border-radius-4 bg-glass-panel border-gold-glow mt-8">
             <span class="text-gold">⭐</span>
             <span class="text-11 text-gold flex-1">Character Anchor Bound: <strong style="word-break: break-all;">${character_timbre_details.savedVoiceFilename}</strong></span>
-            <button class="cyber_btn btn_secondary p-2-6 text-9 text-coral" onclick="trigger_character_voice_mapping_reset('${character_name_string.replace(/'/g, "\\'")}')">Remove</button>
+            <button class="cyber_btn btn_secondary p-2-6 text-9 text-coral" onclick="trigger_character_voice_mapping_reset('${character_name_string.replace(/'/g, "\\'")}')" title="Remove voice preset assignment for this character">Remove</button>
           </div>
         ` : ""}
 
@@ -1575,8 +1575,8 @@ function show_take_selector_modal(timeline_clip_reference) {
       </select>
     </div>
     <div class="d-flex justify-content-end gap-10">
-      <button class="cyber_btn btn_secondary" onclick="document.getElementById('take_selector_modal').remove()">Cancel</button>
-      <button class="cyber_btn btn_primary" onclick="apply_selected_take(${timeline_clip_reference.index_position})">Apply Take</button>
+      <button class="cyber_btn btn_secondary" onclick="document.getElementById('take_selector_modal').remove()" title="Close take selection modal without changing active take">Cancel</button>
+      <button class="cyber_btn btn_primary" onclick="apply_selected_take(${timeline_clip_reference.index_position})" title="Set selected take as the active playback audio for this line">Apply Take</button>
     </div>
   `;
   

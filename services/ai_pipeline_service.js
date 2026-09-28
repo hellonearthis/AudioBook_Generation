@@ -17,6 +17,11 @@ const {
   release_comfyui_vram,
   probe_service_health
 } = require("./service_health_service");
+const {
+  format_active_relationships_summary_for_prompt,
+  merge_relationship_state_deltas,
+  map_emotion_to_auk08_palette
+} = require("./relationship_state_service");
 
 // WHAT: Extracting the first valid JSON object or array from free-form LLM output text.
 // WHY: Modern thinking/reasoning models (e.g. Qwen 3.8) may output valid JSON followed by verification notes
@@ -930,15 +935,23 @@ EXAMPLE OUTPUT:
     }
   });
 
-  // WHAT: Directorial Script Doctor Pass.
+  // WHAT: Directorial Script Doctor Pass (Pass 3).
   ipcMain.handle("ai:generate-directorial-script", async (ipc_event_context, request_arguments) => {
     await release_comfyui_vram();
-    const { book_text_segment, lm_studio_api_url_address, workspace_directory_path, project_name, voice_mapping_context, forced_speaker_id, sliding_window_context } = request_arguments;
+    const { book_text_segment, lm_studio_api_url_address, workspace_directory_path, project_name, voice_mapping_context, forced_speaker_id, sliding_window_context, relationships_context } = request_arguments;
 
     const compiled_cast_guide_context = compile_global_cast_system_context(voice_mapping_context);
+    const active_scene_cast_members = Object.keys(voice_mapping_context || {}).map((character_name) => ({ id: character_name, name: character_name }));
+    const formatted_relationships_summary = format_active_relationships_summary_for_prompt(
+      active_scene_cast_members,
+      relationships_context || [],
+      0
+    );
+
     const prompt_path = path_library.join(__dirname, "..", "prompts", "directorial_orchestration.txt");
     const directorial_system_prompt_instructions = filesystem_library.readFileSync(prompt_path, "utf8")
-      .replace("{{CAST_GUIDE_CONTEXT}}", compiled_cast_guide_context);
+      .replace("{{CAST_GUIDE_CONTEXT}}", compiled_cast_guide_context)
+      .replace("{{RELATIONSHIP_TIMELINE_CONTEXT}}", formatted_relationships_summary);
 
     const active_loaded_model_id_tag = await retrieve_currently_loaded_model_tag(lm_studio_api_url_address);
     const text_windows_list = divide_text_into_sliding_overlapping_windows(book_text_segment, 1500, 150);
@@ -997,6 +1010,16 @@ EXAMPLE OUTPUT:
               segment_item.active_emotion_state = "neutral and observant.";
             }
 
+            // WHAT: Normalizing extracted emotion to AuK-08 palette with explicit whisper routing.
+            // WHY: Guarantees line delivery maps cleanly to AuK post-production workflows.
+            const mapped_emotion_details = map_emotion_to_auk08_palette(
+              typeof segment_item.emotion === "object" ? segment_item.emotion?.primary : segment_item.emotion,
+              segment_item.direction || (segment_item.render && segment_item.render.instruction) || ""
+            );
+            segment_item.auk08_emotion = mapped_emotion_details.auk08_emotion;
+            segment_item.is_whisper = mapped_emotion_details.is_whisper;
+            segment_item.workflow_route = mapped_emotion_details.workflow_route;
+
             const segment_text = segment_item.text ? segment_item.text.trim() : "";
             if (!segment_text) continue;
 
@@ -1034,6 +1057,70 @@ EXAMPLE OUTPUT:
       console.error("Directorial script parsing failed, executing rule-based fallback parser.", api_failure_exception);
       const rule_based_fallback_result = generate_rule_based_directorial_fallback(book_text_segment);
       return { script_segments: rule_based_fallback_result };
+    }
+  });
+
+  // WHAT: Pass 2.5: Relationship Timeline Delta Detection Pass.
+  // WHY: Evaluates whether dialogue in a scene triggered an interpersonal transition (e.g., betrayal, reconciliation).
+  ipcMain.handle("ai:run-relationship-delta-pass", async (ipc_event_context, request_arguments) => {
+    await release_comfyui_vram();
+    const { scene_segments, current_relationships, active_scene_cast, lm_studio_api_url_address } = request_arguments;
+
+    const prompt_path = path_library.join(__dirname, "..", "prompts", "relationship_delta.txt");
+    if (!filesystem_library.existsSync(prompt_path)) {
+      return { updated_relationships: current_relationships || [], changes: [] };
+    }
+    const delta_prompt_template = filesystem_library.readFileSync(prompt_path, "utf8");
+
+    const formatted_active_relationships = format_active_relationships_summary_for_prompt(
+      active_scene_cast || [],
+      current_relationships || [],
+      scene_segments && scene_segments[0] ? (scene_segments[0].index_position || 0) : 0
+    );
+
+    const formatted_dialogue_lines = (scene_segments || [])
+      .filter((segment_item) => segment_item.type === "dialogue")
+      .map((segment_item) => `[SEGMENT ${segment_item.index_position}] ${segment_item.speaker}: "${segment_item.text}"`)
+      .join("\n");
+
+    if (!formatted_dialogue_lines) {
+      return { updated_relationships: current_relationships || [], changes: [] };
+    }
+
+    const compiled_system_prompt = delta_prompt_template
+      .replace("{{ACTIVE_RELATIONSHIPS}}", formatted_active_relationships)
+      .replace("{{ATTRIBUTED_SEGMENTS}}", formatted_dialogue_lines);
+
+    const active_loaded_model_id_tag = await retrieve_currently_loaded_model_tag(lm_studio_api_url_address);
+
+    try {
+      const api_response_payload = await dispatch_http_post_request(lm_studio_api_url_address, {
+        model: active_loaded_model_id_tag,
+        messages: [
+          { role: "system", content: compiled_system_prompt },
+          { role: "user", content: "Analyze these dialogue segments and output any relationship changes as specified in JSON." }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.1
+      }, getMainWindow);
+
+      const response_message = api_response_payload.choices && api_response_payload.choices[0] && api_response_payload.choices[0].message;
+      const completion_text = ((response_message && response_message.content) || "").trim();
+      const parsed_delta_json = extract_json_from_llm_response_text(completion_text);
+      const incoming_changes = (parsed_delta_json && parsed_delta_json.relationship_changes) || [];
+
+      const updated_relationships = merge_relationship_state_deltas({
+        existing_relationships_list: current_relationships || [],
+        incoming_relationship_changes_list: incoming_changes
+      });
+
+      return {
+        updated_relationships: updated_relationships,
+        changes: incoming_changes
+      };
+    } catch (delta_pass_error) {
+      console.warn("Pass 2.5 Relationship Delta pass encountered an error, keeping existing states:", delta_pass_error.message);
+      return { updated_relationships: current_relationships || [], changes: [] };
     }
   });
 

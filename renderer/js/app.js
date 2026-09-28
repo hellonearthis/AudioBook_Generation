@@ -521,135 +521,198 @@ async function load_audiobook_project_by_name(project_name_string) {
 // =========================================================================
 // UNIVERSAL CUSTOM FLOATING TOOLTIP ENGINE (16px lower on screen)
 // =========================================================================
-// WHAT: Intercepts all native title and data-tooltip attributes across the application
-//       and displays a custom dark-mode, high-contrast floating tooltip positioned
-//       16 pixels lower than standard cursor clearance.
+// WHAT: Intercepts all native title and data-tooltip attributes across the application,
+//       as well as any button or role="button" element, displaying a custom dark-mode,
+//       high-contrast floating tooltip positioned 16 pixels lower than standard cursor clearance.
 // WHY: Native OS/Chromium tooltips cannot be repositioned via CSS, block interactive
 //      controls directly beneath the mouse cursor, and clash with the cyberpunk theme.
 //      Positioning the tooltip 16px lower (clientY + 28px) ensures the hovered element
 //      remains completely visible and readable at all times.
 function initialize_universal_custom_tooltip_engine() {
-  if (typeof window === "undefined" || typeof document === "undefined") return;
-  if (window.__cyber_tooltip_engine_initialized) return;
+  // WHAT: Guarding against non-browser environments like server-side node runs.
+  // WHY: Avoids fatal ReferenceErrors when executing inside headless test environments.
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+  // WHAT: Guarding against multiple registrations of document-level event listeners.
+  // WHY: Prevents duplicate event listeners and flickering tooltip behaviors on reloads.
+  if (window.__cyber_tooltip_engine_initialized) {
+    return;
+  }
   window.__cyber_tooltip_engine_initialized = true;
 
-  let tooltip_el = document.getElementById("cyber_floating_tooltip");
-  if (!tooltip_el) {
-    tooltip_el = document.createElement("div");
-    tooltip_el.id = "cyber_floating_tooltip";
-    tooltip_el.setAttribute("role", "tooltip");
-    tooltip_el.setAttribute("aria-hidden", "true");
-    document.body.appendChild(tooltip_el);
+  // WHAT: Locating or creating the universal floating tooltip container DOM element.
+  // WHY: A single reusable DOM container minimizes memory footprint and layout thrashing.
+  let floating_tooltip_element = document.getElementById("cyber_floating_tooltip");
+  if (!floating_tooltip_element) {
+    floating_tooltip_element = document.createElement("div");
+    floating_tooltip_element.id = "cyber_floating_tooltip";
+    floating_tooltip_element.setAttribute("role", "tooltip");
+    floating_tooltip_element.setAttribute("aria-hidden", "true");
+    document.body.appendChild(floating_tooltip_element);
   }
 
-  let active_target = null;
-  const VERTICAL_CURSOR_CLEARANCE_BASE = 12; // Base standard offset from cursor
-  const EXTRA_LOWER_OFFSET_PIXELS = 16;     // User specified: 16px lower on screen
-  const TOTAL_VERTICAL_OFFSET = VERTICAL_CURSOR_CLEARANCE_BASE + EXTRA_LOWER_OFFSET_PIXELS; // 28px
+  // WHAT: Tracking currently active hovered target element.
+  // WHY: Allows us to detect when the mouse leaves the specific interactive component.
+  let active_hovered_target_element = null;
 
-  function update_tooltip_position(event) {
-    if (!tooltip_el.classList.contains("visible")) return;
+  // WHAT: Defining vertical offset constants for tooltip screen placement.
+  // WHY: The user specified tooltips must be displayed exactly 16 pixels lower on the screen
+  //      than standard cursor clearance (12px base + 16px extra offset = 28px total).
+  const VERTICAL_CURSOR_CLEARANCE_BASE_PIXELS = 12;
+  const EXTRA_LOWER_OFFSET_PIXELS = 16;
+  const TOTAL_VERTICAL_OFFSET_PIXELS = VERTICAL_CURSOR_CLEARANCE_BASE_PIXELS + EXTRA_LOWER_OFFSET_PIXELS;
 
-    const viewport_width = window.innerWidth || 1920;
-    const viewport_height = window.innerHeight || 1080;
-    const tooltip_rect = tooltip_el.getBoundingClientRect();
-    const tooltip_width = tooltip_rect.width || 180;
-    const tooltip_height = tooltip_rect.height || 32;
-
-    // Horizontal placement: align slightly to right of cursor (+10px), clamp within viewport margins
-    let left_pos = event.clientX + 10;
-    if (left_pos + tooltip_width > viewport_width - 12) {
-      left_pos = viewport_width - tooltip_width - 12;
-    }
-    if (left_pos < 12) {
-      left_pos = 12;
-    }
-
-    // Vertical placement: exactly 16px lower on the screen than standard base offset (clientY + 28px)
-    let top_pos = event.clientY + TOTAL_VERTICAL_OFFSET;
-
-    // Viewport bottom edge collision check:
-    // If the 16px-lowered tooltip overflows the bottom of the screen, flip above cursor or clamp
-    if (top_pos + tooltip_height > viewport_height - 10) {
-      const top_flipped = event.clientY - tooltip_height - 12;
-      if (top_flipped > 10) {
-        top_pos = top_flipped;
-      } else {
-        top_pos = Math.max(10, viewport_height - tooltip_height - 10);
-      }
-    }
-
-    tooltip_el.style.left = `${Math.round(left_pos)}px`;
-    tooltip_el.style.top = `${Math.round(top_pos)}px`;
-  }
-
-  function show_tooltip_for_element(target, event) {
-    if (!target) return;
-
-    // If target has a native title attribute, migrate it to data-tooltip-text to suppress native OS tooltip
-    if (target.hasAttribute("title")) {
-      const native_title_string = target.getAttribute("title");
-      if (native_title_string && native_title_string.trim()) {
-        target.setAttribute("data-tooltip-text", native_title_string);
-      }
-      target.removeAttribute("title");
-    }
-
-    const tooltip_text = target.getAttribute("data-tooltip-text") || target.getAttribute("data-tooltip");
-    if (!tooltip_text || !tooltip_text.trim()) {
-      hide_tooltip();
+  // WHAT: Calculating coordinates and updating the position of the floating tooltip.
+  // WHY: Positions the tooltip to the bottom-right of the cursor with strict screen-edge boundary clamps.
+  function update_tooltip_screen_position(pointer_event) {
+    if (!floating_tooltip_element.classList.contains("visible")) {
       return;
     }
 
-    active_target = target;
-    tooltip_el.textContent = tooltip_text.trim();
-    tooltip_el.classList.add("visible");
-    tooltip_el.setAttribute("aria-hidden", "false");
-    update_tooltip_position(event);
+    const browser_viewport_width_pixels = window.innerWidth || 1920;
+    const browser_viewport_height_pixels = window.innerHeight || 1080;
+    const floating_tooltip_bounding_rectangle = floating_tooltip_element.getBoundingClientRect();
+    const floating_tooltip_width_pixels = floating_tooltip_bounding_rectangle.width || 180;
+    const floating_tooltip_height_pixels = floating_tooltip_bounding_rectangle.height || 32;
+
+    // WHAT: Horizontal placement slightly to the right of cursor (+10px) clamped to viewport.
+    // WHY: Keeps tooltip beside pointer without letting it clip off the right or left edge.
+    let calculated_horizontal_left_position = pointer_event.clientX + 10;
+    if (calculated_horizontal_left_position + floating_tooltip_width_pixels > browser_viewport_width_pixels - 12) {
+      calculated_horizontal_left_position = browser_viewport_width_pixels - floating_tooltip_width_pixels - 12;
+    }
+    if (calculated_horizontal_left_position < 12) {
+      calculated_horizontal_left_position = 12;
+    }
+
+    // WHAT: Vertical placement exactly 16px lower on screen (clientY + 28px).
+    // WHY: Satisfies the design requirement that tooltips clear the hovered button completely.
+    let calculated_vertical_top_position = pointer_event.clientY + TOTAL_VERTICAL_OFFSET_PIXELS;
+
+    // WHAT: Flipping or clamping tooltip if it overflows the bottom edge of the browser viewport.
+    // WHY: Prevents the lowered tooltip from extending off-screen when hovering buttons near bottom.
+    if (calculated_vertical_top_position + floating_tooltip_height_pixels > browser_viewport_height_pixels - 10) {
+      const flipped_vertical_top_position = pointer_event.clientY - floating_tooltip_height_pixels - 12;
+      if (flipped_vertical_top_position > 10) {
+        calculated_vertical_top_position = flipped_vertical_top_position;
+      } else {
+        calculated_vertical_top_position = Math.max(10, browser_viewport_height_pixels - floating_tooltip_height_pixels - 10);
+      }
+    }
+
+    floating_tooltip_element.style.left = `${Math.round(calculated_horizontal_left_position)}px`;
+    floating_tooltip_element.style.top = `${Math.round(calculated_vertical_top_position)}px`;
   }
 
-  function hide_tooltip() {
-    active_target = null;
-    tooltip_el.classList.remove("visible");
-    tooltip_el.setAttribute("aria-hidden", "true");
+  // WHAT: Resolving tooltip text from target element and triggering visibility.
+  // WHY: Supports title attributes, data-tooltip attributes, aria-labels, and button text fallbacks.
+  function show_tooltip_for_element(target_interactive_element, pointer_event) {
+    if (!target_interactive_element) {
+      return;
+    }
+
+    // WHAT: Migrating native title attribute to data-tooltip-text to suppress native OS tooltips.
+    // WHY: Native browser tooltips conflict visually and cannot be styled or repositioned 16px lower.
+    if (target_interactive_element.hasAttribute("title")) {
+      const native_title_string_value = target_interactive_element.getAttribute("title");
+      if (native_title_string_value && native_title_string_value.trim()) {
+        target_interactive_element.setAttribute("data-tooltip-text", native_title_string_value);
+      }
+      target_interactive_element.removeAttribute("title");
+    }
+
+    // WHAT: Retrieving explicit or inherited tooltip text.
+    // WHY: Elements can declare tooltips via data-tooltip-text, data-tooltip, aria-label, or button text content.
+    let resolved_tooltip_text_string = target_interactive_element.getAttribute("data-tooltip-text") || target_interactive_element.getAttribute("data-tooltip");
+
+    // WHAT: Fallback discovery for buttons and button-like controls without explicit tooltip attributes.
+    // WHY: Guarantees 100% of buttons across the application display an informative tooltip.
+    if (!resolved_tooltip_text_string || !resolved_tooltip_text_string.trim()) {
+      const is_button_control_element = target_interactive_element.tagName === "BUTTON" || target_interactive_element.getAttribute("role") === "button";
+      if (is_button_control_element) {
+        const aria_label_attribute_value = target_interactive_element.getAttribute("aria-label");
+        if (aria_label_attribute_value && aria_label_attribute_value.trim()) {
+          resolved_tooltip_text_string = aria_label_attribute_value.trim();
+        } else {
+          const button_visible_text_content = (target_interactive_element.textContent || "").replace(/\s+/g, " ").trim();
+          if (button_visible_text_content.length > 0 && button_visible_text_content.length <= 48) {
+            resolved_tooltip_text_string = button_visible_text_content;
+          }
+        }
+      }
+    }
+
+    // WHAT: If no descriptive text could be found, hide any active tooltip.
+    // WHY: Avoids rendering an empty, unhelpful floating black box.
+    if (!resolved_tooltip_text_string || !resolved_tooltip_text_string.trim()) {
+      hide_active_floating_tooltip();
+      return;
+    }
+
+    active_hovered_target_element = target_interactive_element;
+    floating_tooltip_element.textContent = resolved_tooltip_text_string.trim();
+    floating_tooltip_element.classList.add("visible");
+    floating_tooltip_element.setAttribute("aria-hidden", "false");
+    update_tooltip_screen_position(pointer_event);
   }
 
-  // Event Delegation on document for hover and mouse movement
-  document.addEventListener("mouseover", (event) => {
-    const matched_target = event.target.closest("[title], [data-tooltip], [data-tooltip-text]");
-    if (matched_target) {
-      show_tooltip_for_element(matched_target, event);
+  // WHAT: Hiding the floating tooltip and resetting active state.
+  // WHY: Returns the DOM to idle state when cursor leaves an interactive element.
+  function hide_active_floating_tooltip() {
+    active_hovered_target_element = null;
+    floating_tooltip_element.classList.remove("visible");
+    floating_tooltip_element.setAttribute("aria-hidden", "true");
+  }
+
+  // WHAT: Delegating hover detection across the entire document for all buttons and tooltip elements.
+  // WHY: Captures static buttons and dynamically rendered dialogue cards without per-element listeners.
+  document.addEventListener("mouseover", (pointer_event) => {
+    const matched_interactive_target_element = pointer_event.target.closest("[title], [data-tooltip], [data-tooltip-text], button, [role='button']");
+    if (matched_interactive_target_element) {
+      show_tooltip_for_element(matched_interactive_target_element, pointer_event);
     }
   }, true);
 
-  document.addEventListener("mousemove", (event) => {
-    if (!active_target) return;
-    // Check if cursor is still within the active target or its descendants
-    if (!active_target.contains(event.target)) {
-      const new_target = event.target.closest("[title], [data-tooltip], [data-tooltip-text]");
-      if (new_target) {
-        show_tooltip_for_element(new_target, event);
+  // WHAT: Smoothly updating tooltip position as the mouse moves over an active target.
+  // WHY: Ensures the tooltip follows cursor movement and re-binds if cursor crosses into sibling button.
+  document.addEventListener("mousemove", (pointer_event) => {
+    if (!active_hovered_target_element) {
+      return;
+    }
+    // WHAT: Checking if cursor is still within the active target or its descendants.
+    // WHY: If mouse crossed into another button or non-tooltip area, update or hide immediately.
+    if (!active_hovered_target_element.contains(pointer_event.target)) {
+      const newly_hovered_target_element = pointer_event.target.closest("[title], [data-tooltip], [data-tooltip-text], button, [role='button']");
+      if (newly_hovered_target_element) {
+        show_tooltip_for_element(newly_hovered_target_element, pointer_event);
       } else {
-        hide_tooltip();
+        hide_active_floating_tooltip();
       }
       return;
     }
-    update_tooltip_position(event);
+    update_tooltip_screen_position(pointer_event);
   }, { passive: true });
 
-  document.addEventListener("mouseout", (event) => {
-    if (!active_target) return;
-    if (event.relatedTarget && active_target.contains(event.relatedTarget)) {
-      // Still within the active target or its children
+  // WHAT: Hiding tooltip when mouse exits the hovered interactive element.
+  // WHY: Prevents floating tooltips from remaining visible on screen after moving off buttons.
+  document.addEventListener("mouseout", (pointer_event) => {
+    if (!active_hovered_target_element) {
       return;
     }
-    hide_tooltip();
+    if (pointer_event.relatedTarget && active_hovered_target_element.contains(pointer_event.relatedTarget)) {
+      // WHAT: Cursor moved into a child element inside the button.
+      // WHY: Keep tooltip visible while pointer remains anywhere within the button boundaries.
+      return;
+    }
+    hide_active_floating_tooltip();
   }, true);
 
-  // Hide on user interaction, scroll, or window blur to avoid sticky tooltips
-  window.addEventListener("scroll", hide_tooltip, true);
-  window.addEventListener("blur", hide_tooltip);
-  document.addEventListener("mousedown", hide_tooltip, true);
+  // WHAT: Hiding tooltip immediately on user interaction, scroll, or window blur.
+  // WHY: Avoids sticky or misplaced tooltips when the page scrolls or buttons are clicked.
+  window.addEventListener("scroll", hide_active_floating_tooltip, true);
+  window.addEventListener("blur", hide_active_floating_tooltip);
+  document.addEventListener("mousedown", hide_active_floating_tooltip, true);
 }
 
 if (typeof window !== "undefined") {

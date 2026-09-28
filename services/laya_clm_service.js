@@ -16,6 +16,12 @@ const {
   ensure_laya_ready,
   ensure_clm_ready
 } = require("./service_health_service");
+const {
+  attributeSpeakersAcrossParagraphs,
+  extract_sorted_review_queue_from_results,
+  UNKNOWN_SPEAKER_IDENTIFIER
+} = require("./speaker_attribution");
+const { map_emotion_to_auk08_palette } = require("./relationship_state_service");
 
 const laya_qc_pipeline_instance = new LayaQCPipeline();
 
@@ -87,6 +93,86 @@ function dispatch_fast_json_post(target_endpoint_url_string, request_payload_obj
       reject_json_post(unexpected_dispatch_error);
     }
   });
+}
+
+// WHAT: Creates a Laya classifier adapter adhering to the Pass 2 attribution interface.
+// WHY: Allows the two-stage attribution engine to query ModernBERT with forward & reverse options.
+function create_laya_speaker_attribution_adapter(laya_decide_target_url) {
+  return {
+    name: "laya",
+    async choose({ context, question, options }) {
+      const candidate_criteria_map = {};
+      options.forEach((single_option) => {
+        candidate_criteria_map[single_option.id] = `dialogue spoken by ${single_option.label}`;
+      });
+      const decide_request_payload = {
+        state: {
+          quote: context,
+          preceding_context: "",
+          following_context: "",
+          full_paragraph: context
+        },
+        questions: {
+          speaker: {
+            type: "choice",
+            instructions: question,
+            criteria: candidate_criteria_map
+          }
+        }
+      };
+      const laya_response = await dispatch_fast_json_post(laya_decide_target_url, decide_request_payload);
+      const speaker_answer = (laya_response && laya_response.answers && laya_response.answers.speaker) || {};
+      const candidate_scores_map = speaker_answer.scores || {};
+      if (Object.keys(candidate_scores_map).length === 0 && speaker_answer.choice) {
+        const confidence_value = typeof speaker_answer.confidence === "number" ? speaker_answer.confidence : 0.75;
+        const remainder_share = options.length > 1 ? (1.0 - confidence_value) / (options.length - 1) : 0;
+        options.forEach((single_option) => {
+          candidate_scores_map[single_option.id] = (single_option.id === speaker_answer.choice) ? confidence_value : remainder_share;
+        });
+      }
+      return { scores: candidate_scores_map };
+    }
+  };
+}
+
+// WHAT: Creates a CLM-8B classifier adapter adhering to the Pass 2 attribution interface.
+// WHY: Allows contrastive attribution with option flipping and score distributions.
+function create_clm_speaker_attribution_adapter(clm_systemone_target_url) {
+  return {
+    name: "clm",
+    async choose({ context, question, options }) {
+      const candidate_criteria_map = {};
+      options.forEach((single_option) => {
+        candidate_criteria_map[single_option.id] = `dialogue spoken by ${single_option.label}`;
+      });
+      const decide_request_payload = {
+        state: {
+          quote: context,
+          preceding_context: "",
+          following_context: "",
+          full_paragraph: context
+        },
+        questions: {
+          speaker: {
+            type: "choice",
+            instructions: question,
+            criteria: candidate_criteria_map
+          }
+        }
+      };
+      const clm_response = await dispatch_fast_json_post(clm_systemone_target_url, decide_request_payload);
+      const speaker_answer = (clm_response && clm_response.answers && clm_response.answers.speaker) || {};
+      const candidate_scores_map = speaker_answer.scores || {};
+      if (Object.keys(candidate_scores_map).length === 0 && speaker_answer.choice) {
+        const confidence_value = typeof speaker_answer.confidence === "number" ? speaker_answer.confidence : 0.75;
+        const remainder_share = options.length > 1 ? (1.0 - confidence_value) / (options.length - 1) : 0;
+        options.forEach((single_option) => {
+          candidate_scores_map[single_option.id] = (single_option.id === speaker_answer.choice) ? confidence_value : remainder_share;
+        });
+      }
+      return { scores: candidate_scores_map };
+    }
+  };
 }
 
 function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans) {
@@ -275,6 +361,7 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans) {
     const is_unmarked_mode = !!request_arguments.unmarked_dialogue_mode;
     const lm_studio_api_url_address = request_arguments.lm_studio_api_url_address || "http://127.0.0.1:8081/v1/chat/completions";
     const voice_mapping_context = request_arguments.voice_mapping_context || {};
+    const existing_script_segments = Array.isArray(request_arguments.existing_script_segments) ? request_arguments.existing_script_segments : [];
 
     if (attribution_engine === "llm" || attribution_engine === "hybrid") {
       await release_comfyui_vram();
@@ -491,10 +578,10 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans) {
             })
           );
 
-          laya_predictions.forEach((pred) => {
-            const speaker_answer = pred.answers.speaker || {};
-            const emotion_answer = pred.answers.emotion || {};
-            const energy_answer = pred.answers.energy || {};
+          laya_predictions.forEach((single_prediction_entry) => {
+            const speaker_answer = single_prediction_entry.answers.speaker || {};
+            const emotion_answer = single_prediction_entry.answers.emotion || {};
+            const energy_answer = single_prediction_entry.answers.energy || {};
 
             let resolved_speaker = speaker_answer.choice || "Character";
             const speaker_confidence = typeof speaker_answer.confidence === "number" ? speaker_answer.confidence : 0.5;
@@ -506,17 +593,51 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans) {
               delivery_description = "soft intimate whisper, hushed breathy delivery";
             }
 
+            // WHAT: Correlating with existing reference segments to respect user locks and generate diffs.
+            // WHY: User edits are protected ground truth. Divergent AI predictions become reviewable diffs.
+            const matching_existing_segment = existing_script_segments.find((candidate_segment) => {
+              return candidate_segment.type === "dialogue" && candidate_segment.text && candidate_segment.text.trim() === single_prediction_entry.quote_text.trim();
+            });
+
+            let final_speaker = resolved_speaker;
+            let proposed_diff = null;
+            let is_user_locked = false;
+
+            if (matching_existing_segment && matching_existing_segment.is_user_locked && matching_existing_segment.speaker) {
+              final_speaker = matching_existing_segment.speaker;
+              is_user_locked = true;
+            } else if (
+              matching_existing_segment &&
+              matching_existing_segment.speaker &&
+              matching_existing_segment.speaker !== "unknown" &&
+              matching_existing_segment.speaker !== "Character" &&
+              matching_existing_segment.speaker !== resolved_speaker
+            ) {
+              proposed_diff = {
+                previous_speaker: matching_existing_segment.speaker,
+                proposed_speaker: resolved_speaker,
+                confidence: speaker_confidence,
+                engine: single_prediction_entry.engine || "laya"
+              };
+              final_speaker = matching_existing_segment.speaker;
+            }
+
             script_segments.push({
               type: "dialogue",
-              speaker: resolved_speaker,
-              text: pred.quote_text,
+              speaker: final_speaker,
+              text: single_prediction_entry.quote_text,
               direction: delivery_description,
-              confidence: speaker_confidence,
+              confidence: is_user_locked ? 1.0 : speaker_confidence,
               emotion: detected_emotion,
               energy: energy_score,
-              is_ambiguous: speaker_confidence < confidence_threshold,
-              unmarked: !!pred.unmarked,
-              engine: pred.engine || "laya"
+              is_ambiguous: is_user_locked ? false : (speaker_confidence < confidence_threshold || !!proposed_diff),
+              unmarked: !!single_prediction_entry.unmarked,
+              engine: single_prediction_entry.engine || "laya",
+              audioPath: matching_existing_segment ? (matching_existing_segment.audioPath || null) : null,
+              audioVersions: matching_existing_segment && Array.isArray(matching_existing_segment.audioVersions) ? matching_existing_segment.audioVersions : [],
+              workflowOverride: matching_existing_segment ? (matching_existing_segment.workflowOverride || null) : null,
+              is_user_locked: is_user_locked,
+              proposed_diff: proposed_diff
             });
           });
         }

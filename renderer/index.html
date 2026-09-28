@@ -28,23 +28,23 @@
         <!-- Navigation navigation links -->
         <nav>
           <ul class="navigation_links_list">
-            <li class="navigation_link_item active_nav_tab" id="nav_link_dashboard" onclick="switch_active_navigation_tab('dashboard')">
+            <li class="navigation_link_item active_nav_tab" id="nav_link_dashboard" onclick="switch_active_navigation_tab('dashboard')" title="View and manage audiobook projects in your workspace">
               <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
               Projects Matrix
             </li>
-            <li class="navigation_link_item" id="nav_link_editor" onclick="switch_active_navigation_tab('editor')">
+            <li class="navigation_link_item" id="nav_link_editor" onclick="switch_active_navigation_tab('editor')" title="Edit screenplay script lines, attribute speakers, and synthesize takes">
               <svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
               Script Editor
             </li>
-            <li class="navigation_link_item" id="nav_link_voice" onclick="switch_active_navigation_tab('voice')">
+            <li class="navigation_link_item" id="nav_link_voice" onclick="switch_active_navigation_tab('voice')" title="Configure character voice timbres, seeds, anchors, and relationship timelines">
               <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
               Character Definitions
             </li>
-            <li class="navigation_link_item" id="nav_link_stitch" onclick="switch_active_navigation_tab('stitch')">
+            <li class="navigation_link_item" id="nav_link_stitch" onclick="switch_active_navigation_tab('stitch')" title="Monitor synthesis queues and configure post-production audio assembly">
               <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5v14M22 9v6M7 7v10M2 10v4"/></svg>
               Audio Editor & Assembler
             </li>
-            <li class="navigation_link_item" id="nav_link_waveform" onclick="switch_active_navigation_tab('waveform')">
+            <li class="navigation_link_item" id="nav_link_waveform" onclick="switch_active_navigation_tab('waveform')" title="Arrange, preview, and export compiled audiobook mixdowns in The Cutting Room">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>
               The Cutting Room
             </li>
@@ -89,9 +89,9 @@
           
           <div id="editor_layout_toggles" class="d-none align-items-center gap-8 mr-20">
             <span class="text-12 text-muted mr-4">Columns:</span>
-            <button id="toggle_col_raw" class="cyber_btn p-4-8 text-11 radius-4" onclick="toggle_editor_column(1)">Source</button>
-            <button id="toggle_col_screenplay" class="cyber_btn p-4-8 text-11 radius-4" onclick="toggle_editor_column(2)">Screenplay</button>
-            <button id="toggle_col_directorial" class="cyber_btn p-4-8 text-11 radius-4" onclick="toggle_editor_column(3)">Directorial</button>
+            <button id="toggle_col_raw" class="cyber_btn p-4-8 text-11 radius-4" onclick="toggle_editor_column(1)" title="Toggle raw source text pane visibility">Source</button>
+            <button id="toggle_col_screenplay" class="cyber_btn p-4-8 text-11 radius-4" onclick="toggle_editor_column(2)" title="Toggle screenplay script editor pane visibility">Screenplay</button>
+            <button id="toggle_col_directorial" class="cyber_btn p-4-8 text-11 radius-4" onclick="toggle_editor_column(3)" title="Toggle directorial subtext pane visibility">Directorial</button>
           </div>
         </div>
       </header>
@@ -106,7 +106,7 @@
             <h3>Active System Workspace Directory</h3>
             <span id="active_workspace_directory_display_label">No folder directory selected. Please select workspace to build projects.</span>
           </div>
-          <button class="cyber_btn btn_secondary" onclick="trigger_native_folder_picker()">
+          <button class="cyber_btn btn_secondary" onclick="trigger_native_folder_picker()" title="Choose a folder on disk to store and load audiobook projects">
             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
             Select Workspace
           </button>
@@ -129,7 +129,7 @@
               <textarea id="input_new_project_text_contents" class="form_text_area" placeholder="Paste the chapter or segment text of the book here to parse..."></textarea>
             </div>
 
-            <button class="cyber_btn w-100 justify-content-center mt-15" onclick="trigger_new_project_creation()">
+            <button class="cyber_btn w-100 justify-content-center mt-15" onclick="trigger_new_project_creation()" title="Initialize new audiobook project with provided title and book manuscript">
               <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 5v14M5 12h14"/></svg>
               Create Audiobook Project
             </button>
@@ -163,15 +163,15 @@
           </div>
           <h4 class="empty_state_title">No Audiobook Active</h4>
           <p class="empty_state_tagline">Choose an existing project from the dashboard or initialize a new project to access the interactive script editor.</p>
-          <button class="cyber_btn btn_secondary" onclick="switch_active_navigation_tab('dashboard')">Go to Projects</button>
+          <button class="cyber_btn btn_secondary" onclick="switch_active_navigation_tab('dashboard')" title="Return to Projects Dashboard to choose or create a project">Go to Projects</button>
         </div>
 
         <!-- DUAL-PANE LAYOUT -->
         <div id="editor_view_toggles" class="d-none flex-row gap-10 mb-15 justify-content-end align-items-center">
           <span class="text-11 text-muted">Toggle Columns:</span>
-          <button id="toggle_col_raw" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(1)">Raw Source</button>
-          <button id="toggle_col_screenplay" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(2)">Screenplay</button>
-          <button id="toggle_col_directorial" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(3)">Directorial</button>
+          <button id="toggle_col_raw" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(1)" title="Toggle visibility of raw source text column">Raw Source</button>
+          <button id="toggle_col_screenplay" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(2)" title="Toggle visibility of screenplay script editor column">Screenplay</button>
+          <button id="toggle_col_directorial" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(3)" title="Toggle visibility of directorial orchestration column">Directorial</button>
         </div>
         <div id="editor_main_layout_split" class="editor_layout_split_view d-none">
           
@@ -180,8 +180,8 @@
             <div class="pane_header">
               <span class="pane_header_title">1. Raw Source Book Segment & About</span>
               <div class="d-flex gap-8">
-                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_cleanup()">Clean Line Breaks</button>
-                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_reparse()">Reparse Text</button>
+                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_cleanup()" title="Remove soft line wraps and clean up raw paragraph formatting">Clean Line Breaks</button>
+                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_reparse()" title="Save raw text to project on disk and re-run dialogue attribution across the chapter">Reparse Text</button>
               </div>
             </div>
             <div class="pane_content_area d-flex flex-column gap-15">
@@ -205,7 +205,7 @@
             <div class="pane_header">
               <span class="pane_header_title">2. Screenplay Script Editor</span>
               <div class="d-flex gap-8 align-items-center">
-                <select id="attribution_engine_selector" class="form_text_field p-4-8 radius-6 text-11" title="Attribution Engine" onchange="save_global_configurations()">
+                <select id="attribution_engine_selector" class="form_text_field p-4-8 radius-6 text-11" title="Select decision engine for dialogue attribution and emotional staging" onchange="save_global_configurations()">
                   <option value="laya" selected>⚡ Laya Fast (~20ms)</option>
                   <option value="clm">🎯 CLM-8B System One (~100ms)</option>
                   <option value="cascade">⚡🎯 Cascade (Laya → CLM)</option>
@@ -216,13 +216,13 @@
                   <input type="checkbox" id="unmarked_dialogue_toggle" onchange="save_global_configurations()">
                   <span>📖 Unmarked</span>
                 </label>
-                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple" onclick="run_main_pipeline_pass_one_and_two()">
+                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple" onclick="run_main_pipeline_pass_one_and_two()" title="Run the selected attribution engine to parse text into speaker dialogue cards">
                   Automate Attribution
                 </button>
-                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-muted" onclick="run_tech_book_sentence_split()">
+                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-muted" onclick="run_tech_book_sentence_split()" title="Split prose paragraphs into individual spoken sentences for technical or educational books">
                   Tech Book Split
                 </button>
-                <button class="cyber_btn p-6-12 text-11 radius-6" onclick="trigger_queue_synthesis_all_lines()">
+                <button class="cyber_btn p-6-12 text-11 radius-6" onclick="trigger_queue_synthesis_all_lines()" title="Generate audio takes sequentially for all screenplay lines using assigned character voices">
                   Synthesize Classic
                 </button>
               </div>
@@ -237,10 +237,10 @@
             <div class="pane_header">
               <span class="pane_header_title">3. Directorial Orchestration Pipeline</span>
               <div class="d-flex gap-8">
-                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-gold" onclick="run_directorial_orchestration_extraction_pipeline()">
+                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-gold" onclick="run_directorial_orchestration_extraction_pipeline()" title="Analyze dramatic subtext and extract emotional delivery directions for all dialogue lines">
                   Director Script Doctor
                 </button>
-                <button class="cyber_btn p-6-12 text-11 radius-6" onclick="trigger_directorial_synthesis_all_lines()">
+                <button class="cyber_btn p-6-12 text-11 radius-6" onclick="trigger_directorial_synthesis_all_lines()" title="Generate audio takes conditioned on acting instructions, emotional delivery, and relationship state">
                   Synthesize Directorial
                 </button>
               </div>
@@ -276,7 +276,7 @@
         <div id="voice_matrix_functional_container" class="d-none">
           <div class="d-flex justify-content-between align-items-center mb-25">
             <h3 class="production_panel_title mb-0">Cast Profiles & Timbre Configuration</h3>
-            <button class="cyber_btn btn_secondary" onclick="run_cast_discovery_pass_one()">Scan Characters (Pass 1)</button>
+            <button class="cyber_btn btn_secondary" onclick="run_cast_discovery_pass_one()" title="Scan manuscript using local LLM to automatically discover character cast and relationship timelines">Scan Characters (Pass 1)</button>
           </div>
           <div class="voice_matrix_cards_container" id="voice_matrix_cards_grid">
             <!-- CARDS RENDERING HERE -->
@@ -333,7 +333,7 @@
             <p class="text-12 text-muted mb-15">
               The interactive waveform editor has been moved to its own dedicated view for a better editing experience.
             </p>
-            <button class="cyber_btn justify-content-center w-100" onclick="switch_active_navigation_tab('waveform')">
+            <button class="cyber_btn justify-content-center w-100" onclick="switch_active_navigation_tab('waveform')" title="Open The Cutting Room interactive audio waveform timeline and assembly suite">
               <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
               Open Dedicated Waveform Editor
             </button>
@@ -386,7 +386,7 @@
             <h3 class="production_panel_title mb-0">The Cutting Room</h3>
             <div class="d-flex gap-10 align-items-center">
               <span class="text-11 text-muted">Timeline Zoom:</span>
-              <input type="range" id="timeline_zoom_slider" min="10" max="200" value="34" oninput="update_timeline_zoom(this.value)" class="w-100px">
+              <input type="range" id="timeline_zoom_slider" min="10" max="200" value="34" oninput="update_timeline_zoom(this.value)" class="w-100px" title="Zoom in or out on the timeline track">
               <span id="timeline_zoom_label" class="text-11 text-high-contrast w-40px">34px/s</span>
             </div>
           </div>
@@ -400,31 +400,31 @@
           <!-- WHAT: Status label overlay showing current state. -->
           <div id="peaks_status_bar" class="peaks_status_bar d-flex justify-content-between align-items-center">
             <span id="waveform_sim_status_label" class="peaks_status_text">Timeline Editor Ready</span>
-            <button id="btn_open_master_folder" class="cyber_btn btn_secondary d-none text-11 p-4-8 radius-4 border-neon-blue text-neon-blue" onclick="trigger_open_master_folder()">📂 Open Export Folder</button>
+            <button id="btn_open_master_folder" class="cyber_btn btn_secondary d-none text-11 p-4-8 radius-4 border-neon-blue text-neon-blue" onclick="trigger_open_master_folder()" title="Open master mixdown audio folder in native file explorer">📂 Open Export Folder</button>
           </div>
 
           <!-- WHAT: Transport control bar with segment navigation buttons and export. -->
           <div class="peaks_transport_controls d-flex justify-content-between align-items-center pt-15 border-top-glass mt-15">
             <div class="peaks_transport_group d-flex gap-15 align-items-center">
-              <select id="select_import_version" class="form_select_dropdown p-4-8 text-11">
+              <select id="select_import_version" class="form_select_dropdown p-4-8 text-11" title="Select between classic or directorial takes to populate timeline">
                 <option value="classic">Classic Screenplay</option>
                 <option value="directorial">Directorial Orchestration</option>
               </select>
 
               <div class="d-flex align-items-center gap-8">
                 <span class="text-11 text-muted">Lines:</span>
-                <input type="number" id="input_import_start_line" class="form_text_field w-60px p-4 text-11 mb-0" placeholder="Start">
+                <input type="number" id="input_import_start_line" class="form_text_field w-60px p-4 text-11 mb-0" placeholder="Start" title="First line index to load onto the timeline">
                 <span class="text-11 text-muted">to</span>
-                <input type="number" id="input_import_end_line" class="form_text_field w-60px p-4 text-11 mb-0" placeholder="End">
+                <input type="number" id="input_import_end_line" class="form_text_field w-60px p-4 text-11 mb-0" placeholder="End" title="Last line index to load onto the timeline">
               </div>
               
-              <button class="peaks_transport_btn peaks_btn_accent" id="btn_import_storyboard_takes" onclick="import_storyboard_takes_to_preview_playlist()">
+              <button class="peaks_transport_btn peaks_btn_accent" id="btn_import_storyboard_takes" onclick="import_storyboard_takes_to_preview_playlist()" title="Import active generated audio takes into the interactive timeline preview">
                 📥 Load Timeline
               </button>
             </div>
 
             <div class="peaks_transport_group">
-              <button class="peaks_transport_btn peaks_btn_accent" id="btn_export_mixdown" onclick="trigger_export_mixdown()">
+              <button class="peaks_transport_btn peaks_btn_accent" id="btn_export_mixdown" onclick="trigger_export_mixdown()" title="Concatenate timeline takes into master audiobook WAV mixdown and export markers CSV">
                 <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Export Compiled Audiobook
               </button>
@@ -479,13 +479,13 @@
             <span id="modal_config_subtitle" class="cyber_modal_subtitle">Configure active synthesis engine parameters</span>
           </div>
         </div>
-        <button class="cyber_modal_close_btn" onclick="close_workflow_settings_modal()">×</button>
+        <button class="cyber_modal_close_btn" onclick="close_workflow_settings_modal()" title="Close workflow settings modal">×</button>
       </div>
 
       <!-- Tab Navigation -->
       <div class="cyber_modal_tabs">
-        <button class="modal_tab_btn active_tab" id="tab_btn_workflow" onclick="switch_modal_tab('workflow')">Workflow Settings</button>
-        <button class="modal_tab_btn" id="tab_btn_references" onclick="switch_modal_tab('references')">Emotion Library</button>
+        <button class="modal_tab_btn active_tab" id="tab_btn_workflow" onclick="switch_modal_tab('workflow')" title="Switch to workflow engine and seed configuration">Workflow Settings</button>
+        <button class="modal_tab_btn" id="tab_btn_references" onclick="switch_modal_tab('references')" title="Switch to custom reference emotion audio library">Emotion Library</button>
       </div>
 
       <!-- Content Views -->
@@ -495,7 +495,7 @@
         <div class="modal_tab_content active_content" id="modal_content_workflow">
           <div class="form_input_group">
             <label class="form_input_label">Active Synthesis Engine Workflow</label>
-            <select id="modal_workflow_type_dropdown" class="form_select_dropdown" onchange="handle_modal_workflow_type_change(this.value)">
+            <select id="modal_workflow_type_dropdown" class="form_select_dropdown" onchange="handle_modal_workflow_type_change(this.value)" title="Choose the speech synthesis workflow used for this line or character">
               <option value="inherit">Inherit from Character Profile (Default)</option>
               <option value="auk_voice_clone">🧬 AuK-02 Voice Clone (Zero-Shot using Reference Audio)</option>
               <option value="auk_instruct_tts">🎙️ AuK-01 Instruct-TTS (Description Prompt)</option>
@@ -508,8 +508,8 @@
           <div class="form_input_group" id="form_group_seed_value">
             <label class="form_input_label">Speech Synthesis Seed</label>
             <div class="d-flex gap-10">
-              <input type="number" id="modal_synthesis_seed_field" class="form_text_field flex-grow-1" placeholder="Enter seed value (e.g. 12345)">
-              <button class="cyber_btn btn_secondary px-16 py-0 radius-md" title="Randomize seed value" onclick="randomize_modal_synthesis_seed()">
+              <input type="number" id="modal_synthesis_seed_field" class="form_text_field flex-grow-1" placeholder="Enter seed value (e.g. 12345)" title="Randomization seed controlling vocal pitch and timbre contours">
+              <button class="cyber_btn btn_secondary px-16 py-0 radius-md" title="Generate a random numerical seed" onclick="randomize_modal_synthesis_seed()">
                 🎲
               </button>
             </div>
@@ -528,7 +528,7 @@
               Emotion Reference Clip Target
               <span class="text-10 font-normal text-purple">Overrides inherited baseline voice shape</span>
             </label>
-            <select id="modal_qwen_clone_emotion_dropdown" class="form_select_dropdown">
+            <select id="modal_qwen_clone_emotion_dropdown" class="form_select_dropdown" title="Reference audio emotion hook to condition vocal features">
               <option value="auto">Auto-detect from Emotional Direction (Recommended)</option>
               <option value="normal">Force: Normal Baseline</option>
               <option value="surprised">Force: Surprised / Elevated</option>
@@ -547,9 +547,9 @@
 
       <!-- Footer Buttons -->
       <div class="cyber_modal_footer d-flex justify-content-end align-items-center w-100">
-        <button class="cyber_btn btn_secondary text-coral border-coral-glow mr-auto" onclick="reset_modal_workflow_settings_to_default()">Reset to Default</button>
-        <button class="cyber_btn btn_secondary ml-8" onclick="close_workflow_settings_modal()">Cancel</button>
-        <button class="cyber_btn ml-8" onclick="save_modal_workflow_settings_changes()">Save Settings</button>
+        <button class="cyber_btn btn_secondary text-coral border-coral-glow mr-auto" onclick="reset_modal_workflow_settings_to_default()" title="Reset character workflow configuration to application defaults">Reset to Default</button>
+        <button class="cyber_btn btn_secondary ml-8" onclick="close_workflow_settings_modal()" title="Discard changes and close modal">Cancel</button>
+        <button class="cyber_btn ml-8" onclick="save_modal_workflow_settings_changes()" title="Save workflow and emotion settings for this character">Save Settings</button>
       </div>
     </div>
   </div>
@@ -567,13 +567,13 @@
             <span id="modal_reassign_subtitle" class="cyber_modal_subtitle">Reassign active lines before deletion</span>
           </div>
         </div>
-        <button class="cyber_modal_close_btn" onclick="close_character_deletion_modal()">×</button>
+        <button class="cyber_modal_close_btn" onclick="close_character_deletion_modal()" title="Close character deletion modal">×</button>
       </div>
 
       <div class="cyber_modal_body p-20">
         <div class="form_input_group mb-0">
           <label class="form_input_label">Inheriting Character Profile</label>
-          <select id="modal_reassign_character_dropdown" class="form_select_dropdown">
+          <select id="modal_reassign_character_dropdown" class="form_select_dropdown" title="Select target character who will inherit all lines from the deleted profile">
             <!-- Populated dynamically -->
           </select>
         </div>
@@ -583,8 +583,8 @@
       </div>
 
       <div class="cyber_modal_footer d-flex justify-content-end align-items-center w-100">
-        <button class="cyber_btn btn_secondary" onclick="close_character_deletion_modal()">Cancel</button>
-        <button class="cyber_btn bg-coral border-coral-glow ml-8" onclick="execute_character_deletion_and_reassign()">Confirm Deletion & Merge</button>
+        <button class="cyber_btn btn_secondary" onclick="close_character_deletion_modal()" title="Cancel deletion without removing character">Cancel</button>
+        <button class="cyber_btn bg-coral border-coral-glow ml-8" onclick="execute_character_deletion_and_reassign()" title="Permanently remove character and reassign their dialogue lines to selected target">Confirm Deletion & Merge</button>
       </div>
     </div>
   </div>
@@ -602,14 +602,14 @@
             <span id="modal_auk_edit_subtitle" class="cyber_modal_subtitle">Refine existing take audio non-destructively</span>
           </div>
         </div>
-        <button class="cyber_modal_close_btn" onclick="close_auk_edit_tools_modal()">×</button>
+        <button class="cyber_modal_close_btn" onclick="close_auk_edit_tools_modal()" title="Close audio editing modal">×</button>
       </div>
 
       <div class="cyber_modal_body p-20">
         <!-- Quick Action Presets -->
         <div class="form_input_group">
           <label class="form_input_label">Choose Audio Transformation Tool</label>
-          <select id="modal_auk_edit_task_dropdown" class="form_select_dropdown" onchange="handle_auk_edit_task_selection_change(this.value)">
+          <select id="modal_auk_edit_task_dropdown" class="form_select_dropdown" onchange="handle_auk_edit_task_selection_change(this.value)" title="Choose the post-production audio transformation to apply to this take">
             <option value="whisper">🤫 Whisper Conversion (AuK-12: Convert normal voice to intimate whisper)</option>
             <option value="enhance">🧹 Denoise & Enhance (AuK-13: Remove background noise & boost clarity)</option>
             <option value="pitch">🎵 Pitch Shift (AuK-05: Adjust vocal pitch semitones)</option>
@@ -629,7 +629,7 @@
               <span>Pitch Shift (Semitones)</span>
               <span id="label_pitch_shift_display" class="text-purple font-semibold">+2</span>
             </label>
-            <input type="range" id="input_auk_pitch_semitones" min="-6" max="6" step="1" value="2" class="w-100" oninput="document.getElementById('label_pitch_shift_display').textContent = (this.value > 0 ? '+' : '') + this.value">
+            <input type="range" id="input_auk_pitch_semitones" min="-6" max="6" step="1" value="2" class="w-100" oninput="document.getElementById('label_pitch_shift_display').textContent = (this.value > 0 ? '+' : '') + this.value" title="Shift vocal pitch up or down by semitones">
           </div>
 
           <!-- Speed Slider -->
@@ -638,7 +638,7 @@
               <span>Speed Multiplier</span>
               <span id="label_speed_multiplier_display" class="text-purple font-semibold">1.15x</span>
             </label>
-            <input type="range" id="input_auk_speed_multiplier" min="0.75" max="1.50" step="0.05" value="1.15" class="w-100" oninput="document.getElementById('label_speed_multiplier_display').textContent = this.value + 'x'">
+            <input type="range" id="input_auk_speed_multiplier" min="0.75" max="1.50" step="0.05" value="1.15" class="w-100" oninput="document.getElementById('label_speed_multiplier_display').textContent = this.value + 'x'" title="Multiply speech playback tempo without altering pitch">
           </div>
 
           <!-- Volume Slider -->
@@ -647,13 +647,13 @@
               <span>Volume Adjustment (dB)</span>
               <span id="label_volume_shift_display" class="text-purple font-semibold">+3 dB</span>
             </label>
-            <input type="range" id="input_auk_volume_decibels" min="-12" max="12" step="1" value="3" class="w-100" oninput="document.getElementById('label_volume_shift_display').textContent = (this.value > 0 ? '+' : '') + this.value + ' dB'">
+            <input type="range" id="input_auk_volume_decibels" min="-12" max="12" step="1" value="3" class="w-100" oninput="document.getElementById('label_volume_shift_display').textContent = (this.value > 0 ? '+' : '') + this.value + ' dB'" title="Boost or attenuate audio gain in decibels">
           </div>
 
           <!-- Emotion Select -->
           <div id="auk_control_emotion" class="form_input_group d-none">
             <label class="form_input_label">Target Emotional Performance</label>
-            <select id="select_auk_target_emotion" class="form_select_dropdown">
+            <select id="select_auk_target_emotion" class="form_select_dropdown" title="Select target emotion for vocal expression morphing">
               <option value="calm">Calm / Composed / Neutral</option>
               <option value="happy">Happy / Joyous / Bubbly</option>
               <option value="sad" selected>Sad / Somber / Melancholic</option>
@@ -668,9 +668,9 @@
           <!-- Speech Content Inputs -->
           <div id="auk_control_speech_content" class="form_input_group d-none">
             <label class="form_input_label">Instruction (e.g. Replace 'old' with 'new' / Add 'text' before 'anchor')</label>
-            <input type="text" id="input_auk_speech_content_instruction" class="form_text_field mb-8" placeholder="Replace 'accepting what we cannot have' with 'living well with dreams unmet'">
+            <input type="text" id="input_auk_speech_content_instruction" class="form_text_field mb-8" placeholder="Replace 'accepting what we cannot have' with 'living well with dreams unmet'" title="Edit instruction for modifying speech words in the audio">
             <label class="form_input_label">Original Phrase in Audio</label>
-            <input type="text" id="input_auk_speech_content_original" class="form_text_field" placeholder="Full original sentence or phrase">
+            <input type="text" id="input_auk_speech_content_original" class="form_text_field" placeholder="Full original sentence or phrase" title="Exact original spoken phrase to be replaced in the audio">
           </div>
         </div>
 
@@ -685,8 +685,8 @@
       <div class="cyber_modal_footer d-flex justify-content-between align-items-center w-100">
         <span id="modal_auk_edit_status_message" class="text-11 text-purple"></span>
         <div class="d-flex gap-8">
-          <button class="cyber_btn btn_secondary" onclick="close_auk_edit_tools_modal()">Cancel</button>
-          <button class="cyber_btn btn_accent" id="btn_execute_auk_edit" onclick="execute_active_auk_edit_task()">Apply Transformation</button>
+          <button class="cyber_btn btn_secondary" onclick="close_auk_edit_tools_modal()" title="Cancel audio transformation">Cancel</button>
+          <button class="cyber_btn btn_accent" id="btn_execute_auk_edit" onclick="execute_active_auk_edit_task()" title="Execute selected AuK audio transformation on this take and generate a new take">Apply Transformation</button>
         </div>
       </div>
     </div>
