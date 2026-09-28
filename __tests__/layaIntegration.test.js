@@ -23,7 +23,7 @@ describe("Laya Fast Decision Engine Integration", () => {
         <option value="hybrid">⚡🧠 Hybrid (Laya + llama)</option>
         <option value="llm">🧠 llama.cpp (Deep LLM)</option>
       </select>
-      <input id="settings_lm_studio_endpoint_input" value="http://127.0.0.1:8080/v1" />
+      <input id="settings_lm_studio_endpoint_input" value="http://127.0.0.1:8081/v1" />
       <input id="settings_comfyui_endpoint_input" value="http://127.0.0.1:8188" />
       <input id="settings_laya_endpoint_input" value="http://127.0.0.1:8765" />
       <input id="settings_clm_endpoint_input" value="http://127.0.0.1:8700" />
@@ -64,7 +64,7 @@ describe("Laya Fast Decision Engine Integration", () => {
 
     // Global variables from app.js / editor.js
     window.active_selected_workspace_directory_path = "/mock/workspace";
-    window.configuration_lm_studio_api_url_address = "http://127.0.0.1:8080/v1/chat/completions";
+    window.configuration_lm_studio_api_url_address = "http://127.0.0.1:8081/v1/chat/completions";
     window.configuration_laya_api_url_address = "http://127.0.0.1:8765";
     window.configuration_comfyui_api_url_address = "http://127.0.0.1:8188";
     window.configuration_attribution_engine = "laya";

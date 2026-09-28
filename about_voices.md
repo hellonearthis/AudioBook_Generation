@@ -544,3 +544,38 @@ The engine verifies the existence of a corresponding `.txt` transcript file for 
 - **Successful Path:** If `references/[character_name]/[emotion].txt` is present, its text is loaded as the `CloneAudioText` input.
 - **Warning Fallback:** If the `.txt` transcript file is missing, the engine logs a console warning (`[Voice Consistency Warning]`) advising the user to create the matching transcript file, and falls back to a standardized calibration sentence:
   > `"The direct path through the valley was covered in thick, dark moss."`
+
+---
+
+## 7. Two-Level Division of Labour: Qwen3 VoiceDesign & AuK Zero-Shot Synthesis
+
+A fundamental challenge in AI audiobook production is balancing **vocal consistency** across hundreds of pages against **expressive emotional variation** from line to line. If a single generative prompt defines both character timbre and line emotion, vocal identities drift.
+
+To solve this, the engine enforces a two-level division of labour:
+
+```
+LEVEL 1: STATIC CHARACTER IDENTITY (Created Once)
+   Qwen3 VoiceDesign  ──▶  Reference Audio Anchor (e.g. audio/anchors/maren_master.wav)
+   [Encodes physical vocal cords, pitch floor, vocal age, and baseline timbre]
+                               │
+                               ▼
+LEVEL 2: DYNAMIC LINE DELIVERY (Rendered Per Line)
+   AuK Zero-Shot Clone ──▶  Line Audio (e.g. audio/takes/line_12/take_1.flac)
+   [Inputs: Target Line Text + Reference Anchor WAV + Directorial Instruction]
+   [Instruction encodes: primary/secondary emotion + intensity + relationship state + pacing]
+```
+
+### Level 1: Static Character Voice Design (Qwen3)
+- Executed once during character creation / casting in the **Voice Matrix**.
+- Combines identity, age, gender, and physical traits into a comprehensive prompt (e.g., *"Woman in her late 30s, low and dry, measured pace, faint rasp"*).
+- The resulting audio is locked as the master physical anchor (`audio/anchors/[character]_master.wav`).
+
+### Level 2: Dynamic Line Delivery with AuK Zero-Shot
+- Executed per line in the **Screenplay Editor**.
+- Uses `AuK-02-Voice-Clone` (or `AuK-01-Instruct-TTS`) with the Level 1 anchor as `prompt_audio`.
+- **Instruction Compilation**: Synthesizes a natural-language directorial directive incorporating:
+  1. **Primary & Secondary Emotion**: e.g., *"Speak with bitter anger and suppressed hurt"*.
+  2. **Delivery Intensity**: e.g., *"at high intensity"*.
+  3. **Relationship Context**: Incorporates the active relationship state at that chapter/segment position (e.g., *"Spoken to Josh (family, hostile, equal power dynamic)"*).
+  4. **Pacing / Energy**: e.g., *"fast agitated pace"* or *"slow measured tempo"*.
+- **Smart Duration Estimation (`gen_seconds`)**: Pre-computes the target rendering duration based on word count (~2.5 words/second + 1.2s buffer) to prevent clipped dialogue or trailing dead air.

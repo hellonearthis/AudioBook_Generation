@@ -6,53 +6,160 @@
 // WHY: We want to ensure that if the relationships are stored as an array of target/dynamic objects
 //      (e.g., from the cast discovery LLM schema), we format them beautifully for the user textarea
 //      and prevent raw "[object Object]" displaying in the DOM.
+// WHAT: Compiles an individual relationship entity into a human-readable display string.
+// WHY: We need to support both legacy single-state relationships and the modern multi-state timeline schema
+//      without returning raw [object Object] or unformatted JSON strings into UI elements.
+function format_single_relationship_item(relationship_item) {
+  if (!relationship_item || typeof relationship_item !== "object") {
+    return String(relationship_item || "");
+  }
+  const target_character_identifier_string = relationship_item.target_id || relationship_item.b || relationship_item.char_b || "";
+  const source_character_identifier_string = relationship_item.a || relationship_item.char_a || "";
+
+  // WHAT: Handle dynamic relationship state timeline.
+  // WHY: Renders multi-state transitions across the story cleanly in the UI so users can inspect state evolution.
+  if (Array.isArray(relationship_item.states) && relationship_item.states.length > 0) {
+    const total_states_recorded_count = relationship_item.states.length;
+    const compiled_state_summaries_list = relationship_item.states.map(active_state_record => {
+      const relationship_type_string = active_state_record.relation_type || "";
+      const relationship_tone_suffix_string = active_state_record.relation_tone && active_state_record.relation_tone !== "neutral" && active_state_record.relation_tone !== "unknown" ? ` (${active_state_record.relation_tone})` : "";
+      const relationship_status_bracket_string = active_state_record.status && active_state_record.status !== "current" ? ` [${active_state_record.status}]` : "";
+      const power_dynamic_indicator_string = active_state_record.power_dynamic && active_state_record.power_dynamic !== "equal" && active_state_record.power_dynamic !== "unknown" ? ` <${active_state_record.power_dynamic}>` : "";
+      const narrative_position_coordinate_string = active_state_record.from ? `ch.${active_state_record.from.chapter || 1}s.${active_state_record.from.segment || 1}` : "";
+      const trigger_event_description_string = active_state_record.trigger ? ` "${active_state_record.trigger}"` : "";
+      const baseline_state_label_string = `${relationship_type_string}${relationship_tone_suffix_string}${relationship_status_bracket_string}${power_dynamic_indicator_string}`;
+      
+      return narrative_position_coordinate_string 
+        ? `${baseline_state_label_string} @ ${narrative_position_coordinate_string}${trigger_event_description_string}` 
+        : `${baseline_state_label_string}${trigger_event_description_string}`;
+    });
+
+    const relationship_header_string = source_character_identifier_string 
+      ? `${source_character_identifier_string} ↔ ${target_character_identifier_string}` 
+      : `↔ ${target_character_identifier_string}`;
+    return `${relationship_header_string} [${total_states_recorded_count} state${total_states_recorded_count > 1 ? 's' : ''}: ${compiled_state_summaries_list.join(" ➔ ")}]`;
+  }
+
+  // WHAT: Handle legacy single-state relationship object.
+  // WHY: Guarantees backward compatibility with older project files where relationships were stored as flat dictionaries.
+  const relationship_type_string = relationship_item.relation_type || relationship_item.dynamic || relationship_item.relation || "";
+  const tone_string = relationship_item.relation_tone && relationship_item.relation_tone !== "neutral" && relationship_item.relation_tone !== "unknown" ? ` (${relationship_item.relation_tone})` : "";
+  const status_string = relationship_item.status && relationship_item.status !== "current" ? ` [${relationship_item.status}]` : "";
+  const power_string = relationship_item.power_dynamic && relationship_item.power_dynamic !== "equal" && relationship_item.power_dynamic !== "unknown" ? ` <${relationship_item.power_dynamic}>` : "";
+  const dynamic_label = relationship_type_string ? `${relationship_type_string}${tone_string}${status_string}${power_string}` : "";
+
+  if (target_character_identifier_string && dynamic_label) {
+    return source_character_identifier_string 
+      ? `${source_character_identifier_string} -> ${dynamic_label} with ${target_character_identifier_string}` 
+      : `${dynamic_label} with ${target_character_identifier_string}`;
+  } else if (target_character_identifier_string) {
+    return `connected to ${target_character_identifier_string}`;
+  } else if (dynamic_label) {
+    return dynamic_label;
+  }
+  return "";
+}
+
+// WHAT: Formats relationships structured data to a clean, readable string.
+// WHY: Ensures that whether relationships are stored as timelines of states or flat objects,
+//      they are formatted beautifully for UI cards and textareas without raw [object Object].
 function format_relationships_to_readable_string(relationships_input_field) {
-  // WHAT: If it is already a plain string, return it immediately.
-  // WHY: Simplifies parsing for manual inputs or already processed records.
   if (typeof relationships_input_field === "string") {
     return relationships_input_field;
   }
-  // WHAT: If it is null or undefined, return an empty string.
-  // WHY: Avoids syntax errors or displaying "undefined" values.
   if (!relationships_input_field) {
     return "";
   }
-  // WHAT: If it is a structured array, iterate and compile each relationship description.
-  // WHY: Translates raw object arrays like [{"target_id": "kin", "dynamic": "spouse"}] into readable prose.
   if (Array.isArray(relationships_input_field)) {
     const formatted_relationship_parts = [];
     for (let item_index = 0; item_index < relationships_input_field.length; item_index++) {
       const relationship_item = relationships_input_field[item_index];
-      if (relationship_item && typeof relationship_item === "object") {
-        const target_id_string = relationship_item.target_id || "";
-        const relationship_dynamic_string = relationship_item.dynamic || relationship_item.relation || "";
-        if (target_id_string && relationship_dynamic_string) {
-          formatted_relationship_parts.push(`${relationship_dynamic_string} with ${target_id_string}`);
-        } else if (target_id_string) {
-          formatted_relationship_parts.push(`connected to ${target_id_string}`);
-        } else if (relationship_dynamic_string) {
-          formatted_relationship_parts.push(relationship_dynamic_string);
-        }
-      } else if (typeof relationship_item === "string") {
+      if (typeof relationship_item === "string") {
         formatted_relationship_parts.push(relationship_item);
+      } else if (relationship_item && typeof relationship_item === "object") {
+        const formatted_string_output = format_single_relationship_item(relationship_item);
+        if (formatted_string_output) formatted_relationship_parts.push(formatted_string_output);
       }
     }
     return formatted_relationship_parts.join(", ");
   }
-  // WHAT: If it is a single object instead of an array, format its parameters.
-  // WHY: Adapts to model variations that output single relationship instances.
   if (typeof relationships_input_field === "object") {
-    const target_id_string = relationships_input_field.target_id || "";
-    const relationship_dynamic_string = relationships_input_field.dynamic || relationships_input_field.relation || "";
-    if (target_id_string && relationship_dynamic_string) {
-      return `${relationship_dynamic_string} with ${target_id_string}`;
-    } else if (target_id_string) {
-      return `connected to ${target_id_string}`;
-    } else if (relationship_dynamic_string) {
-      return relationship_dynamic_string;
-    }
+    return format_single_relationship_item(relationships_input_field);
   }
   return String(relationships_input_field);
+}
+
+// WHAT: Resolves the active relationship state between two characters at a given narrative position (chapter & segment).
+// WHY: As relationships evolve across the narrative timeline, voice direction and narration use the latest
+//      active state whose 'from' position is at or before the current reading location.
+function resolve_relationship_state_at_position(relationships_list, char_a_name, char_b_name, chapter_number = 1, segment_number = 1) {
+  if (!Array.isArray(relationships_list) || relationships_list.length === 0) return null;
+  if (!char_a_name || !char_b_name) return null;
+
+  const target_character_a_normalized_name = char_a_name.toLowerCase().trim();
+  const target_character_b_normalized_name = char_b_name.toLowerCase().trim();
+
+  for (let relationship_index = 0; relationship_index < relationships_list.length; relationship_index++) {
+    const current_relationship_entity = relationships_list[relationship_index];
+    if (!current_relationship_entity || typeof current_relationship_entity !== "object") continue;
+
+    const relationship_character_a_name = (current_relationship_entity.a || current_relationship_entity.char_a || "").toLowerCase().trim();
+    const relationship_character_b_name = (current_relationship_entity.b || current_relationship_entity.char_b || "").toLowerCase().trim();
+
+    const is_direct_character_order_match = relationship_character_a_name === target_character_a_normalized_name && relationship_character_b_name === target_character_b_normalized_name;
+    const is_inverted_character_order_match = relationship_character_a_name === target_character_b_normalized_name && relationship_character_b_name === target_character_a_normalized_name;
+
+    if (is_direct_character_order_match || is_inverted_character_order_match) {
+      // WHAT: Resolving the relationship state from a chronological timeline of states.
+      // WHY: Traverses states to identify the most recent dynamic applicable up to the requested narrative position.
+      if (Array.isArray(current_relationship_entity.states) && current_relationship_entity.states.length > 0) {
+        // Sort states chronologically by chapter then segment
+        const chronologically_sorted_states = [...current_relationship_entity.states].sort((first_state_candidate, second_state_candidate) => {
+          const first_state_chapter_number = first_state_candidate.from?.chapter || 1;
+          const second_state_chapter_number = second_state_candidate.from?.chapter || 1;
+          if (first_state_chapter_number !== second_state_chapter_number) {
+            return first_state_chapter_number - second_state_chapter_number;
+          }
+          const first_state_segment_number = first_state_candidate.from?.segment || 1;
+          const second_state_segment_number = second_state_candidate.from?.segment || 1;
+          return first_state_segment_number - second_state_segment_number;
+        });
+
+        // Find the latest state whose 'from' is at or before current (chapter, segment)
+        let active_resolved_state_record = null;
+        for (let candidate_index = 0; candidate_index < chronologically_sorted_states.length; candidate_index++) {
+          const candidate_state_record = chronologically_sorted_states[candidate_index];
+          const candidate_chapter_number = candidate_state_record.from?.chapter || 1;
+          const candidate_segment_number = candidate_state_record.from?.segment || 1;
+
+          if (candidate_chapter_number < chapter_number || (candidate_chapter_number === chapter_number && candidate_segment_number <= segment_number)) {
+            active_resolved_state_record = candidate_state_record;
+          } else {
+            break;
+          }
+        }
+
+        const resolved_state_result = active_resolved_state_record || chronologically_sorted_states[0];
+        if (is_inverted_character_order_match && resolved_state_result.power_dynamic) {
+          let inverted_power_dynamic_string = resolved_state_result.power_dynamic;
+          if (resolved_state_result.power_dynamic === "a_over_b") inverted_power_dynamic_string = "b_over_a";
+          else if (resolved_state_result.power_dynamic === "b_over_a") inverted_power_dynamic_string = "a_over_b";
+          return { ...resolved_state_result, power_dynamic: inverted_power_dynamic_string };
+        }
+        return resolved_state_result;
+      }
+
+      // WHAT: Legacy flat relationship handling with perspective inversion if queried in reverse.
+      if (is_inverted_character_order_match && current_relationship_entity.power_dynamic) {
+        let inverted_power_dynamic_string = current_relationship_entity.power_dynamic;
+        if (current_relationship_entity.power_dynamic === "a_over_b") inverted_power_dynamic_string = "b_over_a";
+        else if (current_relationship_entity.power_dynamic === "b_over_a") inverted_power_dynamic_string = "a_over_b";
+        return { ...current_relationship_entity, power_dynamic: inverted_power_dynamic_string };
+      }
+      return current_relationship_entity;
+    }
+  }
+  return null;
 }
 
 // WHAT: Formats general metadata fields (traits, visual details, key objects) to a clean string.
@@ -892,7 +999,7 @@ async function run_cast_discovery_pass_one() {
       <div class="empty_state_screen grid-col-full vh-50">
         <div class="status_dot state_processing w-40px h-40px"></div>
         <h4 class="empty_state_title">Orchestrating Global Cast Discovery (Pass ${current_chunk_index + 1}/${total_discovery_chunks})...</h4>
-        <p class="empty_state_tagline">LM Studio is scanning content to identify characters, age traits, and personality cues. Please wait...</p>
+        <p class="empty_state_tagline">LLM is scanning content to identify characters, age traits, and personality cues. Please wait...</p>
       </div>
     `;
 
@@ -1037,6 +1144,77 @@ async function run_cast_discovery_pass_one() {
       }
 
       active_loaded_project_state_object.voiceMapping = voice_mapping_matrix;
+
+      // WHAT: Persisting discovered relationships into the active project state as dynamic state timelines.
+      // WHY: Preserves character connections and tracks relational evolution across chapters/segments.
+      if (Array.isArray(discovery_response_json.relationships) && discovery_response_json.relationships.length > 0) {
+        if (!active_loaded_project_state_object.relationships) {
+          active_loaded_project_state_object.relationships = [];
+        }
+        for (let relationship_counter = 0; relationship_counter < discovery_response_json.relationships.length; relationship_counter++) {
+          const incoming_relationship_record = discovery_response_json.relationships[relationship_counter];
+          const incoming_character_a_name = (incoming_relationship_record.a || incoming_relationship_record.char_a || "").toLowerCase().trim();
+          const incoming_character_b_name = (incoming_relationship_record.b || incoming_relationship_record.char_b || "").toLowerCase().trim();
+
+          const existing_relationship_record = active_loaded_project_state_object.relationships.find(existing_candidate => {
+            const existing_candidate_character_a = (existing_candidate.a || existing_candidate.char_a || "").toLowerCase().trim();
+            const existing_candidate_character_b = (existing_candidate.b || existing_candidate.char_b || "").toLowerCase().trim();
+            return (existing_candidate_character_a === incoming_character_a_name && existing_candidate_character_b === incoming_character_b_name) || 
+                   (existing_candidate_character_a === incoming_character_b_name && existing_candidate_character_b === incoming_character_a_name);
+          });
+
+          if (existing_relationship_record) {
+            // WHAT: Merging new timeline states into the existing relationship pair.
+            // WHY: Preserves historically identified milestone transitions while appending new discoveries.
+            if (Array.isArray(incoming_relationship_record.states) && incoming_relationship_record.states.length > 0) {
+              if (!Array.isArray(existing_relationship_record.states)) {
+                // WHAT: Migrating legacy flat relationship to initial timeline state.
+                // WHY: Upgrades older records into the modern state timeline schema seamlessly.
+                existing_relationship_record.states = [{
+                  from: { chapter: 1, segment: 1 },
+                  relation_type: existing_relationship_record.relation_type || "unknown",
+                  relation_tone: existing_relationship_record.relation_tone || "neutral",
+                  status: existing_relationship_record.status || "current",
+                  power_dynamic: existing_relationship_record.power_dynamic || "equal",
+                  trigger: null
+                }];
+              }
+              for (let incoming_state_index = 0; incoming_state_index < incoming_relationship_record.states.length; incoming_state_index++) {
+                const incoming_state_record = incoming_relationship_record.states[incoming_state_index];
+                const incoming_state_chapter_number = incoming_state_record.from?.chapter || 1;
+                const incoming_state_segment_number = incoming_state_record.from?.segment || 1;
+                const existing_state_match_index = existing_relationship_record.states.findIndex(existing_state_candidate => 
+                  (existing_state_candidate.from?.chapter || 1) === incoming_state_chapter_number && 
+                  (existing_state_candidate.from?.segment || 1) === incoming_state_segment_number
+                );
+                if (existing_state_match_index >= 0) {
+                  existing_relationship_record.states[existing_state_match_index] = { 
+                    ...existing_relationship_record.states[existing_state_match_index], 
+                    ...incoming_state_record 
+                  };
+                } else {
+                  existing_relationship_record.states.push(incoming_state_record);
+                }
+              }
+              // WHAT: Sorting states chronologically across narrative chapter and segment positions.
+              // WHY: Ensures state lookups traverse the timeline in strict narrative order.
+              existing_relationship_record.states.sort((first_state_sort_candidate, second_state_sort_candidate) => {
+                const first_state_chapter_value = first_state_sort_candidate.from?.chapter || 1;
+                const second_state_chapter_value = second_state_sort_candidate.from?.chapter || 1;
+                if (first_state_chapter_value !== second_state_chapter_value) {
+                  return first_state_chapter_value - second_state_chapter_value;
+                }
+                const first_state_segment_value = first_state_sort_candidate.from?.segment || 1;
+                const second_state_segment_value = second_state_sort_candidate.from?.segment || 1;
+                return first_state_segment_value - second_state_segment_value;
+              });
+            }
+          } else {
+            active_loaded_project_state_object.relationships.push(incoming_relationship_record);
+          }
+        }
+      }
+
       await trigger_project_state_disk_flush();
     }
   } catch (pass_one_error) {

@@ -205,4 +205,131 @@ describe('Voice Anchor Pipeline', () => {
       expect(window.populate_voice_matrix_configuration_cards).toHaveBeenCalled();
     });
   });
+
+  describe('format_relationships_to_readable_string() with split structure', () => {
+    it('correctly formats split relationship schema entries', () => {
+      const split_rels = [
+        {
+          a: "Maren",
+          b: "Josh",
+          relation_type: "family",
+          relation_tone: "hostile",
+          status: "estranged",
+          power_dynamic: "equal"
+        },
+        {
+          a: "Priya",
+          b: "Tom",
+          relation_type: "romantic",
+          relation_tone: "tense",
+          status: "current",
+          power_dynamic: "a_over_b"
+        }
+      ];
+
+      const formatted = format_relationships_to_readable_string(split_rels);
+      expect(formatted).toContain("Maren -> family (hostile) [estranged] with Josh");
+      expect(formatted).toContain("Priya -> romantic (tense) <a_over_b> with Tom");
+    });
+
+    it('correctly formats dynamic relationship state timelines with transitions and triggers', () => {
+      const timeline_rels = [
+        {
+          id: "maren_josh",
+          a: "Maren",
+          b: "Josh",
+          states: [
+            {
+              from: { chapter: 1, segment: 1 },
+              relation_type: "family",
+              relation_tone: "warm",
+              status: "current",
+              power_dynamic: "a_over_b",
+              trigger: null
+            },
+            {
+              from: { chapter: 7, segment: 3 },
+              relation_type: "family",
+              relation_tone: "tense",
+              status: "current",
+              power_dynamic: "equal",
+              trigger: "Josh finds the forged will"
+            }
+          ]
+        }
+      ];
+
+      const formatted = format_relationships_to_readable_string(timeline_rels);
+      expect(formatted).toContain("Maren ↔ Josh");
+      expect(formatted).toContain("2 states");
+      expect(formatted).toContain("family (warm) <a_over_b> @ ch.1s.1");
+      expect(formatted).toContain("family (tense) @ ch.7s.3 \"Josh finds the forged will\"");
+    });
+
+    it('gracefully handles legacy string and object structures', () => {
+      expect(format_relationships_to_readable_string("married to John")).toBe("married to John");
+      expect(format_relationships_to_readable_string([{ target_id: "John", relation: "spouse" }])).toBe("spouse with John");
+      expect(format_relationships_to_readable_string(null)).toBe("");
+    });
+  });
+
+  describe('resolve_relationship_state_at_position()', () => {
+    const mock_timeline = [
+      {
+        id: "maren_josh",
+        a: "Maren",
+        b: "Josh",
+        states: [
+          {
+            from: { chapter: 1, segment: 1 },
+            relation_type: "family",
+            relation_tone: "warm",
+            status: "current",
+            power_dynamic: "a_over_b",
+            trigger: null
+          },
+          {
+            from: { chapter: 7, segment: 3 },
+            relation_type: "family",
+            relation_tone: "tense",
+            status: "current",
+            power_dynamic: "equal",
+            trigger: "Josh finds the forged will"
+          },
+          {
+            from: { chapter: 12, segment: 1 },
+            relation_type: "family",
+            relation_tone: "hostile",
+            status: "estranged",
+            power_dynamic: "equal",
+            trigger: "Maren testifies against him"
+          }
+        ]
+      }
+    ];
+
+    it('resolves the initial state before any triggers occur', () => {
+      const state_ch3 = resolve_relationship_state_at_position(mock_timeline, "Maren", "Josh", 3, 5);
+      expect(state_ch3).not.toBeNull();
+      expect(state_ch3.relation_tone).toBe("warm");
+      expect(state_ch3.power_dynamic).toBe("a_over_b");
+    });
+
+    it('resolves the updated state after trigger point is reached', () => {
+      const state_ch7_seg4 = resolve_relationship_state_at_position(mock_timeline, "Maren", "Josh", 7, 4);
+      expect(state_ch7_seg4).not.toBeNull();
+      expect(state_ch7_seg4.relation_tone).toBe("tense");
+      expect(state_ch7_seg4.trigger).toBe("Josh finds the forged will");
+
+      const state_ch15 = resolve_relationship_state_at_position(mock_timeline, "Maren", "Josh", 15, 1);
+      expect(state_ch15.relation_tone).toBe("hostile");
+      expect(state_ch15.status).toBe("estranged");
+    });
+
+    it('inverts directional power dynamic when characters are queried in reverse order', () => {
+      const state_josh_view = resolve_relationship_state_at_position(mock_timeline, "Josh", "Maren", 1, 1);
+      expect(state_josh_view.power_dynamic).toBe("b_over_a");
+    });
+  });
 });
+

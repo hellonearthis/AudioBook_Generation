@@ -5,7 +5,7 @@ const GROUND_TRUTH_PATH = path.join(__dirname, '..', 'benchmarks', 'unmarked_gro
 const SPAN_PROMPT_PATH = path.join(__dirname, '..', 'prompts', 'unmarked_span_detection.txt');
 const JOINT_PROMPT_PATH = path.join(__dirname, '..', 'prompts', 'unmarked_joint_attribution.txt');
 
-const LLAMA_ENDPOINT = 'http://127.0.0.1:8080/v1/chat/completions';
+const LLAMA_ENDPOINT = 'http://127.0.0.1:8081/v1/chat/completions';
 const LAYA_ENDPOINT = 'http://127.0.0.1:8765/decide';
 
 // Helper: JSON parser with markdown block stripping

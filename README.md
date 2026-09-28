@@ -6,7 +6,7 @@ A local, offline desktop application built using **Electron**, designed to autom
 
 ## Key Features
 
-*   **Global Cast Discovery (Pass 1)**: Automatically reads sample book excerpts to discover characters, personality dynamics, age groups, and gender presets using local LLMs (`llama-server.exe` on port 8080).
+*   **Global Cast Discovery (Pass 1)**: Automatically reads sample book excerpts to discover characters, personality dynamics, age groups, and gender presets using local LLMs (`llama-server.exe` on port 8081).
 *   **Sub-25ms Laya Dialogue Attribution (Pass 2)**: Replaces slow autoregressive LLM token generation with **Laya's non-autoregressive ModernBERT classifier**, executing quote attribution in **~18–25ms per line**.
 *   **📖 Unmarked Dialogue / Literary Prose Mode**: First-class support for quotation-free prose (e.g., Cormac McCarthy, James Joyce). Decouples dialogue boundary detection (Stage 2A via local LLM or syntactic speech-tag rules) from speaker attribution and emotional staging (Stage 2B via Laya ModernBERT).
 *   **Multi-Engine Attribution Selector**: Switch dynamically between:
@@ -23,44 +23,105 @@ A local, offline desktop application built using **Electron**, designed to autom
 *   **Timeline Marker Exporter**: Generates companion CSV marker sheets mapping character spoken events directly to timeline offsets for quick DAW imports.
 *   **Timbre Mapping Matrix**: A dedicated configuration panel to randomize speech seeds, lock in master vocal anchors, and map voice profiles to active cast lists.
 *   **🔬 Independent Laya QC & Calibration Engine**: Audits Qwen's character presence, relationship citations (5-item taxonomy), dialogue attribution (narrow-window independence), and emotional delivery (binary noul decomposition). Logs uncalibrated probabilities to disk and fits task temperatures dynamically via negative log-likelihood line search.
+*   **🧩 Modular Main Service Architecture**: Decomposed from a monolithic process into 7 decoupled domain services (`services/`) governing workspaces, FFmpeg timelines, Laya/CLM classification, AI LLM pipelines, audio queues, AuK post-production, and VRAM health arbitration.
+*   **⏳ Dynamic Relationship State Timelines**: Discovers character relationships with chronological state progression across chapters and segments, accounting for shifting dynamics, emotional estrangement, and narrative triggers.
+*   **🎭 Two-Level Voice Division of Labour**: Splits static character identity (designed once via Qwen3 VoiceDesign into reference audio anchors) from dynamic line delivery (rendered via AuK Zero-Shot with natural emotional instructions, relationship subtext, and auto-estimated durations).
 *   **Auto-Start Launcher (`start.ps1`)**: Automatically checks and spawns ComfyUI, llama-server, and Laya if any service is offline.
 
 ---
 
 ## System Architecture
 
-The application coordinates three local AI engines without native database requirements or external dependencies like `fluent-ffmpeg`:
+The application coordinates local AI microservices through an asynchronous, modular Electron architecture:
 
 ```
 +-------------------------------------------------------------------------------------------------+
 |                                          ELECTRON APP                                           |
 |                                                                                                 |
 |  +-----------------------------+               +---------------------------------------------+  |
-|  |  Renderer (UI)              |<------------->|   Main Process                              |  |
-|  |  - Script Editor & Engine   |      IPC      |   - File System & Audio Queue               |  |
-|  |  - Voice Matrix & AuK       |               |   - Multi-AI Service Bridge                 |  |
-|  +-----------------------------+               +---------------------------------------------+  |
+|  |  Renderer (UI)              |<------------->|   Main Orchestrator (main.js)               |  |
+|  |  - Script Editor & Engine   |      IPC      |   Decomposed into specialized services:     |  |
+|  |  - Voice Matrix & Timeline  |               |   - services/workspace_service.js           |  |
+|  |  - AuK Postprod Suite       |               |   - services/audio_ffmpeg_service.js        |  |
+|  |  - Project State & Takes    |               |   - services/laya_clm_service.js            |  |
+|  +-----------------------------+               |   - services/ai_pipeline_service.js         |  |
+|                                                |   - services/audio_queue_service.js         |  |
+|                                                |   - services/auk_postprod_service.js        |  |
+|                                                |   - services/service_health_service.js      |  |
+|                                                +---------------------------------------------+  |
 +-------------------------------------------------------|-----------------------------------------+
                                                         |
          +--------------------------+-------------------+--------------------+--------------------+
          |                          |                                        |                    |
-         v (Port 8765)              v (Port 8700)                            v (Port 8080)        v (Port 8188)
+         v (Port 8765)              v (Port 8700)                            v (Port 8081)        v (Port 8188)
 +------------------+       +-------------------------+              +------------------+  +-------------------+
 |   LAYA ENGINE    |       |       CLM ENGINE        |              | LLAMA.CPP SERVER |  |      COMFYUI      |
 |   (ModernBERT)   |       |   (CLM-v0.1-8B + Qwen)  |              |(llama-server.exe)|  |(TTS Audio Engine) |
 | - ~18-25ms Quote |       | - ~75-180ms System One  |              | - Pass 1: Cast   |  | - AuK & Qwen3 TTS |
 |   Attribution    |       | - Deeper literary prose |              |   Discovery      |  | - 17 Workflows    |
 | - Pass 3: Acting |       | - High-semantic subtext |              | - Deep Directing |  | - Take Editor     |
-| - Energy Scoring |       | - Cascade escalation    |              | - LLM Fallback   |  | - Voice Cloning   |
+| - Energy Scoring |       | - Cascade escalation    |              | - State Timelines|  | - Voice Cloning   |
 +------------------+       +-------------------------+              +------------------+  +-------------------+
 ```
+
+### Modular Backend Services (`services/`)
+
+1. **`services/workspace_service.js`**: Manages workspace directory selection, multi-project file loading and saving (`project_state.json`), take file deletion, and native context menus.
+2. **`services/audio_ffmpeg_service.js`**: Performs silent-padded multi-take timeline stitching via native FFmpeg, parses timeline markers CSV files, probes audio metadata durations, and streams binary buffers to Peaks.js.
+3. **`services/laya_clm_service.js`**: Bridges the sub-25ms ModernBERT Laya Decision Engine and CLM-8B System One, manages empirical calibration logging, and coordinates contrastive escalation.
+4. **`services/ai_pipeline_service.js`**: Executes LLM extraction, JSON parsing with repair heuristics, style attribute merging, and unmarked literary prose boundary detection.
+5. **`services/audio_queue_service.js`**: Runs the sequential audio generation worker, AuK Zero-Shot instruction compilation, anchor baking, word-count duration calculations, and ComfyUI queue polling.
+6. **`services/auk_postprod_service.js`**: Executes non-destructive AuK post-production workflows (whisper conversion, pitch shift, speed adjustment, volume editing, emotion morphing, de-accenting, and speech enhancement).
+7. **`services/service_health_service.js`**: Controls on-demand microservice launching, health probing, and bidirectional VRAM eviction (`/free` and auto-sleep synchronization).
 
 ---
 
 ## Core Pipeline Details
 
-### Pass 1: Global Cast Discovery
-Uses local LLM endpoints (`http://127.0.0.1:8080/v1/chat/completions`) to analyze raw text segments and discover character casts, genders, ages, and personality traits. Discovered characters are automatically registered into the Global Voice Matrix.
+### Pass 1: Global Cast Discovery & Dynamic Relationship Timelines
+Uses local LLM endpoints (`http://127.0.0.1:8081/v1/chat/completions`) with `prompts/cast_discovery.txt` to discover character personas, age groups, vocal traits, and **chronological relationship state timelines**.
+
+#### Dynamic Relationship Timeline Schema:
+Unlike static relationship labels, character dynamics evolve across chapters:
+```json
+{
+  "relationships": [
+    {
+      "id": "maren_josh",
+      "a": "Maren",
+      "b": "Josh",
+      "states": [
+        {
+          "from": { "chapter": 1, "segment": 1 },
+          "relation_type": "family",
+          "relation_tone": "warm",
+          "status": "current",
+          "power_dynamic": "a_over_b",
+          "trigger": null
+        },
+        {
+          "from": { "chapter": 7, "segment": 3 },
+          "relation_type": "family",
+          "relation_tone": "tense",
+          "status": "current",
+          "power_dynamic": "equal",
+          "trigger": "Josh finds the forged will"
+        },
+        {
+          "from": { "chapter": 12, "segment": 1 },
+          "relation_type": "family",
+          "relation_tone": "hostile",
+          "status": "estranged",
+          "power_dynamic": "b_over_a",
+          "trigger": "Open confrontation at the courthouse"
+        }
+      ]
+    }
+  ]
+}
+```
+*   **State Resolution (`resolve_relationship_state_at_position`)**: Automatically resolves the active relational tone, power dynamic, and status for any line based on its current chapter and segment position.
+*   **Relational Delivery Conditioning**: Directly feeds the resolved relationship state into AuK's directorial instructions for authentic dramatic tension.
 
 ### Pass 2: Dialogue Attribution & Script Parsing
 Attributes prose blocks to narrator or character speakers using the selected engine:
@@ -119,7 +180,27 @@ Use this when:
 
 ## Character Voice Design & Synthesis Rules
 
-The application uses distinct voice pipelines to maintain strict acoustic consistency:
+### The Two-Level Division of Labour: Identity vs Delivery
+To achieve vocal consistency across an entire novel while allowing expressive emotional performance, the system splits character audio synthesis into two distinct operational levels:
+
+```
++-----------------------------------------------------------------------------------------------+
+| LEVEL 1: STATIC CHARACTER IDENTITY (Qwen3 VoiceDesign)                                       |
+| - Created ONCE per character from written personality & vocal descriptions                     |
+| - Baked into a clean reference audio clip (master physical anchor in audio/anchors/)         |
+| - Encodes the character's physical vocal cords: pitch floor, age rasp, gender, resonance      |
++-----------------------------------------------------------------------------------------------+
+                                                │
+                                                ▼  (Locked Reference Anchor WAV)
++-----------------------------------------------------------------------------------------------+
+| LEVEL 2: DYNAMIC LINE DELIVERY (AuK Zero-Shot Clone & Directorial Synthesis)                 |
+| - Executed PER LINE in the Screenplay Editor                                                 |
+| - Speaks new line text in the exact voice timbre of the Level 1 reference clip               |
+| - Instruction carries delivery nuances: primary emotion, secondary emotion, intensity        |
+| - Dynamic context: incorporates resolved Relationship State (tone, power dynamic)             |
+| - Auto-calculates duration hint: gen_seconds estimated from line word count                   |
++-----------------------------------------------------------------------------------------------+
+```
 
 1. **The Custom Preset (Default Workflow)**
    By default, if no specific workflow is configured (defaulting to "inherit"), the system uses the `Qwen3-TTS-CustomVoice_API` workflow. It leverages pre-defined preset voices (like `Eric`, `Dylan`, or `Serena`) and dynamic acting prompts combined with a **deterministic seed** derived from a hash of the speaker's name. This ensures the character always has a consistent baseline voice profile across runs.
@@ -137,6 +218,8 @@ The application uses distinct voice pipelines to maintain strict acoustic consis
 
 5. **🧬 AuK Zero-Shot Voice Clone (`AuK-02`) & Instruct-TTS (`AuK-01`)**
    Supports ComfyUI native AuK models. Assign any reference audio file (or master anchor) to a character and use `AuK-02-Voice-Clone` to generate dialogue matching that reference without requiring reference transcripts. For characters without audio samples, `AuK-01-Instruct-TTS` synthesizes speech directly from descriptive text prompts.
+   *   **Natural Instruction Synthesis**: AuK instructions are dynamically compiled from the line's emotional staging and relationship dynamic (e.g., *"Speak with bitter anger and hurt at high intensity. Spoken to Josh (family, hostile, b_over_a)."*).
+   *   **Smart Duration Estimation (`gen_seconds`)**: Automatically computes the optimal generation window based on speech word-count rate (~2.5 words/sec + 1.2s buffer) to eliminate trailing silence while preventing cutoff.
 
 6. **🪄 AuK Audio Editing Suite (`AuK-03` through `AuK-17`)**
    Every generated take card features a **"🪄 Edit Take"** action to non-destructively transform audio:
@@ -155,13 +238,14 @@ The application uses distinct voice pipelines to maintain strict acoustic consis
 
 ## External Services & Workflows Setup
 
-### 1. Auto-Start Launcher (`start.ps1`)
-Running `.\start.ps1` automatically probes all three AI services and launches any that are offline:
-*   **ComfyUI (8188)**: Spawns `C:\cui\goLow.ps1` in a dedicated window.
-*   **llama-server (8080)**: Spawns `C:\llamaCPP\start_webui_8080.bat` in a dedicated window.
-*   **Laya Decision Engine (8765)**: Spawns `C:\Users\Desktop-Dev\Desktop\Laya\start_server.ps1` in a dedicated window.
+### 1. On-Demand AI Service Architecture (`start.ps1`)
+Running `.\start.ps1` boots the application with an on-demand, resource-conscious lifecycle:
+*   **llama-server (8081)**: Auto-starts if offline. Powers **Stage 1 (Pass 1)** character cast discovery, relationships, and script writing with `qwen3.8-27b-abliterated`. Auto-sleeps after 10s idle to release VRAM.
+*   **ComfyUI (8188)**: **Loads on demand at audio generation time**. When you click "Synthesize Classic" or "Synthesize Directorial", the backend automatically spins up `C:\cui\goLow.ps1`, generates the takes, and evicts models (`/free`) when finished. (Pass `-StartComfyUI` to pre-warm on boot).
+*   **Laya Decision Engine (8765)**: **Loads on demand during attribution**. Only spins up if you select `⚡ Laya Fast`, `Cascade`, or `Hybrid` in the Screenplay Editor. (Pass `-StartLaya` to pre-warm on boot).
+*   **CLM System One (8700)**: **Loads on demand during attribution**. Only spins up if you select `🎯 CLM-8B System One` or `Cascade`. (Pass `-StartCLM` to pre-warm on boot).
 
-If you prefer to start these services manually, pass `-NoAutoStart`:
+If you prefer to manage all services manually:
 ```powershell
 .\start.ps1 -NoAutoStart
 ```
@@ -259,9 +343,9 @@ If you prefer to start these services manually, pass `-NoAutoStart`:
 
 ### 5. llama.cpp / llama-server Configuration
 *   **Path**: `C:\llamaCPP\llama-server.exe`
-*   **Start Script**: `C:\llamaCPP\start_webui_8080.bat`
-*   **Endpoint**: `http://127.0.0.1:8080/v1` (with `/v1/chat/completions`)
-*   Load an instruction-tuned model capable of structured JSON dialogue extraction (e.g. `qwen3.5-9b`). Context size is set to `8192` with `max_tokens` clamped to `4096`.
+*   **Start Script**: `C:\llamaCPP\start_webui_qwen3_8-27b-abliterated_8081.bat`
+*   **Endpoint**: `http://127.0.0.1:8081/v1` (with `/v1/chat/completions`)
+*   Load an instruction-tuned model capable of structured JSON dialogue extraction (e.g. `qwen3.8-27b-abliterated`). Context size is set to `8192` with `max_tokens` clamped to `4096`.
 
 ### 6. ComfyUI Configuration & Custom Paths
 *   The application interfaces with ComfyUI (`http://127.0.0.1:8188`) to save and load voice presets, synthesize WAV audio clips, and execute AuK editing workflows.

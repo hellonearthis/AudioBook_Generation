@@ -43,7 +43,7 @@ If you want to move this from a basic pipeline to a truly useful developer or cr
 
 ---
 
-This is a powerhouse setup for a local, privacy-first desktop application. Electron handles the heavy lifting of local file systems and orchestrates the APIs, while LM Studio and ComfyUI run entirely on your local hardware.
+This is a powerhouse setup for a local, privacy-first desktop application. Electron handles the heavy lifting of local file systems and orchestrates the APIs, while LLM and ComfyUI run entirely on your local hardware.
 
 Here is how to map out the technical architecture and tie these three components together efficiently.
 
@@ -68,7 +68,7 @@ Because Electron separates the UI (**Renderer Process**) from the system operati
                 |                                                     |
                 v (Port 1234)                                         v (Port 8188)
     +-----------------------+                             +-----------------------+
-    |       LM STUDIO       |                             |       COMFYUI         |
+    |       LLM       |                             |       COMFYUI         |
     |  (Gemma-4-12b Parsing)|                             |  (TTS Audio Engine)   |
     +-----------------------+                             +-----------------------+
 
@@ -76,9 +76,9 @@ Because Electron separates the UI (**Renderer Process**) from the system operati
 
 ---
 
-## 2. Text Parsing via LM Studio (google/gemma-4-12b)
+## 2. Text Parsing via LLM (google/gemma-4-12b)
 
-LM Studio exposes an OpenAI-compatible API endpoint at `http://localhost:1234/v1/chat/completions`. To make the screenplay data easy to manipulate in Electron, you need google/gemma-4-12b to return a strict, predictable JSON structure.
+LLM exposes an OpenAI-compatible API endpoint at `http://localhost:1234/v1/chat/completions`. To make the screenplay data easy to manipulate in Electron, you need google/gemma-4-12b to return a strict, predictable JSON structure.
 
 When you send text chunks to LM Studio, enable **JSON Mode** in your API request and use a structured system prompt.
 
@@ -227,7 +227,7 @@ Output:
 other llms to try:  
 
 granite-4.1-8b  108 tokens/s    neh
-axionml-qwen3.5-9b-nvfp4  92 tokens/s      //  it seems slow - maybe the token limits set in lm studio are causing offloading. too slow
+axionml-qwen3.5-9b-nvfp4  92 tokens/s      //  it seems slow - maybe the token limits set in LLM are causing offloading. too slow
 google/gemma-4-e4b 30 tokens/s  // best
 chromadb-context-1 80 tokens/s  // didn't pick up the characters right - nope
 qwen/qwen3.5-9b  95 tokens/s  

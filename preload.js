@@ -57,7 +57,7 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     });
   },
 
-  // WHAT: Request LM Studio to discover characters and compile the Global Cast Profile.
+  // WHAT: Request LLM to discover characters and compile the Global Cast Profile.
   // WHY: Pass 1 of our pipeline calls an external LLM running locally to extract characters from a book segment.
   trigger_global_cast_extraction: (book_text_segment, lm_studio_api_url_address, workspace_directory_path, project_name) => {
     // WHAT: Sending text segment to the backend LLM wrapper.
@@ -70,7 +70,7 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     });
   },
 
-  // WHAT: Request LM Studio to parse text and attribute paragraphs to speakers in JSON format.
+  // WHAT: Request LLM to parse text and attribute paragraphs to speakers in JSON format.
   // WHY: Pass 2 of the pipeline converts blocks of prose into a structured screenplay.
   trigger_dialogue_attribution: (book_text_segment, lm_studio_api_url_address) => {
     // WHAT: Sending text segments to the LLM backend to execute dialogue attribution.
@@ -239,7 +239,7 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     return ipcRenderer.invoke("audio:reset-queue");
   },
 
-  // WHAT: Subscribes to warning events emitted during LM Studio requests.
+  // WHAT: Subscribes to warning events emitted during LLM requests.
   // WHY: Allows the frontend to display context or loading warnings in the UI.
   subscribe_to_lm_studio_warnings: (callback_function_for_warnings) => {
     ipcRenderer.on("system:lm-studio-warning", (event_source, warning_message_string) => {
@@ -257,7 +257,7 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     });
   },
 
-  // WHAT: Sends a single mixed cell text to LM Studio to be split into clean screenplay segments.
+  // WHAT: Sends a single mixed cell text to LLM to be split into clean screenplay segments.
   // WHY: Allows the user to right-click any card and have the AI separate dialogue from narrator attribution accurately.
   trigger_segment_ai_split: (cell_text, lm_studio_api_url_address) => {
     return ipcRenderer.invoke("ai:split-segment", {
@@ -355,6 +355,14 @@ contextBridge.exposeInMainWorld("audiobook_api", {
   open_file_folder: (file_path_string) => {
     return ipcRenderer.invoke("system:open-file-folder", {
       file_path: file_path_string
+    });
+  },
+
+  // WHAT: Opens external URLs (e.g. llama-server Web UI, Laya/CLM docs) safely in default browser.
+  // WHY: Gives the user a one-click way to view and inspect active AI server operations.
+  open_external_url: (target_url_string) => {
+    return ipcRenderer.invoke("system:open-external-url", {
+      url: target_url_string
     });
   },
 

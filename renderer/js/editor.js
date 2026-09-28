@@ -1792,7 +1792,7 @@ async function handle_directorial_speaker_modification_event(index_position_of_c
       }
       const sliding_window_context = sliding_window_context_list.join("\n");
 
-      // WHAT: Querying the Director AI via LM Studio to regenerate style details for this single line.
+      // WHAT: Querying the Director AI via LLM to regenerate style details for this single line.
       // WHY: Dynamically updates the intent analysis, technical voice delivery parameters, Qwen performance cues,
       //      and Zonos emotion weights specifically for the newly assigned speaker.
       const single_line_style_response_json = await window.audiobook_api.trigger_directorial_script_generation(
@@ -2347,10 +2347,10 @@ async function execute_cell_combine_action(direction_string) {
     const cell2 = segment_list[cell2_index];
 
     // WHAT: If both cells contain Qwen style objects, we offer the user an AI Smart Merge.
-    // WHY: Smooths out narrative transitions using LM Studio instead of abruptly cutting styles.
+    // WHY: Smooths out narrative transitions using LLM instead of abruptly cutting styles.
     if (cell1.qwen_style && cell2.qwen_style) {
       const transition_instructions = prompt(
-        "AI Smart Style Merge\n\nProvide transition instructions for LM Studio to blend the performance styles:\n(Leave blank to skip AI and merge text only)",
+        "AI Smart Style Merge\n\nProvide transition instructions for LLM to blend the performance styles:\n(Leave blank to skip AI and merge text only)",
         "Smoothly blend the emotion and narrative flow."
       );
 

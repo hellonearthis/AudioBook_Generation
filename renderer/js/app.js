@@ -12,7 +12,7 @@ let active_loaded_project_state_object = (typeof window !== "undefined" && windo
 //      Node.js v17+ resolves "localhost" as IPv6 (::1) by default, but llama-server
 //      and ComfyUI listen on IPv4 (0.0.0.0 / 127.0.0.1). Using the literal IP
 //      guarantees the TCP handshake always hits the correct network stack.
-let configuration_lm_studio_api_url_address = (typeof window !== "undefined" && window.configuration_lm_studio_api_url_address) || "http://127.0.0.1:8080/v1/chat/completions";
+let configuration_lm_studio_api_url_address = (typeof window !== "undefined" && window.configuration_lm_studio_api_url_address) || "http://127.0.0.1:8081/v1/chat/completions";
 let configuration_laya_api_url_address = (typeof window !== "undefined" && window.configuration_laya_api_url_address) || "http://127.0.0.1:8765";
 let configuration_clm_api_url_address = (typeof window !== "undefined" && window.configuration_clm_api_url_address) || "http://127.0.0.1:8700";
 let configuration_comfyui_api_url_address = (typeof window !== "undefined" && window.configuration_comfyui_api_url_address) || "http://127.0.0.1:8188";
@@ -103,14 +103,14 @@ window.addEventListener("DOMContentLoaded", () => {
   const cached_unmarked_dialogue = localStorage.getItem("setting_unmarked_dialogue");
   const cached_workspace_path = localStorage.getItem("setting_active_workspace_path");
 
-  // WHAT: Normalizing any stale "localhost" strings or legacy LM Studio port (1234) from cached localStorage entries.
-  // WHY: The user may have saved settings in a previous session that used "localhost" or port 1234.
-  //      We rewrite those to "127.0.0.1" and migrate to port 8080 (llama-server) so the app immediately
+  // WHAT: Normalizing any stale "localhost" strings or legacy ports (1234, 8080) from cached localStorage entries.
+  // WHY: The user may have saved settings in a previous session that used "localhost" or port 1234/8080.
+  //      We rewrite those to "127.0.0.1" and migrate to port 8081 (llama-server) so the app immediately
   //      connects to the active local LLM runtime without requiring manual user reconfiguration.
   if (cached_lm_studio_endpoint) {
     cached_lm_studio_endpoint = cached_lm_studio_endpoint.replace(/^(https?:\/\/)localhost/i, "$1127.0.0.1");
-    if (cached_lm_studio_endpoint.includes(":1234")) {
-      cached_lm_studio_endpoint = cached_lm_studio_endpoint.replace(":1234", ":8080");
+    if (cached_lm_studio_endpoint.includes(":1234") || cached_lm_studio_endpoint.includes(":8080")) {
+      cached_lm_studio_endpoint = cached_lm_studio_endpoint.replace(/:(1234|8080)/, ":8081");
     }
   }
   if (cached_laya_endpoint) {
@@ -165,7 +165,7 @@ window.addEventListener("DOMContentLoaded", () => {
     handle_incoming_synthesis_progress_updates(synthesis_progress_update_payload);
   });
 
-  // WHAT: Subscribing to LM Studio warnings.
+  // WHAT: Subscribing to LLM warnings.
   // WHY: Surfaces API context warnings or model fallbacks directly into the sidebar UI.
   window.audiobook_api.subscribe_to_lm_studio_warnings((warning_message_string) => {
     const warning_container = document.getElementById("sidebar_lm_warning_container");
@@ -180,6 +180,11 @@ window.addEventListener("DOMContentLoaded", () => {
       }, 15000);
     }
   });
+
+  // WHAT: Initializing the universal custom floating tooltip engine.
+  // WHY: Displays all application tooltips 16px lower on the screen than standard cursor clearance,
+  //      preventing them from obscuring active UI buttons while matching the cyberpunk theme.
+  initialize_universal_custom_tooltip_engine();
 });
 
 // WHAT: Parsing and persisting changes to system inputs (ports, modes).
@@ -243,6 +248,33 @@ function save_global_configurations() {
   localStorage.setItem("setting_clm_url", normalized_clm_address);
   localStorage.setItem("setting_attribution_engine", selected_engine);
   localStorage.setItem("setting_unmarked_dialogue", is_unmarked_active ? "true" : "false");
+}
+
+// WHAT: Opens active AI backend Web UIs and Swagger API dashboards directly in default browser.
+// WHY: Allows the user to view live slot progress, generation speed, and API diagnostics in real time.
+function open_service_web_ui(service_name) {
+  let target_url = "http://127.0.0.1:8081";
+  if (service_name === "llama") {
+    const raw_val = (document.getElementById("settings_lm_studio_endpoint_input")?.value || "http://127.0.0.1:8081").trim();
+    target_url = raw_val.replace(/\/v1.*$/, "").replace(/\/chat.*$/, "");
+  } else if (service_name === "laya") {
+    const raw_val = (document.getElementById("settings_laya_endpoint_input")?.value || "http://127.0.0.1:8765").trim();
+    target_url = `${raw_val.replace(/\/+$/, "")}/docs`;
+  } else if (service_name === "clm") {
+    const raw_val = (document.getElementById("settings_clm_endpoint_input")?.value || "http://127.0.0.1:8700").trim();
+    target_url = `${raw_val.replace(/\/+$/, "")}/docs`;
+  } else if (service_name === "comfyui") {
+    const raw_val = (document.getElementById("settings_comfyui_endpoint_input")?.value || "http://127.0.0.1:8188").trim();
+    target_url = raw_val.replace(/\/+$/, "");
+  }
+  if (window.audiobook_api && window.audiobook_api.open_external_url) {
+    window.audiobook_api.open_external_url(target_url);
+  } else {
+    window.open(target_url, "_blank");
+  }
+}
+if (typeof window !== "undefined") {
+  window.open_service_web_ui = open_service_web_ui;
 }
 
 // =========================================================================
@@ -484,4 +516,147 @@ async function load_audiobook_project_by_name(project_name_string) {
     alert(`Could not load project state: ${state_fetch_failure_exception.message}`);
     try { require('fs').writeFileSync('./frontend_error.log', state_fetch_failure_exception.stack || state_fetch_failure_exception.toString()); } catch(filesystem_logging_error){}
   }
+}
+
+// =========================================================================
+// UNIVERSAL CUSTOM FLOATING TOOLTIP ENGINE (16px lower on screen)
+// =========================================================================
+// WHAT: Intercepts all native title and data-tooltip attributes across the application
+//       and displays a custom dark-mode, high-contrast floating tooltip positioned
+//       16 pixels lower than standard cursor clearance.
+// WHY: Native OS/Chromium tooltips cannot be repositioned via CSS, block interactive
+//      controls directly beneath the mouse cursor, and clash with the cyberpunk theme.
+//      Positioning the tooltip 16px lower (clientY + 28px) ensures the hovered element
+//      remains completely visible and readable at all times.
+function initialize_universal_custom_tooltip_engine() {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  if (window.__cyber_tooltip_engine_initialized) return;
+  window.__cyber_tooltip_engine_initialized = true;
+
+  let tooltip_el = document.getElementById("cyber_floating_tooltip");
+  if (!tooltip_el) {
+    tooltip_el = document.createElement("div");
+    tooltip_el.id = "cyber_floating_tooltip";
+    tooltip_el.setAttribute("role", "tooltip");
+    tooltip_el.setAttribute("aria-hidden", "true");
+    document.body.appendChild(tooltip_el);
+  }
+
+  let active_target = null;
+  const VERTICAL_CURSOR_CLEARANCE_BASE = 12; // Base standard offset from cursor
+  const EXTRA_LOWER_OFFSET_PIXELS = 16;     // User specified: 16px lower on screen
+  const TOTAL_VERTICAL_OFFSET = VERTICAL_CURSOR_CLEARANCE_BASE + EXTRA_LOWER_OFFSET_PIXELS; // 28px
+
+  function update_tooltip_position(event) {
+    if (!tooltip_el.classList.contains("visible")) return;
+
+    const viewport_width = window.innerWidth || 1920;
+    const viewport_height = window.innerHeight || 1080;
+    const tooltip_rect = tooltip_el.getBoundingClientRect();
+    const tooltip_width = tooltip_rect.width || 180;
+    const tooltip_height = tooltip_rect.height || 32;
+
+    // Horizontal placement: align slightly to right of cursor (+10px), clamp within viewport margins
+    let left_pos = event.clientX + 10;
+    if (left_pos + tooltip_width > viewport_width - 12) {
+      left_pos = viewport_width - tooltip_width - 12;
+    }
+    if (left_pos < 12) {
+      left_pos = 12;
+    }
+
+    // Vertical placement: exactly 16px lower on the screen than standard base offset (clientY + 28px)
+    let top_pos = event.clientY + TOTAL_VERTICAL_OFFSET;
+
+    // Viewport bottom edge collision check:
+    // If the 16px-lowered tooltip overflows the bottom of the screen, flip above cursor or clamp
+    if (top_pos + tooltip_height > viewport_height - 10) {
+      const top_flipped = event.clientY - tooltip_height - 12;
+      if (top_flipped > 10) {
+        top_pos = top_flipped;
+      } else {
+        top_pos = Math.max(10, viewport_height - tooltip_height - 10);
+      }
+    }
+
+    tooltip_el.style.left = `${Math.round(left_pos)}px`;
+    tooltip_el.style.top = `${Math.round(top_pos)}px`;
+  }
+
+  function show_tooltip_for_element(target, event) {
+    if (!target) return;
+
+    // If target has a native title attribute, migrate it to data-tooltip-text to suppress native OS tooltip
+    if (target.hasAttribute("title")) {
+      const native_title_string = target.getAttribute("title");
+      if (native_title_string && native_title_string.trim()) {
+        target.setAttribute("data-tooltip-text", native_title_string);
+      }
+      target.removeAttribute("title");
+    }
+
+    const tooltip_text = target.getAttribute("data-tooltip-text") || target.getAttribute("data-tooltip");
+    if (!tooltip_text || !tooltip_text.trim()) {
+      hide_tooltip();
+      return;
+    }
+
+    active_target = target;
+    tooltip_el.textContent = tooltip_text.trim();
+    tooltip_el.classList.add("visible");
+    tooltip_el.setAttribute("aria-hidden", "false");
+    update_tooltip_position(event);
+  }
+
+  function hide_tooltip() {
+    active_target = null;
+    tooltip_el.classList.remove("visible");
+    tooltip_el.setAttribute("aria-hidden", "true");
+  }
+
+  // Event Delegation on document for hover and mouse movement
+  document.addEventListener("mouseover", (event) => {
+    const matched_target = event.target.closest("[title], [data-tooltip], [data-tooltip-text]");
+    if (matched_target) {
+      show_tooltip_for_element(matched_target, event);
+    }
+  }, true);
+
+  document.addEventListener("mousemove", (event) => {
+    if (!active_target) return;
+    // Check if cursor is still within the active target or its descendants
+    if (!active_target.contains(event.target)) {
+      const new_target = event.target.closest("[title], [data-tooltip], [data-tooltip-text]");
+      if (new_target) {
+        show_tooltip_for_element(new_target, event);
+      } else {
+        hide_tooltip();
+      }
+      return;
+    }
+    update_tooltip_position(event);
+  }, { passive: true });
+
+  document.addEventListener("mouseout", (event) => {
+    if (!active_target) return;
+    if (event.relatedTarget && active_target.contains(event.relatedTarget)) {
+      // Still within the active target or its children
+      return;
+    }
+    hide_tooltip();
+  }, true);
+
+  // Hide on user interaction, scroll, or window blur to avoid sticky tooltips
+  window.addEventListener("scroll", hide_tooltip, true);
+  window.addEventListener("blur", hide_tooltip);
+  document.addEventListener("mousedown", hide_tooltip, true);
+}
+
+if (typeof window !== "undefined") {
+  window.initialize_universal_custom_tooltip_engine = initialize_universal_custom_tooltip_engine;
+}
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    initialize_universal_custom_tooltip_engine
+  };
 }

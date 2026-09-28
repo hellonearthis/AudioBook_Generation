@@ -65,7 +65,7 @@
         <div class="metric_row d-none mt-10 pt-10 flex-column align-items-start gap-4 border-top-dashed-coral" id="sidebar_lm_warning_container">
           <span class="metric_label text-coral d-flex align-items-center gap-4">
             <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            LM Studio Warning
+            LLM Warning
           </span>
           <span class="metric_value text-high-contrast text-9 line-height-1-3 white-space-normal word-break-word" id="sidebar_lm_warning_text">-</span>
         </div>
@@ -436,22 +436,26 @@
       <!-- =========================================================================
            MODULAR CONFIGURATION DRAWER / SYSTEM DRAWER
            ========================================================================= -->
-      <footer class="p-10-40 bg-dark-overlay border-top-glass d-flex justify-content-between align-items-center text-11">
-        <div class="d-flex gap-20 align-items-center">
-          <span class="text-muted">LLM Endpoint:</span>
-          <input type="text" id="settings_lm_studio_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8080/v1" onchange="save_global_configurations()" title="llama-server or OpenAI-compatible endpoint (e.g. http://127.0.0.1:8080/v1)">
+      <footer class="p-10-40 bg-dark-overlay border-top-glass d-flex justify-content-between align-items-center text-11 flex-wrap gap-10">
+        <div class="d-flex gap-8 align-items-center">
+          <span class="text-muted">LLM:</span>
+          <input type="text" id="settings_lm_studio_endpoint_input" style="width: 145px;" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8081/v1" onchange="save_global_configurations()" title="llama-server or OpenAI-compatible endpoint">
+          <button class="cyber_btn btn_secondary p-4-8 text-10 radius-4" onclick="open_service_web_ui('llama')" title="Open llama-server Web UI in browser to monitor active slots, memory, and token generation live">🌐 llama UI</button>
         </div>
-        <div class="d-flex gap-20 align-items-center">
-          <span class="text-muted">Laya Endpoint:</span>
-          <input type="text" id="settings_laya_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8765" onchange="save_global_configurations()" title="Laya Decision Engine endpoint (default: http://127.0.0.1:8765)">
+        <div class="d-flex gap-8 align-items-center">
+          <span class="text-muted">Laya:</span>
+          <input type="text" id="settings_laya_endpoint_input" style="width: 145px;" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8765" onchange="save_global_configurations()" title="Laya Decision Engine endpoint (default: http://127.0.0.1:8765)">
+          <button class="cyber_btn btn_secondary p-4-8 text-10 radius-4" onclick="open_service_web_ui('laya')" title="Open Laya FastAPI Swagger documentation in browser">🌐 Laya Docs</button>
         </div>
-        <div class="d-flex gap-20 align-items-center">
-          <span class="text-muted">CLM Endpoint:</span>
-          <input type="text" id="settings_clm_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8700" onchange="save_global_configurations()" title="CLM System One endpoint (default: http://127.0.0.1:8700)">
+        <div class="d-flex gap-8 align-items-center">
+          <span class="text-muted">CLM:</span>
+          <input type="text" id="settings_clm_endpoint_input" style="width: 145px;" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8700" onchange="save_global_configurations()" title="CLM System One endpoint (default: http://127.0.0.1:8700)">
+          <button class="cyber_btn btn_secondary p-4-8 text-10 radius-4" onclick="open_service_web_ui('clm')" title="Open CLM FastAPI Swagger documentation in browser">🌐 CLM Docs</button>
         </div>
-        <div class="d-flex gap-20 align-items-center">
-          <span class="text-muted">ComfyUI Endpoint:</span>
-          <input type="text" id="settings_comfyui_endpoint_input" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8188" onchange="save_global_configurations()">
+        <div class="d-flex gap-8 align-items-center">
+          <span class="text-muted">ComfyUI:</span>
+          <input type="text" id="settings_comfyui_endpoint_input" style="width: 145px;" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8188" onchange="save_global_configurations()">
+          <button class="cyber_btn btn_secondary p-4-8 text-10 radius-4" onclick="open_service_web_ui('comfyui')" title="Open ComfyUI Web UI in browser">🌐 CUI</button>
         </div>
         <div>
           <span class="text-neon-blue font-semibold">System Online</span>
@@ -687,6 +691,9 @@
       </div>
     </div>
   </div>
+
+  <!-- UNIVERSAL FLOATING TOOLTIP CONTAINER (Configured 16px lower on screen) -->
+  <div id="cyber_floating_tooltip" role="tooltip" aria-hidden="true"></div>
 
   <!-- LOAD INTERACTJS DEPENDENCY -->
   <script src="../node_modules/interactjs/dist/interact.min.js"></script>
