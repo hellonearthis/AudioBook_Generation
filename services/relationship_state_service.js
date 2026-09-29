@@ -25,6 +25,49 @@ const AUK_08_CANONICAL_EMOTION_PALETTE_LIST = [
   "neutral"
 ];
 
+// WHAT: Constrained canonical relationship structural types supported across Pass 1 cast discovery, Pass 2.5 timelines, and QC gates.
+// WHY: Ensures extracted relationships adhere to consistent taxonomy across services, prompts, and Laya QC gates.
+const CANONICAL_RELATIONSHIP_TYPES_LIST = [
+  "family",
+  "romantic",
+  "friendship",
+  "professional",
+  "acquaintance",
+  "mentor_student",
+  "service",
+  "allied",
+  "adversarial",
+  "stranger",
+  "unknown"
+];
+
+// WHAT: Canonical relationship tone descriptors capturing persistent emotional atmosphere.
+// WHY: Differentiates enduring relational attitude from transient line emotions.
+const CANONICAL_RELATIONSHIP_TONES_LIST = [
+  "warm",
+  "neutral",
+  "tense",
+  "competitive",
+  "hostile",
+  "unknown"
+];
+
+// WHAT: Canonical relationship status values tracking temporal standing.
+const CANONICAL_RELATIONSHIP_STATUSES_LIST = [
+  "current",
+  "former",
+  "estranged",
+  "developing"
+];
+
+// WHAT: Canonical directional power dynamic indicators.
+const CANONICAL_RELATIONSHIP_POWER_DYNAMICS_LIST = [
+  "equal",
+  "a_over_b",
+  "b_over_a",
+  "unknown"
+];
+
 // -------------------------------------------------------------------------
 // RELATIONSHIP TIMELINE LOOKUP & DELTA MERGING
 // -------------------------------------------------------------------------
@@ -304,5 +347,9 @@ module.exports = {
   map_emotion_to_auk08_palette,
   format_active_relationships_summary_for_prompt,
   generate_canonical_relationship_pair_identifier,
-  AUK_08_CANONICAL_EMOTION_PALETTE_LIST
+  AUK_08_CANONICAL_EMOTION_PALETTE_LIST,
+  CANONICAL_RELATIONSHIP_TYPES_LIST,
+  CANONICAL_RELATIONSHIP_TONES_LIST,
+  CANONICAL_RELATIONSHIP_STATUSES_LIST,
+  CANONICAL_RELATIONSHIP_POWER_DYNAMICS_LIST
 };

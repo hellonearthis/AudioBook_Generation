@@ -225,4 +225,80 @@ describe('Laya Quality Control (QC) Pipeline (Phases 0-5)', () => {
     expect(cal.calibrated_probability).toBeLessThan(0.99); // Softened by T=2.5
     expect(cal.gate_status).toBe('auto_approved');
   });
+
+  test('Gate 2: Supports full canonical relationship taxonomy (friendship, stranger, etc.) and optional tone', async () => {
+    const pipeline = new LayaQCPipeline({
+      layaEndpoint: 'http://127.0.0.1:8765',
+      logFilePath: TEST_LOG_PATH,
+      mode: 'log_only'
+    });
+
+    pipeline._queryLaya = jest.fn().mockImplementation((state, questions) => {
+      expect(questions.evidence_supports_relation.instructions).toContain('stranger');
+      expect(questions.evidence_supports_relation.instructions).toContain('tense');
+      return Promise.resolve({
+        answers: {
+          evidence_supports_relation: {
+            type: 'noul',
+            noul: 0.88,
+            confidence: 0.88
+          }
+        },
+        elapsed_ms: 12,
+        error: null
+      });
+    });
+
+    const result = await pipeline.verifyRelationshipCitation({
+      charA: 'The Man',
+      charB: 'The Roadrat',
+      relationType: 'stranger',
+      relationTone: 'tense',
+      citedEvidence: 'They stood ten paces apart, neither making a move.',
+      bookId: 'road_123'
+    });
+
+    expect(result.relation_type).toBe('stranger');
+    expect(result.relation_tone).toBe('tense');
+    expect(result.decision).toBe('citation_supported');
+    expect(result.pipeline_mode).toBe('log_only');
+    expect(result.gate_status).toBe('needs_review'); // Silently guarded in log-only mode
+    expect(result.calibrated_gate_status).toBeDefined(); // Underlying calibration calculation preserved
+  });
+
+  test('Active Gate Mode: Respects calibrated auto-approval and flagged disagreement when mode is active_gate', async () => {
+    fs.writeFileSync(TEST_CONFIG_PATH, JSON.stringify({
+      tasks: {
+        character_existence: {
+          fitted_temperature: 1.0,
+          auto_approve_threshold: 0.80,
+          review_threshold: 0.40
+        }
+      }
+    }));
+
+    const pipeline = new LayaQCPipeline({
+      configFilePath: TEST_CONFIG_PATH,
+      logFilePath: TEST_LOG_PATH,
+      mode: 'active_gate'
+    });
+
+    pipeline._queryLaya = jest.fn().mockResolvedValue({
+      answers: {
+        is_character_present: { type: 'noul', noul: 0.95 }
+      },
+      elapsed_ms: 10,
+      error: null
+    });
+
+    const approvedResult = await pipeline.verifyCharacterPresence({
+      characterName: 'Anton',
+      citedIntro: 'Anton entered.',
+      bookId: 'b1'
+    });
+
+    expect(approvedResult.pipeline_mode).toBe('active_gate');
+    expect(approvedResult.gate_status).toBe('auto_approved');
+    expect(approvedResult.calibrated_gate_status).toBe('auto_approved');
+  });
 });

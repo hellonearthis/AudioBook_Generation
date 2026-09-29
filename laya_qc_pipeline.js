@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const {
+  CANONICAL_RELATIONSHIP_TYPES_LIST,
+  CANONICAL_RELATIONSHIP_TONES_LIST
+} = require('./services/relationship_state_service');
 
 /**
  * Laya Quality Control (QC) Pipeline
@@ -312,7 +316,9 @@ class LayaQCPipeline {
       is_provisional: calInfo.is_provisional,
       boundary_pegged: calInfo.boundary_pegged,
       decision: raw_noul >= 0.5 ? 'verified' : 'unverified',
+      calibrated_gate_status: calInfo.gate_status,
       gate_status: this.mode === 'log_only' ? 'needs_review' : calInfo.gate_status,
+      pipeline_mode: this.mode,
       elapsed_ms: layaRes.elapsed_ms,
       error: layaRes.error
     };
@@ -325,18 +331,28 @@ class LayaQCPipeline {
    * @param {Object} params
    * @param {string} params.charA First character
    * @param {string} params.charB Second character
-   * @param {'family'|'romantic'|'adversarial'|'professional'|'unknown'} params.relationType Claimed relation
+   * @param {string} params.relationType Claimed relation from CANONICAL_RELATIONSHIP_TYPES_LIST
+   * @param {string} [params.relationTone] Optional interpersonal tone from CANONICAL_RELATIONSHIP_TONES_LIST
    * @param {string} params.citedEvidence Exact 1-2 sentence excerpt cited as evidence
    * @param {string} [params.bookId='default_book'] ID of the active book
    * @param {boolean|null} [params.humanVerdict=null] Ground truth if known
    * @returns {Promise<Object>} Verification result
    */
-  async verifyRelationshipCitation({ charA, charB, relationType, citedEvidence, bookId = 'default_book', humanVerdict = null }) {
-    const validTaxonomy = ['family', 'romantic', 'adversarial', 'professional', 'unknown'];
-    const normalizedType = validTaxonomy.includes(relationType.toLowerCase()) ? relationType.toLowerCase() : 'unknown';
+  async verifyRelationshipCitation({ charA, charB, relationType, relationTone = null, citedEvidence, bookId = 'default_book', humanVerdict = null }) {
+    // WHAT: Validating claimed relationship type against shared canonical taxonomy.
+    // WHY: Prevents desynchronization with Pass 1 cast discovery and Pass 2.5 relationship state engine.
+    const normalized_relation_type_candidate = (relationType || '').toLowerCase().trim();
+    const normalizedType = CANONICAL_RELATIONSHIP_TYPES_LIST.includes(normalized_relation_type_candidate)
+      ? normalized_relation_type_candidate
+      : 'unknown';
+
+    const normalizedTone = (relationTone && CANONICAL_RELATIONSHIP_TONES_LIST.includes(relationTone.toLowerCase().trim()))
+      ? relationTone.toLowerCase().trim()
+      : null;
 
     const questionKey = 'evidence_supports_relation';
-    const instructions = `Does this cited passage provide direct evidence of a ${normalizedType} relationship between ${charA} and ${charB}?`;
+    const toneDescription = normalizedTone ? ` with a ${normalizedTone} tone` : '';
+    const instructions = `Does this cited passage provide direct evidence of a ${normalizedType} relationship${toneDescription} between ${charA} and ${charB}?`;
     const questions = {
       [questionKey]: {
         type: 'noul',
@@ -352,7 +368,7 @@ class LayaQCPipeline {
 
     const logEntry = this.logDecision({
       question_type: 'relationship_evidence',
-      qwen_claim: `${charA} <-> ${charB}: ${normalizedType}`,
+      qwen_claim: `${charA} <-> ${charB}: ${normalizedType}${normalizedTone ? ` (${normalizedTone})` : ''}`,
       laya_state: citedEvidence,
       laya_criteria: { instructions },
       laya_raw_probability: raw_noul,
@@ -368,13 +384,16 @@ class LayaQCPipeline {
       char_a: charA,
       char_b: charB,
       relation_type: normalizedType,
+      relation_tone: normalizedTone,
       raw_probability: raw_noul,
       calibrated_probability: calInfo.calibrated_probability,
       is_provisional: calInfo.is_provisional,
       boundary_pegged: calInfo.boundary_pegged,
       decision: raw_noul >= 0.5 ? 'citation_supported' : 'citation_unsupported',
       alert_status: raw_noul >= 0.5 ? 'ok' : 'unsupported_citation',
+      calibrated_gate_status: calInfo.gate_status,
       gate_status: this.mode === 'log_only' ? 'needs_review' : calInfo.gate_status,
+      pipeline_mode: this.mode,
       elapsed_ms: layaRes.elapsed_ms,
       error: layaRes.error
     };
@@ -448,7 +467,9 @@ class LayaQCPipeline {
       is_provisional: calInfo.is_provisional,
       boundary_pegged: calInfo.boundary_pegged,
       is_agreement,
+      calibrated_gate_status: calInfo.gate_status,
       gate_status: this.mode === 'log_only' ? 'needs_review' : calInfo.gate_status,
+      pipeline_mode: this.mode,
       elapsed_ms: layaRes.elapsed_ms,
       error: layaRes.error
     };
@@ -507,7 +528,9 @@ class LayaQCPipeline {
       is_provisional: calInfo.is_provisional,
       boundary_pegged: calInfo.boundary_pegged,
       decision: raw_noul >= 0.5 ? 'verified' : 'unverified',
+      calibrated_gate_status: calInfo.gate_status,
       gate_status: this.mode === 'log_only' ? 'needs_review' : calInfo.gate_status,
+      pipeline_mode: this.mode,
       elapsed_ms: layaRes.elapsed_ms,
       error: layaRes.error
     };

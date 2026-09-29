@@ -39,7 +39,7 @@ protocol.registerSchemesAsPrivileged([
 const { register_workspace_handlers } = require("./services/workspace_service");
 const { register_audio_ffmpeg_handlers } = require("./services/audio_ffmpeg_service");
 const { register_laya_clm_handlers } = require("./services/laya_clm_service");
-const { register_ai_pipeline_handlers, detect_unmarked_spans } = require("./services/ai_pipeline_service");
+const { register_ai_pipeline_handlers, detect_unmarked_spans, detect_unmarked_spans_joint } = require("./services/ai_pipeline_service");
 const { register_audio_queue_handlers } = require("./services/audio_queue_service");
 const { register_auk_postprod_handlers } = require("./services/auk_postprod_service");
 
@@ -117,7 +117,7 @@ app.whenReady().then(() => {
   // WHAT: Registering modular IPC handlers across all domain services.
   register_workspace_handlers(ipcMain, get_primary_window);
   register_audio_ffmpeg_handlers(ipcMain);
-  register_laya_clm_handlers(ipcMain, () => detect_unmarked_spans);
+  register_laya_clm_handlers(ipcMain, () => detect_unmarked_spans, () => detect_unmarked_spans_joint);
   register_ai_pipeline_handlers(ipcMain, get_primary_window);
   register_audio_queue_handlers(ipcMain, get_primary_window);
   register_auk_postprod_handlers(ipcMain);
