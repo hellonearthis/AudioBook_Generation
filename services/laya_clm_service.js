@@ -14,7 +14,8 @@ const {
   normalize_localhost_url_to_ipv4_address,
   release_comfyui_vram,
   ensure_laya_ready,
-  ensure_clm_ready
+  ensure_clm_ready,
+  probe_service_health
 } = require("./service_health_service");
 const {
   attributeSpeakersAcrossParagraphs,
@@ -438,7 +439,11 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
           // WHY: Achieves 100% speaker accuracy on unmarked prose (McCarthy/Selby) vs 36-74% for decoupled Laya.
           let joint_spans_result = null;
           if (detect_joint_fn && cast_names.length > 0) {
-            joint_spans_result = await detect_joint_fn(paragraph_string, lm_studio_api_url_address, cast_names);
+            try {
+              joint_spans_result = await detect_joint_fn(paragraph_string, lm_studio_api_url_address, cast_names);
+            } catch (joint_llm_error) {
+              console.warn("Arm 3 joint span detection failed, falling back to decoupled stage 2A/2B:", joint_llm_error.message);
+            }
           }
 
           if (joint_spans_result && joint_spans_result.length > 0) {
@@ -454,7 +459,7 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
                   engine: "joint_llm"
                 });
               } else {
-                script_segments.push({
+                const dialogue_segment = {
                   type: "dialogue",
                   speaker: span_item.speaker || "Character",
                   text: span_item.text,
@@ -465,7 +470,39 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
                   is_ambiguous: false,
                   unmarked: true,
                   engine: "joint_llm"
-                });
+                };
+                script_segments.push(dialogue_segment);
+
+                // WHAT: Non-blocking Shadow QC Gate for Joint LLM (Arm 3) dialogue lines.
+                // WHY: Arm 3 produces high-accuracy joint attribution in a single LLM pass.
+                //      Firing an asynchronous, non-blocking verifySpeakerAttribution pass through Laya
+                //      in the background whenever Laya is online logs the verdict to calibration history
+                //      without gating the UI or blocking generation latency.
+                if (cast_names.length > 0) {
+                  const shadow_candidate_characters = [...cast_names];
+                  if (!shadow_candidate_characters.includes("Narrator")) {
+                    shadow_candidate_characters.push("Narrator");
+                  }
+                  const preceding_context = span_index > 0 ? (joint_spans_result[span_index - 1].text || "").slice(-150) : "";
+
+                  (async () => {
+                    try {
+                      const is_laya_online = await probe_service_health(`${laya_endpoint_url}/health`, 600);
+                      if (is_laya_online) {
+                        const shadow_qc_pipeline = new LayaQCPipeline({ layaEndpoint: laya_endpoint_url });
+                        await shadow_qc_pipeline.verifySpeakerAttribution({
+                          spokenText: span_item.text,
+                          precedingText: preceding_context,
+                          candidateCharacters: shadow_candidate_characters,
+                          qwenSpeaker: span_item.speaker || "Character",
+                          bookId: request_arguments.project_name || "default_book"
+                        });
+                      }
+                    } catch (shadow_qc_error) {
+                      // Silent suppression: background verification must never disrupt playback or editor
+                    }
+                  })();
+                }
               }
             }
             continue;

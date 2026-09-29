@@ -281,4 +281,67 @@ describe("Relationship Timeline State Engine (Pass 2.5)", () => {
       expect(interpolated).toContain('"mentor_student"');
     });
   });
+
+  describe("Directorial Script Edge Cases & Resilient Fallbacks", () => {
+    test("formats graceful fallback summary when relationships database is empty or undefined", () => {
+      const active_cast = [{ id: "John", name: "John" }, { id: "Jane", name: "Jane" }];
+      const empty_summary = format_active_relationships_summary_for_prompt(active_cast, [], 0);
+      expect(empty_summary).toContain("stranger (neutral, current)");
+
+      const null_summary = format_active_relationships_summary_for_prompt(active_cast, null, 0);
+      expect(null_summary).toContain("stranger (neutral, current)");
+    });
+
+    test("formats fallback summary when active scene cast is empty or single character", () => {
+      const cast_empty_summary = format_active_relationships_summary_for_prompt([], sample_project_relationships_database, 0);
+      expect(cast_empty_summary).toBe("No multi-character pairs in this scene.");
+
+      const single_cast_summary = format_active_relationships_summary_for_prompt([{ id: "Josh", name: "Josh" }], sample_project_relationships_database, 0);
+      expect(single_cast_summary).toBe("No multi-character pairs in this scene.");
+    });
+
+    test("filters and formats only relationships relevant to active scene cast", () => {
+      const active_cast = [
+        { id: "Josh", name: "Josh" },
+        { id: "Maren", name: "Maren" },
+        { id: "Drifter", name: "Drifter" }
+      ];
+      const partial_summary = format_active_relationships_summary_for_prompt(
+        active_cast,
+        sample_project_relationships_database,
+        50
+      );
+      // Maren & Josh have an established family relationship
+      expect(partial_summary).toContain("Josh & Maren: family (warm, current)");
+      // Josh & Drifter have no history, defaulting to stranger
+      expect(partial_summary).toContain("Josh & Drifter: stranger (neutral, current)");
+    });
+
+    test("merge_relationship_state_deltas safely handles malformed, empty, or missing inputs", () => {
+      // Empty changes returns existing unchanged
+      const res_empty = merge_relationship_state_deltas({
+        existing_relationships_list: sample_project_relationships_database,
+        incoming_relationship_changes_list: []
+      });
+      expect(res_empty).toHaveLength(1);
+
+      // Null changes returns existing unchanged
+      const res_null = merge_relationship_state_deltas({
+        existing_relationships_list: sample_project_relationships_database,
+        incoming_relationship_changes_list: null
+      });
+      expect(res_null).toHaveLength(1);
+
+      // Malformed change with missing characters is skipped gracefully
+      const res_malformed = merge_relationship_state_deltas({
+        existing_relationships_list: sample_project_relationships_database,
+        incoming_relationship_changes_list: [
+          { char_a: null, char_b: "Ghost", new_relation_type: "stranger" },
+          { char_a: "Unknown", char_b: "", new_relation_type: "stranger" }
+        ]
+      });
+      expect(res_malformed).toHaveLength(1);
+    });
+  });
 });
+

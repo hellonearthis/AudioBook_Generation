@@ -2,6 +2,16 @@
 const filesystem_library = require("fs");
 const path_library = require("path");
 
+jest.mock("../services/service_health_service", () => {
+  const actual = jest.requireActual("../services/service_health_service");
+  return {
+    ...actual,
+    ensure_laya_ready: jest.fn().mockResolvedValue(true),
+    ensure_clm_ready: jest.fn().mockResolvedValue(true),
+    probe_service_health: jest.fn().mockResolvedValue(false)
+  };
+});
+
 const editor_script_content = filesystem_library.readFileSync(
   path_library.resolve(__dirname, "../renderer/js/editor.js"),
   "utf8"
@@ -153,4 +163,107 @@ describe("Unmarked Dialogue / Literary Mode (Decoupled Stage 2A & 2B)", () => {
       expect(unmarked_badges[0].textContent).toContain("📖 Unmarked");
     });
   });
+
+  describe("Backend Arm 3 Joint Routing & Resilient Fallback (laya_clm_service)", () => {
+    const { register_laya_clm_handlers } = require("../services/laya_clm_service");
+    const service_health_service = require("../services/service_health_service");
+
+    let mockIpcMain;
+    let handlersMap;
+
+    beforeEach(() => {
+      service_health_service.ensure_laya_ready.mockClear();
+      service_health_service.probe_service_health.mockClear();
+      service_health_service.probe_service_health.mockResolvedValue(false);
+      handlersMap = {};
+      mockIpcMain = {
+        handle: jest.fn((channel, handler) => {
+          handlersMap[channel] = handler;
+        })
+      };
+    });
+
+    test("routes unmarked dialogue to Arm 3 joint LLM and triggers non-blocking shadow probe", async () => {
+      service_health_service.probe_service_health.mockResolvedValueOnce(true); // Laya probe returns online for shadow QC
+      const mockDetectJoint = jest.fn().mockResolvedValue([
+        { type: "narrator", text: "He walked slowly." },
+        { type: "dialogue", speaker: "The Man", text: "We need water.", emotion: "weary", energy: 0.8 }
+      ]);
+      const mockDetectSpans = jest.fn();
+
+      register_laya_clm_handlers(mockIpcMain, () => mockDetectSpans, () => mockDetectJoint);
+      const layaHandler = handlersMap["ai:laya-attribute"];
+      expect(layaHandler).toBeDefined();
+
+      const result = await layaHandler({}, {
+        book_text_segment: "He walked slowly. We need water.",
+        unmarked_dialogue_mode: true,
+        voice_mapping_context: {
+          "The Man": { gender: "Male", age: "Adult" }
+        },
+        laya_endpoint_url: "http://127.0.0.1:8765"
+      });
+
+      expect(mockDetectJoint).toHaveBeenCalledTimes(1);
+      expect(mockDetectSpans).not.toHaveBeenCalled();
+      expect(result.script_segments).toHaveLength(2);
+      expect(result.script_segments[0].engine).toBe("joint_llm");
+      expect(result.script_segments[1].engine).toBe("joint_llm");
+      expect(result.script_segments[1].confidence).toBe(0.95);
+      expect(result.script_segments[1].speaker).toBe("The Man");
+      expect(result.script_segments[1].unmarked).toBe(true);
+
+      // Verify non-blocking shadow probe checked health
+      expect(service_health_service.probe_service_health).toHaveBeenCalled();
+    });
+
+    test("falls back to Stage 2A decoupled detect_spans when Arm 3 joint function throws an error", async () => {
+      const mockDetectJoint = jest.fn().mockRejectedValue(new Error("LLM connection timeout"));
+      const mockDetectSpans = jest.fn().mockResolvedValue([
+        { type: "narrator", text: "He walked slowly." },
+        { type: "dialogue", text: "We need water." }
+      ]);
+
+      register_laya_clm_handlers(mockIpcMain, () => mockDetectSpans, () => mockDetectJoint);
+      const layaHandler = handlersMap["ai:laya-attribute"];
+
+      const result = await layaHandler({}, {
+        book_text_segment: "He walked slowly. We need water.",
+        unmarked_dialogue_mode: true,
+        voice_mapping_context: {
+          "The Man": { gender: "Male", age: "Adult" }
+        },
+        laya_endpoint_url: "http://127.0.0.1:8765"
+      });
+
+      expect(mockDetectJoint).toHaveBeenCalledTimes(1);
+      expect(mockDetectSpans).toHaveBeenCalledTimes(1);
+      expect(result.script_segments.length).toBeGreaterThan(0);
+    });
+
+    test("falls back to Stage 2A decoupled detect_spans when Arm 3 returns empty array", async () => {
+      const mockDetectJoint = jest.fn().mockResolvedValue([]);
+      const mockDetectSpans = jest.fn().mockResolvedValue([
+        { type: "narrator", text: "He walked slowly." }
+      ]);
+
+      register_laya_clm_handlers(mockIpcMain, () => mockDetectSpans, () => mockDetectJoint);
+      const layaHandler = handlersMap["ai:laya-attribute"];
+
+      const result = await layaHandler({}, {
+        book_text_segment: "He walked slowly.",
+        unmarked_dialogue_mode: true,
+        voice_mapping_context: {
+          "The Man": { gender: "Male", age: "Adult" }
+        },
+        laya_endpoint_url: "http://127.0.0.1:8765"
+      });
+
+      expect(mockDetectJoint).toHaveBeenCalledTimes(1);
+      expect(mockDetectSpans).toHaveBeenCalledTimes(1);
+      expect(result.script_segments).toHaveLength(1);
+      expect(result.script_segments[0].engine).toBe("narrator");
+    });
+  });
 });
+

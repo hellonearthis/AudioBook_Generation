@@ -301,4 +301,90 @@ describe('Laya Quality Control (QC) Pipeline (Phases 0-5)', () => {
     expect(approvedResult.gate_status).toBe('auto_approved');
     expect(approvedResult.calibrated_gate_status).toBe('auto_approved');
   });
+
+  describe('Provisional Calibration Edge Cases & Boundary Dampening', () => {
+    test('Dampens extreme low temperature (T=0.05) to 0.5 when boundary_pegged and is_provisional', () => {
+      fs.writeFileSync(TEST_CONFIG_PATH, JSON.stringify({
+        tasks: {
+          emotion: {
+            fitted_temperature: 0.05,
+            boundary_pegged: true,
+            is_provisional: true,
+            auto_approve_threshold: 0.90,
+            review_threshold: 0.50
+          }
+        }
+      }));
+
+      const pipeline = new LayaQCPipeline({
+        configFilePath: TEST_CONFIG_PATH,
+        logFilePath: TEST_LOG_PATH
+      });
+
+      const cal = pipeline._applyCalibration('emotion', 0.80);
+      expect(cal.is_calibrated).toBe(true);
+      expect(cal.is_provisional).toBe(true);
+      expect(cal.boundary_pegged).toBe(true);
+      expect(cal.effective_temperature).toBe(0.5); // Dampened from 0.05 to minimum safety bound 0.5
+    });
+
+    test('Clamps extreme high temperature (T=3.5) to 2.0 when boundary_pegged and is_provisional', () => {
+      fs.writeFileSync(TEST_CONFIG_PATH, JSON.stringify({
+        tasks: {
+          speaker_attribution: {
+            fitted_temperature: 3.5,
+            boundary_pegged: true,
+            is_provisional: true,
+            auto_approve_threshold: 0.90,
+            review_threshold: 0.50
+          }
+        }
+      }));
+
+      const pipeline = new LayaQCPipeline({
+        configFilePath: TEST_CONFIG_PATH,
+        logFilePath: TEST_LOG_PATH
+      });
+
+      const cal = pipeline._applyCalibration('speaker_attribution', 0.90);
+      expect(cal.effective_temperature).toBe(2.0); // Clamped from 3.5 to maximum safety bound 2.0
+    });
+
+    test('Preserves raw fitted temperature without dampening when is_provisional is false (sufficient N)', () => {
+      fs.writeFileSync(TEST_CONFIG_PATH, JSON.stringify({
+        tasks: {
+          character_existence: {
+            fitted_temperature: 0.05,
+            boundary_pegged: true,
+            is_provisional: false, // Large sample size N >= 30
+            auto_approve_threshold: 0.90,
+            review_threshold: 0.50
+          }
+        }
+      }));
+
+      const pipeline = new LayaQCPipeline({
+        configFilePath: TEST_CONFIG_PATH,
+        logFilePath: TEST_LOG_PATH
+      });
+
+      const cal = pipeline._applyCalibration('character_existence', 0.85);
+      expect(cal.effective_temperature).toBe(0.05); // Preserved raw temperature because sample is mature
+    });
+
+    test('Handles missing calibration profile safely with needs_review fallback', () => {
+      const pipeline = new LayaQCPipeline({
+        configFilePath: TEST_CONFIG_PATH,
+        logFilePath: TEST_LOG_PATH
+      });
+
+      const cal = pipeline._applyCalibration('non_existent_task', 0.88);
+      expect(cal.is_calibrated).toBe(false);
+      expect(cal.is_provisional).toBe(true);
+      expect(cal.boundary_pegged).toBe(false);
+      expect(cal.calibrated_probability).toBe(0.88);
+      expect(cal.gate_status).toBe('needs_review');
+    });
+  });
 });
+

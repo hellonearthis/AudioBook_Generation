@@ -77,7 +77,9 @@ function resolve_active_relationship_state_at_segment({
 
   // WHAT: Searching for an existing relationship record matching this character pair.
   // WHY: Checks bidirectional combinations (A with B or B with A).
-  const matched_relationship_record = relationships_list.find((relationship_candidate) => {
+  const safe_relationships_list = Array.isArray(relationships_list) ? relationships_list : [];
+  const matched_relationship_record = safe_relationships_list.find((relationship_candidate) => {
+    if (!relationship_candidate || typeof relationship_candidate !== "object") return false;
     const candidate_character_a = (relationship_candidate.a || relationship_candidate.char_a || "").toLowerCase().trim();
     const candidate_character_b = (relationship_candidate.b || relationship_candidate.char_b || "").toLowerCase().trim();
 
@@ -158,12 +160,17 @@ function merge_relationship_state_deltas({
   existing_relationships_list = [],
   incoming_relationship_changes_list = []
 }) {
-  const updated_relationships_list = [...existing_relationships_list];
+  const safe_existing_list = Array.isArray(existing_relationships_list) ? existing_relationships_list : [];
+  const safe_incoming_changes = Array.isArray(incoming_relationship_changes_list) ? incoming_relationship_changes_list : [];
+  const updated_relationships_list = [...safe_existing_list];
 
-  for (let change_counter = 0; change_counter < incoming_relationship_changes_list.length; change_counter++) {
-    const incoming_change_record = incoming_relationship_changes_list[change_counter];
-    const character_a_name = (incoming_change_record.a || "").trim();
-    const character_b_name = (incoming_change_record.b || "").trim();
+  for (let change_counter = 0; change_counter < safe_incoming_changes.length; change_counter++) {
+    const incoming_change_record = safe_incoming_changes[change_counter];
+    if (!incoming_change_record || typeof incoming_change_record !== "object") {
+      continue;
+    }
+    const character_a_name = (incoming_change_record.a || incoming_change_record.char_a || "").trim();
+    const character_b_name = (incoming_change_record.b || incoming_change_record.char_b || "").trim();
 
     if (!character_a_name || !character_b_name) {
       continue;
