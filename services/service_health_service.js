@@ -230,7 +230,7 @@ async function ensure_comfyui_ready(comfyui_base_endpoint_url = "http://127.0.0.
 
 // WHAT: On-demand launcher for Laya Decision Engine.
 // WHY: Laya is only loaded when fast attribution is selected by the user.
-async function ensure_laya_ready(laya_base_endpoint_url = "http://127.0.0.1:8765", maximum_wait_seconds = 15, getMainWindow = null) {
+async function ensure_laya_ready(laya_base_endpoint_url = "http://127.0.0.1:8765", maximum_wait_seconds = 45, getMainWindow = null) {
   const normalized_endpoint_url = normalize_localhost_url_to_ipv4_address(laya_base_endpoint_url).replace(/\/+$/, "");
   const is_service_already_up = await probe_service_health(`${normalized_endpoint_url}/health`);
   if (is_service_already_up) {
@@ -287,7 +287,7 @@ async function ensure_laya_ready(laya_base_endpoint_url = "http://127.0.0.1:8765
 }
 
 // WHAT: On-demand launcher for CLM Decision Engine.
-async function ensure_clm_ready(clm_base_endpoint_url = "http://127.0.0.1:8700", maximum_wait_seconds = 15, getMainWindow = null) {
+async function ensure_clm_ready(clm_base_endpoint_url = "http://127.0.0.1:8700", maximum_wait_seconds = 45, getMainWindow = null) {
   const normalized_endpoint_url = normalize_localhost_url_to_ipv4_address(clm_base_endpoint_url).replace(/\/+$/, "");
   const is_service_already_up = await probe_service_health(`${normalized_endpoint_url}/health`);
   if (is_service_already_up) {
