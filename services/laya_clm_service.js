@@ -277,23 +277,31 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans) {
   });
 
   // WHAT: Returns current calibration log stats (logged decision counts, task breakdown).
-  // WHY: Displays empirical calibration coverage and ground truth ratios in the UI.
+  // WHAT: Aggregates calibration statistics and ground truth annotations across QC logs.
+  // WHY: Displays empirical calibration coverage, provisional flags, and ground truth ratios in the UI.
   ipcMain.handle("ai:get-qc-calibration-stats", async () => {
     const recorded_decision_entries = laya_qc_pipeline_instance.loadLoggedDecisions();
     const task_summary_breakdown = {};
-    let ground_truth_count = 0;
+    let accumulated_ground_truth_count = 0;
 
     for (const logged_decision_record of recorded_decision_entries) {
-      if (!task_summary_breakdown[logged_decision_record.task]) {
-        task_summary_breakdown[logged_decision_record.task] = { total: 0, with_ground_truth: 0, agreements: 0 };
+      const active_task_name = logged_decision_record.question_type || logged_decision_record.task || "unknown";
+      if (!task_summary_breakdown[active_task_name]) {
+        task_summary_breakdown[active_task_name] = { total: 0, with_ground_truth: 0, agreements: 0 };
       }
-      task_summary_breakdown[logged_decision_record.task].total++;
-      if (logged_decision_record.ground_truth !== null && logged_decision_record.ground_truth !== undefined) {
-        task_summary_breakdown[logged_decision_record.task].with_ground_truth++;
-        ground_truth_count++;
+      task_summary_breakdown[active_task_name].total++;
+
+      const has_annotated_ground_truth = (
+        (logged_decision_record.human_verdict !== null && logged_decision_record.human_verdict !== undefined) ||
+        (logged_decision_record.ground_truth !== null && logged_decision_record.ground_truth !== undefined)
+      );
+
+      if (has_annotated_ground_truth) {
+        task_summary_breakdown[active_task_name].with_ground_truth++;
+        accumulated_ground_truth_count++;
       }
       if (logged_decision_record.is_agreement) {
-        task_summary_breakdown[logged_decision_record.task].agreements++;
+        task_summary_breakdown[active_task_name].agreements++;
       }
     }
 
@@ -303,20 +311,23 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans) {
       try {
         fitted_profile_settings = JSON.parse(filesystem_library.readFileSync(calibrated_config_file_path, "utf8"));
       } catch (file_read_error) {
-        // Fallback if file is corrupted
+        // WHAT: Handle transient read error or corrupted file gracefully.
+        // WHY: Returns null profile without crashing IPC bridge.
       }
     }
 
     return {
       total_records: recorded_decision_entries.length,
-      annotated_count: ground_truth_count,
+      annotated_count: accumulated_ground_truth_count,
       tasks: task_summary_breakdown,
-      fitted_profile: fitted_profile_settings
+      fitted_profile: fitted_profile_settings,
+      is_provisional: fitted_profile_settings ? Boolean(fitted_profile_settings.is_provisional) : true,
+      provisional_disclaimer: fitted_profile_settings ? fitted_profile_settings.provisional_disclaimer : null
     };
   });
 
   // WHAT: Runs empirical temperature calibration fitting across accumulated decisions.
-  // WHY: Fits temperature scalars to calibrate decision confidence against ground truth.
+  // WHY: Fits temperature scalars to calibrate decision confidence against ground truth and refreshes active pipeline config.
   ipcMain.handle("ai:run-qc-calibration", async () => {
     const fit_script_path = path_library.join(__dirname, "..", "scripts", "fit_calibration.js");
     return new Promise((resolve_calibration_execution) => {
@@ -326,15 +337,20 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans) {
         if (filesystem_library.existsSync(calibrated_config_file_path)) {
           try {
             fitted_profile_settings = JSON.parse(filesystem_library.readFileSync(calibrated_config_file_path, "utf8"));
+            // WHAT: Dynamically reload active pipeline calibration config in memory.
+            // WHY: Ensures subsequent verification calls immediately use the updated temperature parameters.
+            laya_qc_pipeline_instance.calibrationConfig = laya_qc_pipeline_instance.loadCalibrationConfig();
           } catch (file_read_error) {
-            // Fallback
+            // WHAT: Fallback on parse failure.
           }
         }
         resolve_calibration_execution({
           success: !execution_error,
           output: standard_output_text,
           error: execution_error ? (standard_error_text || execution_error.message) : null,
-          fitted_profile: fitted_profile_settings
+          fitted_profile: fitted_profile_settings,
+          is_provisional: fitted_profile_settings ? Boolean(fitted_profile_settings.is_provisional) : true,
+          provisional_disclaimer: fitted_profile_settings ? fitted_profile_settings.provisional_disclaimer : null
         });
       });
     });

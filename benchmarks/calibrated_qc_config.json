@@ -1,9 +1,21 @@
 {
-  "updated_at": "2026-09-23T00:55:06.540Z",
+  "updated_at": "2026-09-29T04:44:02.298Z",
+  "status": "provisional",
+  "is_provisional": true,
+  "provisional_disclaimer": "All calibration metrics in this configuration are provisional until at least 30 human verdicts per task have been logged without optimizer boundary pegging.",
   "log_source": "C:\\Users\\Desktop-Dev\\Desktop\\AudioBooks\\benchmarks\\qc_calibration_log.jsonl",
   "tasks": {
     "character_existence": {
+      "status": "provisional",
+      "is_provisional": true,
       "sample_count": 6,
+      "boundary_pegged": false,
+      "pegged_boundary_type": null,
+      "search_bounds": [
+        0.05,
+        10
+      ],
+      "provisional_warning": "Sample count (N=6) is below recommended threshold of 30.",
       "uncalibrated_ece": 0.2867,
       "uncalibrated_brier": 0.2496,
       "fitted_temperature": 2.5177,
@@ -13,7 +25,16 @@
       "review_threshold": 0.4
     },
     "relationship_evidence": {
+      "status": "provisional",
+      "is_provisional": true,
       "sample_count": 6,
+      "boundary_pegged": false,
+      "pegged_boundary_type": null,
+      "search_bounds": [
+        0.05,
+        10
+      ],
+      "provisional_warning": "Sample count (N=6) is below recommended threshold of 30.",
       "uncalibrated_ece": 0.2441,
       "uncalibrated_brier": 0.1539,
       "fitted_temperature": 1.7905,
@@ -23,16 +44,28 @@
       "review_threshold": 0.4
     },
     "emotion": {
+      "status": "provisional",
+      "is_provisional": true,
       "sample_count": 6,
+      "boundary_pegged": true,
+      "pegged_boundary_type": "lower",
+      "search_bounds": [
+        0.05,
+        10
+      ],
+      "provisional_warning": "Sample count (N=6) is below recommended threshold of 30. Fitted temperature landed on lower search boundary (0.0513), indicating severe overfit.",
       "uncalibrated_ece": 0.1107,
       "uncalibrated_brier": 0.0173,
-      "fitted_temperature": 0.1,
+      "fitted_temperature": 0.0513,
       "calibrated_ece": 0,
       "calibrated_brier": 0,
       "auto_approve_threshold": 0.98,
       "review_threshold": 0.6
     },
     "speaker_attribution": {
+      "status": "provisional",
+      "is_provisional": true,
+      "provisional_warning": "Sample count (N=6) is below recommended threshold of 30. Agreement and approval rates are provisional.",
       "sample_count": 6,
       "agreement_rate": 0.667,
       "human_approval_rate": 1,

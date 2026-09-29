@@ -204,40 +204,63 @@ class LayaQCPipeline {
     }
   }
 
-  /**
-   * Evaluate a calibrated confidence score if config is available (Phase 5).
-   * @private
-   */
-  _applyCalibration(questionType, rawProb) {
-    const taskConfig = this.calibrationConfig.tasks?.[questionType];
-    if (!taskConfig || !taskConfig.fitted_temperature) {
-      // Uncalibrated fallback: pass through raw probability
+  // WHAT: Applies empirical temperature scaling calibration and decision thresholds for a specific QC task.
+  // WHY: Deep discriminative models often output uncalibrated probabilities that are over- or under-confident.
+  //      Temperature scaling adjusts confidence without altering relative ranking. If a task was fitted on
+  //      a small sample (N < 30) or landed on an optimizer search boundary, we treat it as provisional and apply
+  //      conservative dampening so that premature extreme saturation does not compromise active quality gates.
+  _applyCalibration(task_question_type_identifier, raw_input_probability_value) {
+    const task_calibration_configuration = this.calibrationConfig.tasks?.[task_question_type_identifier];
+    if (!task_calibration_configuration || !task_calibration_configuration.fitted_temperature) {
+      // WHAT: Fallback path when no empirical calibration profile exists for this task.
+      // WHY: Safe default prevents pipeline halting; passes through raw confidence with review flag.
       return {
-        calibrated_probability: rawProb,
+        calibrated_probability: raw_input_probability_value,
         is_calibrated: false,
+        is_provisional: true,
+        boundary_pegged: false,
         gate_status: 'needs_review'
       };
     }
 
-    const T = taskConfig.fitted_temperature;
-    const clamped = Math.max(1e-6, Math.min(1 - 1e-6, rawProb));
-    const logit = Math.log(clamped / (1 - clamped));
-    const calibrated_prob = 1 / (1 + Math.exp(-logit / T));
+    const raw_fitted_temperature_scalar = task_calibration_configuration.fitted_temperature;
+    const is_provisional_sample = Boolean(task_calibration_configuration.is_provisional);
+    const has_hit_search_boundary = Boolean(task_calibration_configuration.boundary_pegged);
 
-    const autoApprove = taskConfig.auto_approve_threshold || 0.90;
-    const reviewThreshold = taskConfig.review_threshold || 0.50;
+    // WHAT: Guarding against severe overfitting on small samples where temperature landed on boundary.
+    // WHY: When samples are linearly separable with small N (e.g. N=6), T collapses to lower bound (e.g. 0.05),
+    //      causing extreme probability polarization (0.0 or 1.0). In production gates, we dampen the temperature
+    //      to a conservative bound [0.5, 2.0] until sufficient human verdicts (N >= 30) are logged.
+    let effective_calibration_temperature_scalar = raw_fitted_temperature_scalar;
+    if (has_hit_search_boundary && is_provisional_sample) {
+      effective_calibration_temperature_scalar = Math.max(0.5, Math.min(2.0, raw_fitted_temperature_scalar));
+    }
 
-    let gate_status = 'needs_review';
-    if (calibrated_prob >= autoApprove) {
-      gate_status = 'auto_approved';
-    } else if (calibrated_prob < reviewThreshold) {
-      gate_status = 'flagged_disagreement';
+    const numerical_stability_epsilon = 1e-6;
+    const clamped_probability_value = Math.max(
+      numerical_stability_epsilon,
+      Math.min(1 - numerical_stability_epsilon, raw_input_probability_value)
+    );
+    const calculated_log_odds_logit = Math.log(clamped_probability_value / (1 - clamped_probability_value));
+    const calibrated_scaled_probability = 1 / (1 + Math.exp(-calculated_log_odds_logit / effective_calibration_temperature_scalar));
+
+    const auto_approve_minimum_threshold = task_calibration_configuration.auto_approve_threshold || 0.90;
+    const human_review_warning_threshold = task_calibration_configuration.review_threshold || 0.50;
+
+    let evaluated_quality_gate_status = 'needs_review';
+    if (calibrated_scaled_probability >= auto_approve_minimum_threshold) {
+      evaluated_quality_gate_status = 'auto_approved';
+    } else if (calibrated_scaled_probability < human_review_warning_threshold) {
+      evaluated_quality_gate_status = 'flagged_disagreement';
     }
 
     return {
-      calibrated_probability: Number(calibrated_prob.toFixed(4)),
+      calibrated_probability: Number(calibrated_scaled_probability.toFixed(4)),
       is_calibrated: true,
-      gate_status
+      is_provisional: is_provisional_sample,
+      boundary_pegged: has_hit_search_boundary,
+      effective_temperature: effective_calibration_temperature_scalar,
+      gate_status: evaluated_quality_gate_status
     };
   }
 
@@ -285,6 +308,9 @@ class LayaQCPipeline {
       question_type: 'character_existence',
       character_name: characterName,
       raw_probability: raw_noul,
+      calibrated_probability: calInfo.calibrated_probability,
+      is_provisional: calInfo.is_provisional,
+      boundary_pegged: calInfo.boundary_pegged,
       decision: raw_noul >= 0.5 ? 'verified' : 'unverified',
       gate_status: this.mode === 'log_only' ? 'needs_review' : calInfo.gate_status,
       elapsed_ms: layaRes.elapsed_ms,
@@ -343,6 +369,9 @@ class LayaQCPipeline {
       char_b: charB,
       relation_type: normalizedType,
       raw_probability: raw_noul,
+      calibrated_probability: calInfo.calibrated_probability,
+      is_provisional: calInfo.is_provisional,
+      boundary_pegged: calInfo.boundary_pegged,
       decision: raw_noul >= 0.5 ? 'citation_supported' : 'citation_unsupported',
       alert_status: raw_noul >= 0.5 ? 'ok' : 'unsupported_citation',
       gate_status: this.mode === 'log_only' ? 'needs_review' : calInfo.gate_status,
@@ -415,6 +444,9 @@ class LayaQCPipeline {
       qwen_speaker: qwenSpeaker,
       laya_choice,
       raw_probability: raw_confidence,
+      calibrated_probability: calInfo.calibrated_probability,
+      is_provisional: calInfo.is_provisional,
+      boundary_pegged: calInfo.boundary_pegged,
       is_agreement,
       gate_status: this.mode === 'log_only' ? 'needs_review' : calInfo.gate_status,
       elapsed_ms: layaRes.elapsed_ms,
@@ -471,6 +503,9 @@ class LayaQCPipeline {
       spoken_text: spokenText,
       qwen_emotion: cleanEmotion,
       raw_probability: raw_noul,
+      calibrated_probability: calInfo.calibrated_probability,
+      is_provisional: calInfo.is_provisional,
+      boundary_pegged: calInfo.boundary_pegged,
       decision: raw_noul >= 0.5 ? 'verified' : 'unverified',
       gate_status: this.mode === 'log_only' ? 'needs_review' : calInfo.gate_status,
       elapsed_ms: layaRes.elapsed_ms,
