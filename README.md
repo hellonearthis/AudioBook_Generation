@@ -8,7 +8,9 @@ A local, offline desktop application built using **Electron**, designed to autom
 
 *   **Global Cast Discovery (Pass 1)**: Automatically reads sample book excerpts to discover characters, personality dynamics, age groups, and gender presets using local LLMs (`llama-server.exe` on port 8081).
 *   **Sub-25ms Laya Dialogue Attribution (Pass 2)**: Replaces slow autoregressive LLM token generation with **Laya's non-autoregressive ModernBERT classifier**, executing quote attribution in **~18–25ms per line**.
-*   **📖 Unmarked Dialogue / Literary Prose Mode**: First-class support for quotation-free prose (e.g., Cormac McCarthy, James Joyce). Decouples dialogue boundary detection (Stage 2A via local LLM or syntactic speech-tag rules) from speaker attribution and emotional staging (Stage 2B via Laya ModernBERT).
+*   **📖 Unmarked Dialogue / Literary Prose Mode**: First-class support for quotation-free prose (e.g., Cormac McCarthy, James Joyce). Provides two complementary execution arms:
+    *   **Arm 3 (Joint 1-Pass LLM)**: Single-pass joint boundary detection, speaker attribution, and emotional staging with non-blocking background **Shadow QC Gate** verification against Laya.
+    *   **Arm 2 (Decoupled Stage 2A & 2B)**: Local LLM or syntactic speech-tag rules for boundary detection followed by sub-25ms Laya ModernBERT classification.
 *   **Multi-Engine Attribution Selector**: Switch dynamically between:
     *   `⚡ Laya Fast (~20ms)`: Ultra-fast ModernBERT classification against the active Voice Matrix cast list.
     *   `🎯 CLM-8B System One (~100ms)`: High-capacity contrastive language model (`C:\Users\Desktop-Dev\Desktop\CLM` on port 8700) powered by Qwen3-8B embeddings for nuanced literary prose.
@@ -22,7 +24,7 @@ A local, offline desktop application built using **Electron**, designed to autom
 *   **Pure JS WAV Stitcher (Pass 5)**: Merges segment audios together entirely in native Javascript, stripping PCM WAV headers to prevent pops and injecting natural breathing pauses between alternating speakers.
 *   **Timeline Marker Exporter**: Generates companion CSV marker sheets mapping character spoken events directly to timeline offsets for quick DAW imports.
 *   **Timbre Mapping Matrix**: A dedicated configuration panel to randomize speech seeds, lock in master vocal anchors, and map voice profiles to active cast lists.
-*   **🔬 Independent Laya QC & Calibration Engine**: Audits Qwen's character presence, relationship citations (5-item taxonomy), dialogue attribution (narrow-window independence), and emotional delivery (binary noul decomposition). Logs uncalibrated probabilities to disk and fits task temperatures dynamically via negative log-likelihood line search.
+*   **🔬 Independent Laya QC & Calibration Engine**: Audits Qwen's character presence, relationship citations (**canonical 10-type taxonomy** defined in `constants/relationship_taxonomy.js`), dialogue attribution (narrow-window independence), and emotional delivery (binary noul decomposition). Logs uncalibrated probabilities to disk, detects boundary-pegged overfit, dampens provisional temperatures safely, and fits task temperatures dynamically via negative log-likelihood line search.
 *   **🧩 Modular Main Service Architecture**: Decomposed from a monolithic process into 7 decoupled domain services (`services/`) governing workspaces, FFmpeg timelines, Laya/CLM classification, AI LLM pipelines, audio queues, AuK post-production, and VRAM health arbitration.
 *   **⏳ Dynamic Relationship State Timelines**: Discovers character relationships with chronological state progression across chapters and segments, accounting for shifting dynamics, emotional estrangement, and narrative triggers.
 *   **🎭 Two-Level Voice Division of Labour**: Splits static character identity (designed once via Qwen3 VoiceDesign into reference audio anchors) from dynamic line delivery (rendered via AuK Zero-Shot with natural emotional instructions, relationship subtext, and auto-estimated durations).
@@ -139,7 +141,9 @@ Attributes prose blocks to narrator or character speakers while preserving exist
 *   **⚡🎯 Cascade (Laya → CLM)**: Fast ModernBERT handles high-confidence lines; ambiguous quotes (< 85% confidence) escalate to CLM-8B.
 *   **⚡🧠 Hybrid (Laya + llama)**: Runs Laya for maximum speed; if Laya encounters connection issues or is offline, it seamlessly falls back to llama.cpp.
 *   **🧠 llama.cpp**: Uses the local GGUF model via llama-server for full open-ended generative extraction.
-*   **📖 Unmarked Dialogue (Literary Mode)**: Stage 2A boundary detection isolates dialogue spans from narration, followed by Stage 2B attribution and emotional staging.
+*   **📖 Unmarked Dialogue (Literary Mode)**: 
+    *   **Arm 3 (Joint 1-Pass)**: When cast profiles exist, routes through a single-pass joint LLM prompt (`prompts/unmarked_joint_attribution.txt`) that extracts dialogue spans, speaker identities, and vocal cues together with 100% accuracy, backed by an asynchronous non-blocking **Shadow QC Gate**.
+    *   **Arm 2 (Decoupled 2A/2B)**: Automatically serves as a fallback or lightweight path, separating syntactic/LLM span discovery from sub-25ms Laya classification.
 
 ### Non-Destructive Attribution Reference & Diff System
 Re-running **Automate Attribution** or changing attribution engines never destroys your existing screenplay or synthesized audio:
@@ -330,7 +334,7 @@ If you prefer to manage all services manually:
         ```
     *   **Option B: Full Production Serving**:
         ```powershell
-        # 1. Start Qwen3-8B embedding endpoint (port 8090) using vLLM or LM Studio:
+        # 1. Start Qwen3-8B embedding endpoint (port 8090) using vLLM or llama.cpp:
         vllm serve Qwen/Qwen3-8B --served-model-name qwen3-8b --runner pooling --enforce-eager --max-model-len 2048 --port 8090
         
         # 2. Launch the CLM decision server (port 8700):
@@ -407,7 +411,7 @@ If you prefer running via npm:
 # Install packages
 npm install
 
-# Run unit tests
+# Run unit tests (97 tests across 8 suites)
 npm test
 
 # Launch standard application

@@ -203,7 +203,7 @@ function save_global_configurations() {
 
   // WHAT: Normalizing "localhost" to the literal IPv4 loopback address "127.0.0.1".
   // WHY: Node.js v17+ changed DNS resolution so that "localhost" resolves to the
-  //      IPv6 address ::1 first. LM Studio, llama-server, Laya, and ComfyUI only bind
+  //      IPv6 address ::1 first. llama-server, Laya, and ComfyUI only bind
   //      to IPv4, so the connection is refused unless we use the literal 127.0.0.1 string.
   const normalized_lm_studio_address = lm_studio_raw_address_value.replace(
     /^(https?:\/\/)localhost/i,

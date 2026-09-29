@@ -80,7 +80,7 @@ Because Electron separates the UI (**Renderer Process**) from the system operati
 
 LLM exposes an OpenAI-compatible API endpoint at `http://localhost:1234/v1/chat/completions`. To make the screenplay data easy to manipulate in Electron, you need google/gemma-4-12b to return a strict, predictable JSON structure.
 
-When you send text chunks to LM Studio, enable **JSON Mode** in your API request and use a structured system prompt.
+When you send text chunks to the local LLM / llama.cpp, enable **JSON Mode** in your API request and use a structured system prompt.
 
 ### Target JSON Schema
 

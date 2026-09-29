@@ -12,7 +12,8 @@
     "electron",
     "tts",
     "audiobook",
-    "lm-studio",
+    "llama.cpp",
+    "llm",
     "comfyui"
   ],
   "author": "",

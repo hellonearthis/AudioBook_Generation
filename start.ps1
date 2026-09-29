@@ -3,7 +3,7 @@
     Easy-start launcher for the AI Audiobook Screenplay Generator & Synthesizer desktop app.
 
 .DESCRIPTION
-    WHAT: Checks dependencies, tests connectivity to local AI endpoints (ComfyUI & LM Studio),
+    WHAT: Checks dependencies, tests connectivity to local AI endpoints (ComfyUI, llama.cpp, Laya, and CLM),
           and launches the Electron application in either production or hot-reloading dev mode.
     WHY: Eliminates the friction of remembering npm commands or diagnosing silent connection
          failures with ComfyUI and LLM before the Electron window loads.
@@ -172,18 +172,18 @@ if (-not $llama_is_running) {
     }
     else {
         # Check if LLM is running as fallback on 1234
-        $lm_studio_endpoint_address = "http://127.0.0.1:1234/v1/models"
-        $lm_studio_is_running = $false
+        $fallback_llm_endpoint_address = "http://127.0.0.1:1234/v1/models"
+        $fallback_llm_is_running = $false
         try {
-            $lm_studio_connection_probe = Invoke-WebRequest -Uri $lm_studio_endpoint_address -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
-            if ($lm_studio_connection_probe.StatusCode -eq 200) {
+            $fallback_llm_connection_probe = Invoke-WebRequest -Uri $fallback_llm_endpoint_address -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+            if ($fallback_llm_connection_probe.StatusCode -eq 200) {
                 Write-Host "[OK] LLM server detected at 127.0.0.1:1234" -ForegroundColor Green
-                $lm_studio_is_running = $true
+                $fallback_llm_is_running = $true
             }
         }
         catch {}
 
-        if (-not $lm_studio_is_running) {
+        if (-not $fallback_llm_is_running) {
             Write-Host "[INFO] llama.cpp server is offline (127.0.0.1:8081). Launch C:\llamaCPP\start_webui_qwen3_8-27b-abliterated_8081.bat. Fallback regex parsing will be used if needed." -ForegroundColor DarkGray
         }
     }

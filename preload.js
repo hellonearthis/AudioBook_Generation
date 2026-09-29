@@ -134,7 +134,7 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     });
   },
 
-  // WHAT: Merges two directorial segment styles into a single unified style using LM Studio.
+  // WHAT: Merges two directorial segment styles into a single unified style using local LLM / llama.cpp.
   // WHY: Facilitates the smart "Combine Cells" feature using explicit narrative flow instructions.
   trigger_style_merge_via_llm: (cell1_text, cell1_style, cell2_text, cell2_style, transition_instructions, lm_studio_api_url_address) => {
     return ipcRenderer.invoke("llm:merge-qwen-styles", {
