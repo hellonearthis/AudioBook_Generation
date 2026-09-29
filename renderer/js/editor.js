@@ -153,7 +153,7 @@ function populate_screenplay_cards_in_editor_view() {
     // WHY: Provides a seamless Mad Libs style interface that accurately grows with content.
     const create_qwen_input = (value, placeholder, property_key) => {
       const safe_value = (value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return `<span class="inline_qwen_input" contenteditable="true" data-placeholder="${placeholder}" oninput="handle_card_qwen_style_modification_event(${segment_index_counter}, '${property_key}', this.textContent)" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${safe_value}</span>`;
+      return `<span class="inline_qwen_input" contenteditable="true" data-placeholder="${placeholder}" title="Edit ${placeholder}" oninput="handle_card_qwen_style_modification_event(${segment_index_counter}, '${property_key}', this.textContent)" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${safe_value}</span>`;
     };
 
     // WHAT: Hide the type badge for Tech Books (Narrator only)
@@ -188,7 +188,7 @@ function populate_screenplay_cards_in_editor_view() {
               ${active_script_segment_item.engine === 'clm' ? '🎯' : (active_script_segment_item.engine === 'clm_cascade' ? '⚡🎯' : '⚡')} ${(active_script_segment_item.confidence * 100).toFixed(0)}%
             </span>
           ` : ''}
-          <span class="card_type_badge ${is_tech_book ? 'd-none' : ''}">${active_script_segment_item.type}</span>
+          <span class="card_type_badge ${is_tech_book ? 'd-none' : ''}" title="Segment category: dialogue, narrative exposition, or parenthetical direction">${active_script_segment_item.type}</span>
         </div>
       </div>
 
@@ -1897,7 +1897,7 @@ function populate_directorial_cards_in_editor_view() {
           ${active_script_segment_item.needs_resync ? `
             <span class="directorial_resync_badge" title="Speaker attribution was modified in Script Editor. Run Script Doctor or update direction to re-sync.">⚠️ Needs Re-sync</span>
           ` : ''}
-          <span class="card_type_badge text-gold bg-gold-glow">${active_script_segment_item.type}</span>
+          <span class="card_type_badge text-gold bg-gold-glow" title="Segment category: dialogue, narrative exposition, or parenthetical direction">${active_script_segment_item.type}</span>
         </div>
       </div>
 
@@ -1906,11 +1906,11 @@ function populate_directorial_cards_in_editor_view() {
       <!-- Directorial badges for Triple-Input delivery parameters -->
       <div class="directorial_meta_badges_row">
         <span class="directorial_badge badge_intent" title="Subtext: ${active_script_segment_item.intent || 'Story context'}">Intent Subtext 🎭</span>
-        <span class="directorial_badge badge_pitch">Pitch: ${delivery_parameters.pitch}</span>
-        <span class="directorial_badge badge_pacing">Pacing: ${delivery_parameters.pacing}</span>
-        <span class="directorial_badge badge_volume">Volume: ${delivery_parameters.volume}</span>
-        <span class="directorial_badge text-purple border-purple-glow">Emotion: ${active_script_segment_item.active_emotion_state || 'neutral'}</span>
-        <span class="directorial_badge text-gold border-gold-glow">Style: ${delivery_parameters.style_label}</span>
+        <span class="directorial_badge badge_pitch" title="Vocal pitch adjustment calculated from dramatic intensity">Pitch: ${delivery_parameters.pitch}</span>
+        <span class="directorial_badge badge_pacing" title="Speaking cadence and tempo delivery">Pacing: ${delivery_parameters.pacing}</span>
+        <span class="directorial_badge badge_volume" title="Dynamic vocal projection and decibel gain">Volume: ${delivery_parameters.volume}</span>
+        <span class="directorial_badge text-purple border-purple-glow" title="Dramatic emotional state calculated for this scene">Emotion: ${active_script_segment_item.active_emotion_state || 'neutral'}</span>
+        <span class="directorial_badge text-gold border-gold-glow" title="Acting delivery style and vocal characterization">Style: ${delivery_parameters.style_label}</span>
       </div>
 
       <!-- Advanced Directorial Tuning Panel -->

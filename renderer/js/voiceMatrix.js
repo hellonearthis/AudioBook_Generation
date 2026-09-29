@@ -329,7 +329,7 @@ function populate_voice_matrix_configuration_cards() {
         <div class="d-flex gap-10">
           <div class="form_input_group mb-0 flex-1">
             <label class="form_input_label text-10 text-muted mb-4">Gender</label>
-            <select class="form_text_field w-100 text-11 bg-input-glass" style="height: 34px; padding: 4px 8px;" onchange="modify_character_gender('${character_name_string.replace(/'/g, "\\'")}', this.value)">
+            <select class="form_text_field w-100 text-11 bg-input-glass" style="height: 34px; padding: 4px 8px;" onchange="modify_character_gender('${character_name_string.replace(/'/g, "\\'")}', this.value)" title="Character gender identity">
               <option value="Male" ${character_timbre_details.gender === 'Male' ? 'selected' : ''}>Male</option>
               <option value="Female" ${character_timbre_details.gender === 'Female' ? 'selected' : ''}>Female</option>
               <option value="Narrator" ${character_timbre_details.gender === 'Narrator' ? 'selected' : ''}>Narrator</option>
@@ -339,7 +339,7 @@ function populate_voice_matrix_configuration_cards() {
 
           <div class="form_input_group mb-0 flex-1">
             <label class="form_input_label text-10 text-muted mb-4">Age Category</label>
-            <select class="form_text_field w-100 text-11 bg-input-glass" style="height: 34px; padding: 4px 8px;" onchange="modify_character_age('${character_name_string.replace(/'/g, "\\'")}', this.value)">
+            <select class="form_text_field w-100 text-11 bg-input-glass" style="height: 34px; padding: 4px 8px;" onchange="modify_character_age('${character_name_string.replace(/'/g, "\\'")}', this.value)" title="Character age category">
               <option value="Child" ${character_timbre_details.age === 'Child' ? 'selected' : ''}>Child</option>
               <option value="Teenager" ${character_timbre_details.age === 'Teenager' ? 'selected' : ''}>Teenager</option>
               <option value="Young Adult" ${character_timbre_details.age === 'Young Adult' ? 'selected' : ''}>Young Adult</option>
@@ -351,7 +351,7 @@ function populate_voice_matrix_configuration_cards() {
 
           <div class="form_input_group mb-0 flex-1">
             <label class="form_input_label text-10 text-muted mb-4">Voice Engine</label>
-            <select class="form_text_field w-100 text-11 bg-input-glass" style="height: 34px; padding: 4px 8px;" onchange="modify_character_workflow_type('${character_name_string.replace(/'/g, "\\'")}', this.value)">
+            <select class="form_text_field w-100 text-11 bg-input-glass" style="height: 34px; padding: 4px 8px;" onchange="modify_character_workflow_type('${character_name_string.replace(/'/g, "\\'")}', this.value)" title="TTS voice generation engine workflow">
               <option value="custom" ${(!character_timbre_details.workflowType || character_timbre_details.workflowType === 'custom') ? 'selected' : ''}>Qwen3 Preset</option>
               <option value="auk_voice_clone" ${character_timbre_details.workflowType === 'auk_voice_clone' ? 'selected' : ''}>🧬 AuK Voice Clone (Ref Audio)</option>
               <option value="auk_instruct_tts" ${character_timbre_details.workflowType === 'auk_instruct_tts' ? 'selected' : ''}>🎙️ AuK Instruct-TTS</option>
@@ -388,7 +388,7 @@ function populate_voice_matrix_configuration_cards() {
         <div class="form_input_group mb-0 mt-10">
           <label class="form_input_label">Character Timeline Color</label>
           <div class="d-flex gap-10 align-items-center">
-            <input type="color" value="${character_timbre_details.colorCode || '#485F86'}" class="voice-color-picker" onchange="modify_character_color_code('${character_name_string.replace(/'/g, "\\'")}', this.value)">
+            <input type="color" value="${character_timbre_details.colorCode || '#485F86'}" class="voice-color-picker" onchange="modify_character_color_code('${character_name_string.replace(/'/g, "\\'")}', this.value)" title="Pick custom timeline block color for this character">
             <span class="text-11 text-muted">Identifies character clips in the Post-Production Audio Editor</span>
           </div>
         </div>
@@ -414,7 +414,7 @@ function populate_voice_matrix_configuration_cards() {
           <h4 class="font-display text-11 font-semibold text-gold mb-10" style="margin: 0;">🧪 TESTING & VOICE SEED</h4>
           
           <div class="form_input_group mb-10 d-flex align-items-center gap-10 flex-wrap flex-row" style="align-content: flex-start;">
-            <input type="number" id="test_seed_${character_name_string}" value="${character_timbre_details.seed || Math.floor(Math.random() * 90000) + 10000}" class="form_text_field flex-1 text-11 bg-input-glass" onchange="modify_character_voice_synthesis_seed('${character_name_string.replace(/'/g, "\\'")}', this.value)">
+            <input type="number" id="test_seed_${character_name_string}" value="${character_timbre_details.seed || Math.floor(Math.random() * 90000) + 10000}" class="form_text_field flex-1 text-11 bg-input-glass" onchange="modify_character_voice_synthesis_seed('${character_name_string.replace(/'/g, "\\'")}', this.value)" title="Numerical randomization seed controlling vocal timbre contours">
             <button class="cyber_btn btn_secondary text-11 p-0 p-4-8" onclick="trigger_randomized_voice_seed_generation('${character_name_string.replace(/'/g, "\\'")}')" title="Randomize Seed">🎲</button>
             <label class="form_input_label text-10 text-muted" style="margin: 0; white-space: nowrap;">Voice Seed</label>
           </div>
@@ -422,7 +422,7 @@ function populate_voice_matrix_configuration_cards() {
           <div class="form_input_group mb-10">
             <div class="d-flex justify-content-between align-items-center mb-4">
               <label class="form_input_label text-10 text-muted mb-0">Calibration / Anchor Phrase</label>
-              <select class="form_text_field bg-input-glass text-muted" style="width: 120px; font-size: 9px; padding: 2px;" onchange="populate_test_phrase_dropdown('${character_name_string.replace(/'/g, "\\'")}', this.value)">
+              <select class="form_text_field bg-input-glass text-muted" style="width: 120px; font-size: 9px; padding: 2px;" onchange="populate_test_phrase_dropdown('${character_name_string.replace(/'/g, "\\'")}', this.value)" title="Choose a standard phonetically balanced calibration phrase">
                 <option value="">-- Load Script --</option>
                 <option value="option1" selected>1: Smooth & Resonance-Rich</option>
                 <option value="option2">2: Articulate & Crisp</option>

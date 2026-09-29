@@ -121,7 +121,7 @@
             
             <div class="form_input_group">
               <label class="form_input_label">Project Name</label>
-              <input type="text" id="input_new_project_title_name" class="form_text_field" placeholder="Enter book title (e.g. The Hobbit)">
+              <input type="text" id="input_new_project_title_name" class="form_text_field" placeholder="Enter book title (e.g. The Hobbit)" title="Enter the title name for your audiobook project">
             </div>
 
             <div class="form_input_group">
@@ -187,15 +187,15 @@
             <div class="pane_content_area d-flex flex-column gap-15">
               <div class="form_input_group mb-0">
                 <label class="form_input_label">Book Author</label>
-                <input type="text" id="project_author_input_editor" class="form_text_field" placeholder="Enter author name" onchange="trigger_project_about_details_save()">
+                <input type="text" id="project_author_input_editor" class="form_text_field" placeholder="Enter author name" onchange="trigger_project_about_details_save()" title="Author of the book manuscript">
               </div>
               <div class="form_input_group mb-0">
                 <label class="form_input_label">Book Notes</label>
-                <textarea id="project_notes_textarea_editor" class="form_text_area h-60px" placeholder="Enter book notes, lore, or context" onchange="trigger_project_about_details_save()"></textarea>
+                <textarea id="project_notes_textarea_editor" class="form_text_area h-60px" placeholder="Enter book notes, lore, or context" onchange="trigger_project_about_details_save()" title="Worldbuilding context, character notes, or director lore"></textarea>
               </div>
               <div class="form_input_group mb-0 flex-grow-1 d-flex flex-column">
                 <label class="form_input_label">Raw Source Book Segment</label>
-                <textarea id="raw_source_book_textarea_editor" class="raw_book_text_area flex-grow-1"></textarea>
+                <textarea id="raw_source_book_textarea_editor" class="raw_book_text_area flex-grow-1" title="Raw chapter manuscript text for attribution and synthesis"></textarea>
               </div>
             </div>
           </div>
@@ -346,7 +346,7 @@
               
               <div class="form_input_group">
                 <label class="form_input_label">Breathing Space Pause Interval (Seconds)</label>
-                <input type="number" id="input_post_prod_pause_between_lines" class="form_text_field" value="0.6" step="0.1" min="0">
+                <input type="number" id="input_post_prod_pause_between_lines" class="form_text_field" value="0.6" step="0.1" min="0" title="Pause duration in seconds inserted between stitched speech segments">
                 <span class="text-11 text-muted line-height-1-4">
                   Adjusts the silent room tone delay inserted automatically between character switches to keep dialogues sounding human.
                 </span>
@@ -454,7 +454,7 @@
         </div>
         <div class="d-flex gap-8 align-items-center">
           <span class="text-muted">ComfyUI:</span>
-          <input type="text" id="settings_comfyui_endpoint_input" style="width: 145px;" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8188" onchange="save_global_configurations()">
+          <input type="text" id="settings_comfyui_endpoint_input" style="width: 145px;" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8188" onchange="save_global_configurations()" title="ComfyUI API endpoint (default: http://127.0.0.1:8188)">
           <button class="cyber_btn btn_secondary p-4-8 text-10 radius-4" onclick="open_service_web_ui('comfyui')" title="Open ComfyUI Web UI in browser">🌐 CUI</button>
         </div>
         <div>
