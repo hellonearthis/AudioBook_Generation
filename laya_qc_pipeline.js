@@ -2,9 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const {
-  CANONICAL_RELATIONSHIP_TYPES_LIST,
-  CANONICAL_RELATIONSHIP_TONES_LIST
-} = require('./services/relationship_state_service');
+  RELATION_TYPES,
+  RELATION_TONES
+} = require('./constants/relationship_taxonomy');
 
 /**
  * Laya Quality Control (QC) Pipeline
@@ -342,11 +342,11 @@ class LayaQCPipeline {
     // WHAT: Validating claimed relationship type against shared canonical taxonomy.
     // WHY: Prevents desynchronization with Pass 1 cast discovery and Pass 2.5 relationship state engine.
     const normalized_relation_type_candidate = (relationType || '').toLowerCase().trim();
-    const normalizedType = CANONICAL_RELATIONSHIP_TYPES_LIST.includes(normalized_relation_type_candidate)
+    const normalizedType = RELATION_TYPES.includes(normalized_relation_type_candidate)
       ? normalized_relation_type_candidate
       : 'unknown';
 
-    const normalizedTone = (relationTone && CANONICAL_RELATIONSHIP_TONES_LIST.includes(relationTone.toLowerCase().trim()))
+    const normalizedTone = (relationTone && RELATION_TONES.includes(relationTone.toLowerCase().trim()))
       ? relationTone.toLowerCase().trim()
       : null;
 

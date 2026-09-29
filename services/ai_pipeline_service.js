@@ -22,6 +22,40 @@ const {
   merge_relationship_state_deltas,
   map_emotion_to_auk08_palette
 } = require("./relationship_state_service");
+const {
+  RELATION_TYPES,
+  RELATION_TONES,
+  STATUSES,
+  POWER_DYNAMICS,
+  format_enum_as_pipe_list,
+  format_enum_as_bracket_list
+} = require("../constants/relationship_taxonomy");
+
+// WHAT: Pre-formatted relationship taxonomy placeholders shared by every prompt that
+//       documents relation_type / relation_tone / status / power_dynamic.
+// WHY: Prevents each prompt-loading call site below from having to know the two
+//      text formats (bracket-list for prose rules, pipe-list for schema examples).
+const RELATIONSHIP_TAXONOMY_PROMPT_PLACEHOLDERS = {
+  "{{RELATION_TYPE_ENUM_LIST}}": format_enum_as_bracket_list(RELATION_TYPES),
+  "{{RELATION_TONE_ENUM_LIST}}": format_enum_as_bracket_list(RELATION_TONES),
+  "{{STATUS_ENUM_LIST}}": format_enum_as_bracket_list(STATUSES),
+  "{{POWER_DYNAMIC_ENUM_LIST}}": format_enum_as_bracket_list(POWER_DYNAMICS),
+  "{{RELATION_TYPE_ENUM_PIPE}}": format_enum_as_pipe_list(RELATION_TYPES),
+  "{{RELATION_TONE_ENUM_PIPE}}": format_enum_as_pipe_list(RELATION_TONES),
+  "{{STATUS_ENUM_PIPE}}": format_enum_as_pipe_list(STATUSES),
+  "{{POWER_DYNAMIC_ENUM_PIPE}}": format_enum_as_pipe_list(POWER_DYNAMICS)
+};
+
+// WHAT: Substitutes every {{RELATIONSHIP_TAXONOMY_*}}-style placeholder in a loaded prompt template.
+// WHY: Centralizes the substitution so a prompt can freely use any subset of the eight
+//      placeholders above without each call site needing its own replace() chain.
+function apply_relationship_taxonomy_placeholders(prompt_template_text) {
+  let substituted_text = prompt_template_text;
+  for (const [placeholder_token, replacement_value] of Object.entries(RELATIONSHIP_TAXONOMY_PROMPT_PLACEHOLDERS)) {
+    substituted_text = substituted_text.split(placeholder_token).join(replacement_value);
+  }
+  return substituted_text;
+}
 
 // WHAT: Extracting the first valid JSON object or array from free-form LLM output text.
 // WHY: Modern thinking/reasoning models (e.g. Qwen 3.8) may output valid JSON followed by verification notes
@@ -660,7 +694,9 @@ function register_ai_pipeline_handlers(ipcMain, getMainWindow) {
     await release_comfyui_vram();
 
     const prompt_path = path_library.join(__dirname, "..", "prompts", "cast_discovery.txt");
-    const system_instructional_prompt = filesystem_library.readFileSync(prompt_path, "utf8");
+    const system_instructional_prompt = apply_relationship_taxonomy_placeholders(
+      filesystem_library.readFileSync(prompt_path, "utf8")
+    );
     const user_input_content = `Extract characters from this book segment:\n\n${book_text_segment}`;
 
     const active_loaded_model_id_tag = await retrieve_currently_loaded_model_tag(lm_studio_api_url_address);
@@ -1008,7 +1044,9 @@ EXAMPLE OUTPUT:
     );
 
     const prompt_path = path_library.join(__dirname, "..", "prompts", "directorial_orchestration.txt");
-    const directorial_system_prompt_instructions = filesystem_library.readFileSync(prompt_path, "utf8")
+    const directorial_system_prompt_instructions = apply_relationship_taxonomy_placeholders(
+      filesystem_library.readFileSync(prompt_path, "utf8")
+    )
       .replace("{{CAST_GUIDE_CONTEXT}}", compiled_cast_guide_context)
       .replace("{{RELATIONSHIP_TIMELINE_CONTEXT}}", formatted_relationships_summary);
 
@@ -1129,7 +1167,9 @@ EXAMPLE OUTPUT:
     if (!filesystem_library.existsSync(prompt_path)) {
       return { updated_relationships: current_relationships || [], changes: [] };
     }
-    const delta_prompt_template = filesystem_library.readFileSync(prompt_path, "utf8");
+    const delta_prompt_template = apply_relationship_taxonomy_placeholders(
+      filesystem_library.readFileSync(prompt_path, "utf8")
+    );
 
     const formatted_active_relationships = format_active_relationships_summary_for_prompt(
       active_scene_cast || [],
@@ -1295,5 +1335,7 @@ module.exports = {
   detect_unmarked_spans,
   detect_unmarked_spans_joint,
   parse_unmarked_dialogue_by_rules,
+  apply_relationship_taxonomy_placeholders,
+  RELATIONSHIP_TAXONOMY_PROMPT_PLACEHOLDERS,
   register_ai_pipeline_handlers
 };

@@ -192,4 +192,93 @@ describe("Relationship Timeline State Engine (Pass 2.5)", () => {
       expect(prompt_summary).toContain("Josh finds the forged will");
     });
   });
+
+  describe("Single Source of Truth Taxonomy & Prompt Interpolation", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const {
+      RELATION_TYPES,
+      RELATION_TONES,
+      STATUSES,
+      POWER_DYNAMICS,
+      TRANSITIONS,
+      format_enum_as_pipe_list,
+      format_enum_as_bracket_list
+    } = require("../constants/relationship_taxonomy");
+    const { apply_relationship_taxonomy_placeholders } = require("../services/ai_pipeline_service");
+
+    test("taxonomy constants contain the exact canonical sets", () => {
+      expect(RELATION_TYPES).toEqual([
+        "family",
+        "romantic",
+        "friendship",
+        "professional",
+        "acquaintance",
+        "mentor_student",
+        "service",
+        "allied",
+        "stranger",
+        "unknown"
+      ]);
+      expect(RELATION_TYPES).not.toContain("adversarial"); // Verified dropped as structural type
+
+      expect(RELATION_TONES).toEqual([
+        "warm",
+        "neutral",
+        "tense",
+        "competitive",
+        "hostile",
+        "unknown"
+      ]);
+
+      expect(STATUSES).toEqual(["current", "former", "estranged", "developing"]);
+      expect(POWER_DYNAMICS).toEqual(["equal", "a_over_b", "b_over_a", "unknown"]);
+      expect(TRANSITIONS).toEqual(["instant", "gradual"]);
+    });
+
+    test("formats pipe and bracket lists correctly", () => {
+      const pipe_result = format_enum_as_pipe_list(["a", "b", "c"]);
+      expect(pipe_result).toBe("a | b | c");
+
+      const bracket_result = format_enum_as_bracket_list(["a", "b"]);
+      expect(bracket_result).toBe('["a", "b"]');
+    });
+
+    test("interpolates cast_discovery.txt with zero unresolved taxonomy placeholders", () => {
+      const prompt_raw = fs.readFileSync(path.join(__dirname, "..", "prompts", "cast_discovery.txt"), "utf8");
+      const interpolated = apply_relationship_taxonomy_placeholders(prompt_raw);
+
+      expect(interpolated).not.toContain("{{RELATION_TYPE_ENUM_LIST}}");
+      expect(interpolated).not.toContain("{{RELATION_TYPE_ENUM_PIPE}}");
+      expect(interpolated).toContain("mentor_student");
+      expect(interpolated).toContain("allied");
+      expect(interpolated).toContain("stranger");
+    });
+
+    test("interpolates directorial_orchestration.txt with full 10 relation types and power_dynamic", () => {
+      const prompt_raw = fs.readFileSync(path.join(__dirname, "..", "prompts", "directorial_orchestration.txt"), "utf8");
+      const interpolated = apply_relationship_taxonomy_placeholders(prompt_raw);
+
+      expect(interpolated).not.toContain("{{RELATION_TYPE_ENUM_PIPE}}");
+      expect(interpolated).not.toContain("{{POWER_DYNAMIC_ENUM_PIPE}}");
+
+      // Verifies all 4 previously missing values exist in directorial prompt
+      expect(interpolated).toContain("mentor_student");
+      expect(interpolated).toContain("acquaintance");
+      expect(interpolated).toContain("service");
+      expect(interpolated).toContain("allied");
+
+      // Verifies power_dynamic is preserved in output schema
+      expect(interpolated).toContain('"power_dynamic": "equal | a_over_b | b_over_a | unknown"');
+    });
+
+    test("interpolates relationship_delta.txt with zero unresolved placeholders", () => {
+      const prompt_raw = fs.readFileSync(path.join(__dirname, "..", "prompts", "relationship_delta.txt"), "utf8");
+      const interpolated = apply_relationship_taxonomy_placeholders(prompt_raw);
+
+      expect(interpolated).not.toContain("{{RELATION_TYPE_ENUM_LIST}}");
+      expect(interpolated).not.toContain("{{RELATION_TONE_ENUM_LIST}}");
+      expect(interpolated).toContain('"mentor_student"');
+    });
+  });
 });

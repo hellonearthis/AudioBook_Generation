@@ -36,7 +36,7 @@ RULES FOR PARSING & ORCHESTRATION:
 3. "text": (For dialogue/narrator) Extract the exact text. Strip dialogue quotes. Do not summarize.
 4. "director_notes": (For dialogue/narrator) A brief internal note analyzing the psychological subtext for this line.
 5. "emotion": Object containing "primary" (e.g., anger, fear, sadness, joy, neutral), "secondary", and "intensity" (0.0 to 1.0).
-6. "relationship_state": Active interpersonal state between speaker and listener at this moment ("relation_type", "relation_tone", "status").
+6. "relationship_state": Active interpersonal state between speaker and listener at this moment ("relation_type", "relation_tone", "status", "power_dynamic"). Pass through exactly what is given in the ACTIVE INTERPERSONAL RELATIONSHIP STATES TIMELINE context below — do not invent or narrow it.
 7. "render": Complete rendering specification:
    - "engine": "auk" for dialogue with reference audio, "qwen3" for narration or new voices.
    - "mode": "zero_shot" for AuK voice clone.
@@ -59,9 +59,10 @@ JSON SCHEMA:
       "intensity": 0.8
     },
     "relationship_state": {
-      "relation_type": "family | romantic | friendship | professional | stranger | unknown",
-      "relation_tone": "warm | neutral | tense | competitive | hostile | unknown",
-      "status": "current | former | estranged | developing"
+      "relation_type": "{{RELATION_TYPE_ENUM_PIPE}}",
+      "relation_tone": "{{RELATION_TONE_ENUM_PIPE}}",
+      "status": "{{STATUS_ENUM_PIPE}}",
+      "power_dynamic": "{{POWER_DYNAMIC_ENUM_PIPE}}"
     },
     "render": {
       "engine": "auk | qwen3",
@@ -97,7 +98,8 @@ Output:
     "relationship_state": {
       "relation_type": "family",
       "relation_tone": "tense",
-      "status": "current"
+      "status": "current",
+      "power_dynamic": "equal"
     },
     "render": {
       "engine": "auk",

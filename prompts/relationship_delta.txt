@@ -14,10 +14,10 @@ CRITICAL RULES:
 1. DEFAULT TO NO CHANGE: Most dialogue scenes do NOT alter the baseline standing relationship between characters. If no milestone transition occurred, return an empty array in "relationship_changes": [].
 2. DO NOT CONFUSE TRANSIENT EMOTION WITH STANDING RELATIONSHIP: A tense argument or brief irritation is a transient emotion, not a permanent change in relationship status. Only record a new state if their long-term standing dynamic has shifted.
 3. CONSTRAINED ENUMS:
-   - relation_type: ["family", "romantic", "friendship", "professional", "acquaintance", "mentor_student", "service", "allied", "stranger", "unknown"]
-   - relation_tone: ["warm", "neutral", "tense", "competitive", "hostile", "unknown"]
-   - status: ["current", "former", "estranged", "developing"]
-   - power_dynamic: ["equal", "a_over_b", "b_over_a", "unknown"]
+   - relation_type: {{RELATION_TYPE_ENUM_LIST}}
+   - relation_tone: {{RELATION_TONE_ENUM_LIST}}
+   - status: {{STATUS_ENUM_LIST}}
+   - power_dynamic: {{POWER_DYNAMIC_ENUM_LIST}}
 
 JSON SCHEMA:
 {

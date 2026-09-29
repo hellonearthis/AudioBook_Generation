@@ -20,17 +20,17 @@ CRITICAL RULES FOR EXTRACTION & SYNTHESIS:
    - "from": { "chapter": integer, "segment": integer }
      * Anchors the state to the exact narrative position where it begins. If chapter/segment numbers are not explicitly specified in the segment, estimate from text headings or use { "chapter": 1, "segment": 1 }.
    - "relation_type": What the relationship is structurally (CONSTRAINED ENUM):
-     ["family", "romantic", "friendship", "professional", "acquaintance", "mentor_student", "service", "allied", "stranger", "unknown"]
+     {{RELATION_TYPE_ENUM_LIST}}
      * Use "stranger" if the narrative establishes they definitely have no prior relationship.
      * Use "unknown" if the text provides insufficient clues.
    - "relation_tone": How it feels emotionally / interpersonally (CONSTRAINED ENUM):
-     ["warm", "neutral", "tense", "competitive", "hostile", "unknown"]
+     {{RELATION_TONE_ENUM_LIST}}
      * Persistent interpersonal tone, distinct from transient line-level emotion. A hostile pair can still speak a tender line; keep relationship tone as the standing background.
    - "status": Temporal standing or historical distance (CONSTRAINED ENUM):
-     ["current", "former", "estranged", "developing"]
+     {{STATUS_ENUM_LIST}}
      * e.g., ex-partners ("former"), separated siblings ("estranged"), budding alliance ("developing").
    - "power_dynamic": Directional authority and social deference (CONSTRAINED ENUM):
-     ["equal", "a_over_b", "b_over_a", "unknown"]
+     {{POWER_DYNAMIC_ENUM_LIST}}
    - "trigger": The specific narrative event or revelation that initiated this state (e.g., "Josh finds the forged will", "Hospital reconciliation", or null for initial starting state).
    - "transition": ["instant", "gradual"]
      * "instant" for abrupt revelations/betrayals; "gradual" for drifts across conversations.
@@ -98,10 +98,10 @@ JSON SCHEMA:
       "states": [
         {
           "from": { "chapter": 1, "segment": 1 },
-          "relation_type": "family | romantic | friendship | professional | acquaintance | mentor_student | service | allied | stranger | unknown",
-          "relation_tone": "warm | neutral | tense | competitive | hostile | unknown",
-          "status": "current | former | estranged | developing",
-          "power_dynamic": "equal | a_over_b | b_over_a | unknown",
+          "relation_type": "{{RELATION_TYPE_ENUM_PIPE}}",
+          "relation_tone": "{{RELATION_TONE_ENUM_PIPE}}",
+          "status": "{{STATUS_ENUM_PIPE}}",
+          "power_dynamic": "{{POWER_DYNAMIC_ENUM_PIPE}}",
           "trigger": "string or null (narrative event causing state change)",
           "transition": "instant | gradual",
           "cited_evidence": "string (1-2 sentences cited directly from text)",
