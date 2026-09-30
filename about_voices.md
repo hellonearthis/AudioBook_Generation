@@ -485,7 +485,7 @@ if (precompiled_design_prompt_string && precompiled_design_prompt_string.include
 
 # the design voice api node
 
-"C:\Users\Desktop-Dev\Desktop\AudioBooks\comfyui_workflows\Qwen3-tts-DesignVoice_API.json"
+`comfyui_workflows/Qwen3-tts-DesignVoice_API.json`
 
 This is the structure of the style used in this node.
 

@@ -407,7 +407,7 @@ function execute_full_qc_calibration_analysis() {
     provisional_disclaimer: is_any_task_provisional
       ? `All calibration metrics in this configuration are provisional until at least ${RECOMMENDED_MINIMUM_RELIABLE_SAMPLE_SIZE} human verdicts per task have been logged without optimizer boundary pegging.`
       : null,
-    log_source: CALIBRATION_LOG_FILE_PATH,
+    log_source: path_module.relative(path_module.join(__dirname, ".."), CALIBRATION_LOG_FILE_PATH).replace(/\\/g, "/") || "benchmarks/qc_calibration_log.jsonl",
     tasks: final_calibration_results_by_task
   };
 

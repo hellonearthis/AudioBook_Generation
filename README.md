@@ -13,7 +13,7 @@ A local, offline desktop application built using **Electron**, designed to autom
     *   **Arm 2 (Decoupled Stage 2A & 2B)**: Local LLM or syntactic speech-tag rules for boundary detection followed by sub-25ms Laya ModernBERT classification.
 *   **Multi-Engine Attribution Selector**: Switch dynamically between:
     *   `⚡ Laya Fast (~20ms)`: Ultra-fast ModernBERT classification against the active Voice Matrix cast list.
-    *   `🎯 CLM-8B System One (~100ms)`: High-capacity contrastive language model (`C:\Users\Desktop-Dev\Desktop\CLM` on port 8700) powered by Qwen3-8B embeddings for nuanced literary prose.
+    *   `🎯 CLM-8B System One (~100ms)`: High-capacity contrastive language model (running locally on port 8700) powered by Qwen3-8B embeddings for nuanced literary prose.
     *   `⚡🎯 Cascade (Laya → CLM)`: High-throughput Laya pass with automatic contrastive escalation to CLM-8B whenever speaker confidence falls below 85%.
     *   `⚡🧠 Hybrid (Laya + llama)`: Sub-second attribution with automatic fallback to llama-server if Laya is offline.
     *   `🧠 llama.cpp (Deep LLM)`: Full generative LLM parsing via local GGUF models.
@@ -28,7 +28,22 @@ A local, offline desktop application built using **Electron**, designed to autom
 *   **🧩 Modular Main Service Architecture**: Decomposed from a monolithic process into 7 decoupled domain services (`services/`) governing workspaces, FFmpeg timelines, Laya/CLM classification, AI LLM pipelines, audio queues, AuK post-production, and VRAM health arbitration.
 *   **⏳ Dynamic Relationship State Timelines**: Discovers character relationships with chronological state progression across chapters and segments, accounting for shifting dynamics, emotional estrangement, and narrative triggers.
 *   **🎭 Two-Level Voice Division of Labour**: Splits static character identity (designed once via Qwen3 VoiceDesign into reference audio anchors) from dynamic line delivery (rendered via AuK Zero-Shot with natural emotional instructions, relationship subtext, and auto-estimated durations).
-*   **Auto-Start Launcher (`start.ps1`)**: Automatically checks and spawns ComfyUI, llama-server, and Laya if any service is offline.
+*   **Auto-Start Launcher (`start.ps1` / `start.sh`)**: Automatically checks and spawns ComfyUI, llama-server, and Laya if any service is offline, with cross-platform support.
+
+---
+
+## Hardware & System Requirements
+
+To ensure smooth local execution across the 4 local AI microservices (llama.cpp, Laya, CLM, and ComfyUI), evaluate your target system against the following specifications:
+
+| Component | Minimum Specification | Recommended Specification |
+| :--- | :--- | :--- |
+| **Operating System** | Windows 10/11 (64-bit), Ubuntu 22.04+, or macOS 13+ (Apple Silicon) | Windows 11 (64-bit) or Ubuntu 22.04 LTS |
+| **Processor (CPU)** | 4+ Cores (e.g. Intel Core i5 10th Gen / AMD Ryzen 5 3600) | 8+ Cores (e.g. Intel Core i7/i9 12th Gen+ / AMD Ryzen 7 5800X+) |
+| **System Memory (RAM)** | 16 GB DDR4/DDR5 | 32 GB – 64 GB DDR5 |
+| **Graphics Card (GPU)** | NVIDIA GPU with **8 GB – 12 GB VRAM** (e.g. RTX 3060 / 4060) or Apple Silicon Unified Memory (16 GB+) | NVIDIA GPU with **24 GB VRAM** (e.g. RTX 3090 / RTX 4090) |
+| **Disk Storage** | 25 GB free SSD space | 60+ GB free NVMe M.2 SSD space |
+| **VRAM Management Mode** | Sequential / On-Demand swap mode (models evict automatically via `/free` to conserve memory) | Concurrent Full Offload (run 27B LLM + Laya + CLM + ComfyUI simultaneously without swapping) |
 
 ---
 
@@ -177,7 +192,7 @@ The **Script Editor** view has controls designed for specific stages of script p
 ### "Attribution Engine" Dropdown (Pane 2 Header)
 Selects the decision engine used when running attribution:
 *   **⚡ Laya Fast (~20ms)**: Recommended default. Runs closed-set classification across active Voice Matrix characters.
-*   **🎯 CLM-8B System One (~100ms)**: Runs local Contrastive Language Model (`C:\Users\Desktop-Dev\Desktop\CLM`) on port 8700 for deeper contextual comprehension of ambiguous characters and literary prose.
+*   **🎯 CLM-8B System One (~100ms)**: Runs local Contrastive Language Model on port 8700 for deeper contextual comprehension of ambiguous characters and literary prose.
 *   **⚡🎯 Cascade (Laya → CLM)**: Two-tiered pipeline. Fast ModernBERT classifies high-confidence lines; ambiguous quotes (< 85% confidence) are automatically escalated to CLM-8B.
 *   **⚡🧠 Hybrid (Laya + llama)**: High-speed Laya classification with automatic llama-server fallback.
 *   **🧠 llama.cpp (Deep LLM)**: Full autoregressive token parsing.
@@ -266,10 +281,39 @@ To achieve vocal consistency across an entire novel while allowing expressive em
 
 ## External Services & Workflows Setup
 
-### 1. On-Demand AI Service Architecture (`start.ps1`)
-Running `.\start.ps1` boots the application with an on-demand, resource-conscious lifecycle:
+### 1. Cross-Platform Configuration & Path Resolution (`config.json` / `.env`)
+
+The application includes a unified configuration service (`services/config_service.js`) with **zero-friction dynamic path discovery**. It searches for existing model and service folders relative to your user home directory across Windows, macOS, and Linux:
+
+*   **Laya**: `~/Desktop/Laya`, `~/AI_Models/Laya`, `~/Laya`
+*   **CLM**: `~/Desktop/CLM`, `~/AI_Models/CLM`, `~/CLM`
+*   **ComfyUI**: `~/ComfyUI`, `~/Desktop/ComfyUI`, `C:\cui`
+*   **llama.cpp**: `~/llama.cpp`, `~/Desktop/llamaCPP`, `C:\llamaCPP`
+
+#### Customizing Paths & Endpoints
+To define custom installation directories or remote AI service IP addresses, copy `config.example.json` to `config.json` (or use `.env`):
+
+```json
+{
+  "comfyui_path": "C:\\your-custom-comfyui-path",
+  "comfyui_url": "http://127.0.0.1:8188",
+  "llama_path": "C:\\your-custom-llamacpp-path",
+  "llama_url": "http://127.0.0.1:8081",
+  "laya_path": "C:\\your-custom-laya-path",
+  "laya_url": "http://127.0.0.1:8765",
+  "clm_path": "C:\\your-custom-clm-path",
+  "clm_url": "http://127.0.0.1:8700"
+}
+```
+*(Note: `config.json` and `.env` are git-ignored, so your personal directory paths remain private.)*
+
+---
+
+### 2. On-Demand AI Service Architecture
+
+Running `.\start.ps1` (Windows) or `./start.sh` (macOS / Linux) boots the application with an on-demand, resource-conscious lifecycle:
 *   **llama-server (8081)**: Auto-starts if offline. Powers **Stage 1 (Pass 1)** character cast discovery, relationships, and script writing with `qwen3.8-27b-abliterated`. Auto-sleeps after 10s idle to release VRAM.
-*   **ComfyUI (8188)**: **Loads on demand at audio generation time**. When you click "Synthesize Classic" or "Synthesize Directorial", the backend automatically spins up `C:\cui\goLow.ps1`, generates the takes, and evicts models (`/free`) when finished. (Pass `-StartComfyUI` to pre-warm on boot).
+*   **ComfyUI (8188)**: **Loads on demand at audio generation time**. When you click "Synthesize Classic" or "Synthesize Directorial", the backend automatically spins up your ComfyUI runner, generates the takes, and evicts models (`/free`) when finished. (Pass `-StartComfyUI` to pre-warm on boot).
 *   **Laya Decision Engine (8765)**: **Loads on demand during attribution**. Only spins up if you select `⚡ Laya Fast`, `Cascade`, or `Hybrid` in the Screenplay Editor. (Pass `-StartLaya` to pre-warm on boot).
 *   **CLM System One (8700)**: **Loads on demand during attribution**. Only spins up if you select `🎯 CLM-8B System One` or `Cascade`. (Pass `-StartCLM` to pre-warm on boot).
 
@@ -278,40 +322,25 @@ If you prefer to manage all services manually:
 .\start.ps1 -NoAutoStart
 ```
 
-### 2. Laya Fast Decision Engine Reference & Setup (Port 8765)
+---
+
+### 3. Laya Fast Decision Engine Reference & Setup (Port 8765)
 *   **Overview**: A sub-25ms non-autoregressive ModernBERT classifier specialized for closed-set character dialogue attribution, emotional acting delivery, and vocal intensity scoring.
-*   **Local Directory**: `C:\Users\Desktop-Dev\Desktop\Laya`
-*   **Startup Command**:
-    ```powershell
-    cd C:\Users\Desktop-Dev\Desktop\Laya
-    .\start_server.ps1
-    ```
+*   **Location**: Configured via `laya_path` in `config.json` or discovered automatically in `~/Desktop/Laya` or `~/AI_Models/Laya`.
+*   **Startup Commands**:
+    *   **Windows (PowerShell)**:
+        ```powershell
+        cd ~/Desktop/Laya
+        .\start_server.ps1
+        ```
+    *   **macOS / Linux**:
+        ```bash
+        cd ~/Desktop/Laya
+        ./start_server.sh # or: python server.py --port 8765
+        ```
 *   **Network Protocol & Endpoints**:
     *   `POST http://127.0.0.1:8765/decide`: Primary inference route accepting `{ state, questions }`.
     *   `GET http://127.0.0.1:8765/health`: Health probe returning loaded model state.
-*   **Payload Wire Schema (TypeSafe / Jev Compatible)**:
-    ```json
-    {
-      "state": "Preceding: John turned slowly.\nSpoken: \"Where have you been?\"",
-      "questions": {
-        "speaker": {
-          "type": "choice",
-          "instructions": "Which character speaks this dialogue?",
-          "criteria": { "John": "Spoken by John", "Mary": "Spoken by Mary", "Narrator": "Exposition" }
-        },
-        "emotion": {
-          "type": "choice",
-          "instructions": "What is the emotional delivery?",
-          "criteria": { "calm": "Neutral", "angry": "Aggressive", "whisper": "Hushed" }
-        },
-        "energy": {
-          "type": "score",
-          "instructions": "Rate vocal volume and intensity",
-          "criteria": ["soft murmur", "moderate conversational volume", "shouting / forceful"]
-        }
-      }
-    }
-    ```
 *   **Hardware Profile**: Negligible RAM/VRAM footprint (< 1 GB, or pure CPU inference). Leaves 100% of GPU resources available for heavy ComfyUI speech synthesis.
 *   **QC & Empirical Calibration**:
     *   Logs uncalibrated decisions to [`benchmarks/qc_calibration_log.jsonl`](benchmarks/qc_calibration_log.jsonl).
@@ -320,40 +349,30 @@ If you prefer to manage all services manually:
 
 ---
 
-### 3. CLM (Contrastive Language Model v0.1-8B) Reference & Setup (Port 8700)
+### 4. CLM (Contrastive Language Model v0.1-8B) Reference & Setup (Port 8700)
 *   **Overview**: A System One contrastive architecture combining a frozen `Qwen/Qwen3-8B` 4096-dimensional embedding backbone with dual 512-dimensional trained MLP projection heads (`state_head` and `action_head`, ~18.8M parameters, ~75.5 MB) evaluated via normalized cosine compatibility.
-*   **Local Directory**: `C:\Users\Desktop-Dev\Desktop\CLM`
+*   **Location**: Configured via `clm_path` in `config.json` or discovered automatically in `~/Desktop/CLM` or `~/AI_Models/CLM`.
 *   **Model Source**: [Contrastive-LM/CLM-v0.1-8B](https://huggingface.co/Contrastive-LM/CLM-v0.1-8B)
 *   **Prerequisites**: Requires an OpenAI-compatible `/v1/embeddings` endpoint returning 4096-dim embeddings for `Qwen/Qwen3-8B` on port `8090`.
 *   **Setup & Launch Modes**:
     *   **Option A: Instant Demo / Mock Mode** (Test UI and pipelines without loading the 8B model):
-        ```powershell
-        cd C:\Users\Desktop-Dev\Desktop\CLM
-        .\run_playground_mock.ps1
-        # Or: python tools/playground_mock.py --port 8700
+        ```bash
+        cd ~/Desktop/CLM
+        python tools/playground_mock.py --port 8700
         ```
     *   **Option B: Full Production Serving**:
-        ```powershell
+        ```bash
         # 1. Start Qwen3-8B embedding endpoint (port 8090) using vLLM or llama.cpp:
         vllm serve Qwen/Qwen3-8B --served-model-name qwen3-8b --runner pooling --enforce-eager --max-model-len 2048 --port 8090
         
         # 2. Launch the CLM decision server (port 8700):
-        cd C:\Users\Desktop-Dev\Desktop\CLM
-        .\run_clm_server.ps1 -Port 8700 -EmbUrl "http://127.0.0.1:8090/v1/embeddings"
+        cd ~/Desktop/CLM
+        python server.py --port 8700 --emb-url "http://127.0.0.1:8090/v1/embeddings"
         ```
-*   **Network Protocol & Endpoints**:
-    *   `POST http://127.0.0.1:8700/v1/systemone`: Evaluates `{ state, questions }` with calibrated choice distributions and noul probabilities.
-    *   `POST http://127.0.0.1:8700/v1/rank`: Direct candidate ranking endpoint.
-    *   `GET http://127.0.0.1:8700/health`: Embedder connectivity and cache diagnostics.
-    *   `GET http://127.0.0.1:8700/`: Interactive Web Playground.
-*   **When to Use CLM**:
-    *   **Unmarked literary prose**: Novels without quotation marks (e.g. Cormac McCarthy, James Joyce) where speakers must be inferred from subtle phrasing.
-    *   **Ambiguous pronoun chains**: When speakers alternate without explicit dialogue tags over multiple lines.
-    *   **Directorial subtext**: Fine-grained emotional undertones (sarcasm, suppressed grief, tension).
 
 ---
 
-### 4. Decision Engine Comparison & Cascade Strategy
+### 5. Decision Engine Comparison & Cascade Strategy
 
 | Metric | ⚡ Laya Fast (Port 8765) | 🎯 CLM-8B System One (Port 8700) | ⚡🎯 Smart Cascade (Laya → CLM) |
 | :--- | :--- | :--- | :--- |
@@ -369,34 +388,25 @@ If you prefer to manage all services manually:
 
 ---
 
-### 5. llama.cpp / llama-server Configuration
-*   **Path**: `C:\llamaCPP\llama-server.exe`
-*   **Start Script**: `C:\llamaCPP\start_webui_qwen3_8-27b-abliterated_8081.bat`
+### 6. llama.cpp / llama-server Configuration
 *   **Endpoint**: `http://127.0.0.1:8081/v1` (with `/v1/chat/completions`)
+*   **Path**: Configured via `llama_path` in `config.json` or discovered automatically in `~/llama.cpp` or `C:\llamaCPP`.
 *   Load an instruction-tuned model capable of structured JSON dialogue extraction (e.g. `qwen3.8-27b-abliterated`). Context size is set to `8192` with `max_tokens` clamped to `4096`.
 
-### 6. ComfyUI Configuration & Custom Paths
-*   The application interfaces with ComfyUI (`http://127.0.0.1:8188`) to save and load voice presets, synthesize WAV audio clips, and execute AuK editing workflows.
-*   By default, the application resolves ComfyUI's installation directory dynamically (checking `C:\cui` first, followed by desktop output shortcuts).
-*   **Custom Configurations**: To define a custom ComfyUI installation path, create a `config.json` file in the root of this project:
-    ```json
-    {
-      "comfyui_path": "C:\\your-custom-comfyui-path"
-    }
-    ```
-    *(Note: This file is ignored by git so your local paths remain private.)*
+---
 
-### 7. Importing & Testing Workflows in ComfyUI
-*   The `comfyui_workflows/` directory contains JSON templates for backend API calls (files ending with `_api.json` or `_API.json`).
-*   **Non-API versions** (files without the `_api` suffix, e.g., `AuK-01-Instruct-TTS.json`, `AuK-02-Voice-Clone.json`, `QWEN3-TTS-loadCustomVoice.json`) are also included in the same folder.
-*   You can drag-and-drop or load these non-API JSON workflows directly into the ComfyUI web UI to manually test your nodes, verify model configurations, or troubleshoot your generation pipeline visually.
+### 7. ComfyUI Configuration & Workflows
+*   The application interfaces with ComfyUI (`http://127.0.0.1:8188`) to save and load voice presets, synthesize WAV audio clips, and execute AuK editing workflows.
+*   By default, the application resolves ComfyUI's installation directory dynamically via `config_service.js`.
+*   **Non-API versions** of workflows (e.g., `AuK-01-Instruct-TTS.json`, `AuK-02-Voice-Clone.json`) can be loaded directly into the ComfyUI web UI to manually test nodes, verify checkpoints, or inspect generation queues visually.
 
 ---
 
 ## Quick Start & Dev Setup
 
 ### 1. Easy Start (Recommended)
-Launch the entire app with pre-flight environment checks and automatic service spawning:
+
+**On Windows (PowerShell):**
 ```powershell
 .\start.ps1
 ```
@@ -405,13 +415,21 @@ Or with hot-reloading enabled for UI / script editing:
 .\start.ps1 -Dev
 ```
 
+**On macOS / Linux (Bash):**
+```bash
+chmod +x ./start.sh
+./start.sh
+# Or with hot-reloading:
+./start.sh -Dev
+```
+
 ### 2. Manual Dev Setup (npm)
 If you prefer running via npm:
-```powershell
+```bash
 # Install packages
 npm install
 
-# Run unit tests (97 tests across 8 suites)
+# Run unit and integration tests (109 tests across 9 suites)
 npm test
 
 # Launch standard application
@@ -423,8 +441,8 @@ npm run dev
 
 ### Handy Developer Shortcuts
 When the application is running, you can use these shortcuts to debug and inspect:
-*   **`Ctrl + R`** (or `F5`): Reloads the HTML layout and style configurations without restarting the core desktop process.
-*   **`Ctrl + Shift + I`** (or `F12`): Opens the Chromium DevTools console directly inside Electron to inspect styles and log API payloads.
+*   **`Ctrl + R`** (or `Cmd + R` on macOS / `F5`): Reloads the HTML layout and style configurations without restarting the core desktop process.
+*   **`Ctrl + Shift + I`** (or `Cmd + Option + I` on macOS / `F12`): Opens the Chromium DevTools console directly inside Electron to inspect styles and log API payloads.
 
 ---
 
@@ -436,3 +454,10 @@ When the application is running, you can use these shortcuts to debug and inspec
 4.  **Verify Timbre Map**: Switch to the **Voice Matrix** tab to see identified characters, adjust ComfyUI preset drop-downs, or randomize synthesis seeds.
 5.  **Run Synthesis**: Toggle **Mock Offline Mode** in the top-right header, then click **Synthesize Classic** in the Script Editor pane to watch files write sequentially in real-time.
 6.  **Stitch & Listen**: Switch to the **Assembly Console** tab, click **Stitch Concatenated Master (Pass 5)**, and click **Listen Master** to activate visualizers and play your finished audiobook.
+
+---
+
+## License
+
+This project is licensed under the **ISC License** matching the [package.json](package.json) declaration. See the [LICENSE](LICENSE) file for complete terms.
+

@@ -1,0 +1,10 @@
+{
+  "comfyui_path": "",
+  "comfyui_url": "http://127.0.0.1:8188",
+  "llama_path": "",
+  "llama_url": "http://127.0.0.1:8081",
+  "laya_path": "",
+  "laya_url": "http://127.0.0.1:8765",
+  "clm_path": "",
+  "clm_url": "http://127.0.0.1:8700"
+}

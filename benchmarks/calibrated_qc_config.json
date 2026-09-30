@@ -3,7 +3,7 @@
   "status": "provisional",
   "is_provisional": true,
   "provisional_disclaimer": "All calibration metrics in this configuration are provisional until at least 30 human verdicts per task have been logged without optimizer boundary pegging.",
-  "log_source": "C:\\Users\\Desktop-Dev\\Desktop\\AudioBooks\\benchmarks\\qc_calibration_log.jsonl",
+  "log_source": "benchmarks/qc_calibration_log.jsonl",
   "tasks": {
     "character_existence": {
       "status": "provisional",

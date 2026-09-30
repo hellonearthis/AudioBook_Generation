@@ -11,11 +11,13 @@ const path_library = require("path");
 const filesystem_library = require("fs");
 const http_client_library = require("http");
 const crypto = require("crypto");
+const os_library = require("os");
 const child_process_library = require("child_process");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegStatic = require("ffmpeg-static");
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
+const { get_resolved_configuration } = require("./config_service");
 const {
   release_comfyui_vram,
   ensure_comfyui_ready,
@@ -39,19 +41,11 @@ function resolve_comfyui_base_directory() {
     return cached_comfyui_base_directory_path;
   }
 
-  // WHAT: Loading configuration parameters from an external config.json file if present.
-  let local_configuration_object = {};
-  const config_file_path = path_library.join(__dirname, "..", "config.json");
-  try {
-    if (filesystem_library.existsSync(config_file_path)) {
-      local_configuration_object = JSON.parse(filesystem_library.readFileSync(config_file_path, "utf8"));
-    }
-  } catch (config_reading_exception) {
-    console.error("Failed to read config.json:", config_reading_exception);
-  }
-
-  const explicit_user_installation_path = local_configuration_object.comfyui_path || "C:\\cui";
-  const shortcut_link_absolute_path = local_configuration_object.comfyui_shortcut_path || "C:\\Users\\Desktop-Dev\\Desktop\\ComfyUI-EZi output.lnk";
+  // WHAT: Loading configuration parameters from config service and user environment.
+  const config = get_resolved_configuration();
+  const explicit_user_installation_path = config.comfyui_path;
+  const user_home = os_library.homedir();
+  const shortcut_link_absolute_path = config.comfyui_shortcut_path || path_library.join(user_home, "Desktop", "ComfyUI-EZi output.lnk");
   const primary_discovered_hardcoded_fallback_path = "H:\\comfyui\\ComfyUI-Easy-Install-Windows\\ComfyUI-Easy-Install\\ComfyUI";
   const final_resort_fallback_path = path_library.join(__dirname, "..", "..", "comfyui");
 

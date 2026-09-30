@@ -9,7 +9,9 @@
 
 const http_client_library = require("http");
 const filesystem_library = require("fs");
+const path_library = require("path");
 const child_process_library = require("child_process");
+const { get_resolved_configuration } = require("./config_service");
 
 // WHAT: Global tracking of active ComfyUI endpoint URL.
 let last_known_comfyui_endpoint_url = "http://127.0.0.1:8188";
@@ -237,12 +239,17 @@ async function ensure_laya_ready(laya_base_endpoint_url = "http://127.0.0.1:8765
     return true;
   }
 
-  const launcher_script_path = "C:\\Users\\Desktop-Dev\\Desktop\\Laya\\start_server.ps1";
+  const config = get_resolved_configuration();
+  const laya_dir = config.laya_path;
+  const is_windows = process.platform === "win32";
+  const launcher_script_name = is_windows ? "start_server.ps1" : "start_server.sh";
+  const launcher_script_path = path_library.join(laya_dir, launcher_script_name);
+
   if (!filesystem_library.existsSync(launcher_script_path)) {
     return false;
   }
 
-  console.log("[On-Demand] Launching Laya Decision Engine for fast dialogue attribution...");
+  console.log(`[On-Demand] Launching Laya Decision Engine for fast dialogue attribution (${launcher_script_path})...`);
   const primary_window_instance = typeof getMainWindow === "function" ? getMainWindow() : null;
   if (primary_window_instance) {
     primary_window_instance.webContents.send("system:ai-status-update", {
@@ -253,11 +260,13 @@ async function ensure_laya_ready(laya_base_endpoint_url = "http://127.0.0.1:8765
   }
 
   try {
-    const spawned_laya_process = child_process_library.spawn("powershell.exe", [
-      "-ExecutionPolicy", "Bypass",
-      "-File", launcher_script_path
-    ], {
-      cwd: "C:\\Users\\Desktop-Dev\\Desktop\\Laya",
+    const spawn_cmd = is_windows ? "powershell.exe" : "bash";
+    const spawn_args = is_windows
+      ? ["-ExecutionPolicy", "Bypass", "-File", launcher_script_path]
+      : [launcher_script_path];
+
+    const spawned_laya_process = child_process_library.spawn(spawn_cmd, spawn_args, {
+      cwd: laya_dir,
       detached: true,
       stdio: "ignore"
     });
@@ -294,12 +303,17 @@ async function ensure_clm_ready(clm_base_endpoint_url = "http://127.0.0.1:8700",
     return true;
   }
 
-  const launcher_script_path = "C:\\Users\\Desktop-Dev\\Desktop\\CLM\\run_clm_server.ps1";
+  const config = get_resolved_configuration();
+  const clm_dir = config.clm_path;
+  const is_windows = process.platform === "win32";
+  const launcher_script_name = is_windows ? "run_clm_server.ps1" : "run_clm_server.sh";
+  const launcher_script_path = path_library.join(clm_dir, launcher_script_name);
+
   if (!filesystem_library.existsSync(launcher_script_path)) {
     return false;
   }
 
-  console.log("[On-Demand] Launching CLM Decision Engine for contrastive attribution...");
+  console.log(`[On-Demand] Launching CLM Decision Engine for contrastive attribution (${launcher_script_path})...`);
   const primary_window_instance = typeof getMainWindow === "function" ? getMainWindow() : null;
   if (primary_window_instance) {
     primary_window_instance.webContents.send("system:ai-status-update", {
@@ -310,11 +324,13 @@ async function ensure_clm_ready(clm_base_endpoint_url = "http://127.0.0.1:8700",
   }
 
   try {
-    const spawned_clm_process = child_process_library.spawn("powershell.exe", [
-      "-ExecutionPolicy", "Bypass",
-      "-File", launcher_script_path
-    ], {
-      cwd: "C:\\Users\\Desktop-Dev\\Desktop\\CLM",
+    const spawn_cmd = is_windows ? "powershell.exe" : "bash";
+    const spawn_args = is_windows
+      ? ["-ExecutionPolicy", "Bypass", "-File", launcher_script_path]
+      : [launcher_script_path];
+
+    const spawned_clm_process = child_process_library.spawn(spawn_cmd, spawn_args, {
+      cwd: clm_dir,
       detached: true,
       stdio: "ignore"
     });
