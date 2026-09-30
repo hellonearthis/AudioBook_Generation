@@ -4,14 +4,20 @@ node_modules/
 # Local workspace projects (audio, temporary takes, generated states)
 workspace/
 
-# Agent configuration/state directory
-.agent/
+# Agent configuration/state directory (track rules and skills)
+.agent/*
+!.agent/rules/
+!.agent/skills/
 
 # OS-generated files
 .DS_Store
 Thumbs.db
 desktop.ini
 Desktop.ini
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
 
 # Log files
 *.log

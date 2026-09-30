@@ -27,6 +27,7 @@ describe("Laya Fast Decision Engine Integration", () => {
       <input id="settings_comfyui_endpoint_input" value="http://127.0.0.1:8188" />
       <input id="settings_laya_endpoint_input" value="http://127.0.0.1:8765" />
       <input id="settings_clm_endpoint_input" value="http://127.0.0.1:8700" />
+      <button id="btn_automate_attribution">Automate Attribution</button>
       <div id="screenplay_segment_cards_wrapper"></div>
       <div id="project_selection_cards_grid"></div>
       <span id="active_workspace_directory_display_label"></span>
@@ -43,6 +44,7 @@ describe("Laya Fast Decision Engine Integration", () => {
       check_laya_status: jest.fn(),
       save_audiobook_project_state: jest.fn().mockResolvedValue(true),
       subscribe_to_generation_status_updates: jest.fn(),
+      subscribe_to_attribution_progress: jest.fn(),
       subscribe_to_lm_studio_warnings: jest.fn()
     };
 
@@ -481,4 +483,67 @@ describe("Laya Fast Decision Engine Integration", () => {
       expect(directorial_segment.needs_resync).toBe(true);
     });
   });
+
+  describe("Real-time Attribution Progress UI and Status Reporting", () => {
+    it("updates progress box and bar dynamically when attribution progress events arrive", () => {
+      handle_incoming_attribution_progress_update({
+        engine: "laya",
+        current_line: 12,
+        total_lines: 36,
+        current_paragraph: 4,
+        total_paragraphs: 10,
+        phase: "Attributing dialogue line",
+        snippet: "Where did you go last night?",
+        speaker: "Jane",
+        emotion: "whisper",
+        confidence: 0.94
+      });
+
+      const container = document.getElementById("screenplay_segment_cards_wrapper");
+      expect(container.innerHTML).toContain("attribution_progress_box");
+
+      const counter_el = document.getElementById("attribution_progress_counter");
+      expect(counter_el.textContent).toBe("Doing line 12 of 36 (33%)");
+
+      const fill_el = document.getElementById("attribution_progress_bar_fill");
+      expect(fill_el.style.width).toBe("33%");
+
+      const snippet_el = document.getElementById("attribution_progress_snippet");
+      expect(snippet_el.textContent).toContain("Where did you go last night?");
+
+      const result_el = document.getElementById("attribution_progress_result");
+      expect(result_el.textContent).toContain("Speaker: Jane");
+      expect(result_el.textContent).toContain("whisper");
+      expect(result_el.textContent).toContain("94% conf");
+    });
+
+    it("smoothly updates existing DOM elements without re-creating container", () => {
+      handle_incoming_attribution_progress_update({
+        engine: "laya",
+        current_line: 1,
+        total_lines: 10,
+        phase: "Line 1"
+      });
+
+      const initial_box = document.getElementById("attribution_progress_box");
+      expect(initial_box).toBeTruthy();
+
+      handle_incoming_attribution_progress_update({
+        engine: "laya",
+        current_line: 5,
+        total_lines: 10,
+        snippet: "Second quote here",
+        speaker: "John",
+        confidence: 0.9
+      });
+
+      const after_box = document.getElementById("attribution_progress_box");
+      expect(after_box).toBe(initial_box); // Exact same DOM element preserved
+
+      const counter_el = document.getElementById("attribution_progress_counter");
+      expect(counter_el.textContent).toBe("Doing line 5 of 10 (50%)");
+      expect(document.getElementById("attribution_progress_bar_fill").style.width).toBe("50%");
+    });
+  });
 });
+

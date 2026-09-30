@@ -49,6 +49,7 @@ describe("Unmarked Dialogue / Literary Mode (Decoupled Stage 2A & 2B)", () => {
       check_laya_status: jest.fn(),
       save_audiobook_project_state: jest.fn().mockResolvedValue(true),
       subscribe_to_generation_status_updates: jest.fn(),
+      subscribe_to_attribution_progress: jest.fn(),
       subscribe_to_lm_studio_warnings: jest.fn()
     };
 
@@ -264,6 +265,36 @@ describe("Unmarked Dialogue / Literary Mode (Decoupled Stage 2A & 2B)", () => {
       expect(result.script_segments).toHaveLength(1);
       expect(result.script_segments[0].engine).toBe("narrator");
     });
+
+    test("emits real-time progress events to caller sender during attribution pass", async () => {
+      const mockDetectJoint = jest.fn().mockResolvedValue([
+        { type: "narrator", text: "He stopped by the river." },
+        { type: "dialogue", speaker: "The Man", text: "Are you ready?", emotion: "calm" }
+      ]);
+      const mockDetectSpans = jest.fn();
+
+      register_laya_clm_handlers(mockIpcMain, () => mockDetectSpans, () => mockDetectJoint);
+      const layaHandler = handlersMap["ai:laya-attribute"];
+
+      const mockSender = { send: jest.fn() };
+      const result = await layaHandler({ sender: mockSender }, {
+        book_text_segment: "He stopped by the river. Are you ready?",
+        unmarked_dialogue_mode: true,
+        voice_mapping_context: {
+          "The Man": { gender: "Male", age: "Adult" }
+        },
+        laya_endpoint_url: "http://127.0.0.1:8765"
+      });
+
+      expect(result.script_segments).toHaveLength(2);
+      expect(mockSender.send).toHaveBeenCalled();
+      const progressCalls = mockSender.send.mock.calls.filter(call => call[0] === "system:attribution-progress");
+      expect(progressCalls.length).toBeGreaterThan(0);
+      const lastPayload = progressCalls[progressCalls.length - 1][1];
+      expect(lastPayload).toHaveProperty("current_line");
+      expect(lastPayload).toHaveProperty("total_paragraphs");
+    });
   });
 });
+
 

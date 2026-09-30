@@ -216,7 +216,7 @@
                   <input type="checkbox" id="unmarked_dialogue_toggle" onchange="save_global_configurations()">
                   <span>📖 Unmarked</span>
                 </label>
-                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple" onclick="run_main_pipeline_pass_one_and_two()" title="Run the selected attribution engine to parse text into speaker dialogue cards">
+                <button id="btn_automate_attribution" class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple" onclick="run_main_pipeline_pass_one_and_two()" title="Run the selected attribution engine to parse text into speaker dialogue cards">
                   Automate Attribution
                 </button>
                 <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-muted" onclick="run_tech_book_sentence_split()" title="Split prose paragraphs into individual spoken sentences for technical or educational books">
@@ -232,29 +232,27 @@
             </div>
           </div>
 
-          <!-- RIGHTMOST PANE [NEW]: Directorial Orchestration Pipeline -->
-          <div class="editor_pane" id="editor_pane_directorial">
+          <!-- RIGHTMOST PANE: Line Studio Inspector -->
+          <div class="editor_pane" id="editor_pane_inspector">
             <div class="pane_header">
-              <span class="pane_header_title">3. Directorial Orchestration Pipeline</span>
-              <div class="d-flex gap-8">
-                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-gold" onclick="run_directorial_orchestration_extraction_pipeline()" title="Analyze dramatic subtext and extract emotional delivery directions for all dialogue lines">
-                  Director Script Doctor
+              <div class="d-flex align-items-center gap-10">
+                <span class="pane_header_title">3. Line Inspector</span>
+                <span id="inspector_active_line_badge" class="badge radius-6 p-4-8 text-11 font-mono" style="background: rgba(157, 78, 221, 0.2); color: #c084fc; border: 1px solid rgba(157, 78, 221, 0.4);">Line 0</span>
+              </div>
+              <div class="d-flex gap-8 align-items-center">
+                <button class="cyber_btn p-6-12 text-11 radius-6" id="btn_inspector_synthesize_line" onclick="trigger_single_line_speech_synthesis(active_inspected_segment_index)" title="Synthesize speech for currently inspected line">
+                  ⚡ Synthesize Line
                 </button>
-                <button class="cyber_btn p-6-12 text-11 radius-6" onclick="trigger_directorial_synthesis_all_lines()" title="Generate audio takes conditioned on acting instructions, emotional delivery, and relationship state">
-                  Synthesize Directorial
+                <button class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple" id="btn_inspector_play_take" onclick="play_individual_line_clip(active_inspected_segment_index)" title="Play active audio take">
+                  ▶ Play
                 </button>
               </div>
             </div>
-            <div class="pane_content_area scroll-smooth" id="directorial_segment_cards_wrapper">
-              <!-- RENDERED DIRECTORIAL SCRIPT CARDS -->
-              <div class="empty_state_screen vh-50">
-                <div class="empty_state_hex_glow text-gold">
-                  <svg viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-                </div>
-                <h4 class="empty_state_title">No Directorial Script Enriched</h4>
-                <p class="empty_state_tagline">Click "Director Script Doctor" above to run the Triple-Input metadata and vector emotion extraction.</p>
-              </div>
+            <div class="pane_content_area scroll-smooth p-16 d-flex flex-column gap-16" id="line_inspector_content_container">
+              <!-- Rendered dynamically by render_line_inspector_view() -->
             </div>
+            <!-- Hidden backward-compatibility stub for legacy tests -->
+            <div id="directorial_segment_cards_wrapper" class="d-none"></div>
           </div>
         </div>
       </section>
@@ -700,6 +698,7 @@
   <script src="../node_modules/interactjs/dist/interact.min.js"></script>
 
   <!-- LOAD APPLICATION CORE CONTROLLER AND SCRIPTS -->
+  <script src="../services/directorial_staging_service.js"></script>
   <script src="js/app.js"></script>
   <script src="js/editor.js"></script>
   <script src="js/voiceMatrix.js"></script>

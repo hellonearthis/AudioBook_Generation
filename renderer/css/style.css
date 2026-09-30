@@ -2652,3 +2652,172 @@ select option {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* =========================================================================
+   COLUMN 3: LINE STUDIO INSPECTOR DECK STYLING
+   ========================================================================= */
+.inspector_section_card {
+  background: rgba(13, 20, 36, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.inspector_section_card:hover {
+  border-color: rgba(157, 78, 221, 0.35);
+  background: rgba(13, 20, 36, 0.85);
+}
+
+.inspector_section_header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 8px;
+}
+
+.inspector_section_title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector_field_label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.inspector_input_area {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #f1f5f9;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.inspector_input_area:focus {
+  border-color: #9d4edd;
+  box-shadow: 0 0 8px rgba(157, 78, 221, 0.3);
+}
+
+.phonetic_chip_list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.phonetic_chip {
+  background: rgba(157, 78, 221, 0.18);
+  border: 1px solid rgba(157, 78, 221, 0.4);
+  color: #e9d5ff;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.phonetic_chip_remove {
+  cursor: pointer;
+  color: #f87171;
+  font-weight: bold;
+}
+
+.phonetic_chip_remove:hover {
+  color: #ef4444;
+}
+
+.take_comparison_item {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.take_comparison_item.take_active_master {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.mini_waveform_track {
+  height: 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.waveform_bar_sim {
+  flex: 1;
+  background: linear-gradient(180deg, #9d4edd, #00f0ff);
+  border-radius: 1px;
+  opacity: 0.85;
+}
+
+.pacing_slider_row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pacing_slider_input {
+  flex-grow: 1;
+  accent-color: #9d4edd;
+  cursor: pointer;
+}
+
+.pacing_slider_badge {
+  min-width: 60px;
+  text-align: right;
+  font-family: monospace;
+  font-size: 11px;
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.qc_confidence_track_bg {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.qc_confidence_fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.active_inspected_card {
+  border-color: #9d4edd !important;
+  box-shadow: 0 0 14px rgba(157, 78, 221, 0.45) !important;
+}
+

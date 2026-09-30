@@ -134,6 +134,16 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     });
   },
 
+  // WHAT: Directorial Staging and Speech Tag Harvester (Pass 2.6).
+  // WHY: Synthesizes micro-level vocal acoustics, prosody, style, and emotion into screenplay cards.
+  enrich_directorial_staging: (script_segments, voice_mapping, relationships) => {
+    return ipcRenderer.invoke("ai:enrich-directorial-staging", {
+      script_segments: script_segments,
+      voice_mapping: voice_mapping,
+      relationships: relationships
+    });
+  },
+
   // WHAT: Merges two directorial segment styles into a single unified style using local LLM / llama.cpp.
   // WHY: Facilitates the smart "Combine Cells" feature using explicit narrative flow instructions.
   trigger_style_merge_via_llm: (cell1_text, cell1_style, cell2_text, cell2_style, transition_instructions, lm_studio_api_url_address) => {
@@ -265,6 +275,14 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     // WHAT: Binding an IPC event listener to catch updates from the main thread.
     // WHY: Allows asynchronous event flows from backend processes back to the renderer.
     ipcRenderer.on("audio:generation-status-update", (event_source, progress_update_payload) => {
+      callback_function_for_updates(progress_update_payload);
+    });
+  },
+
+  // WHAT: Registers a listener function to track real-time dialogue attribution progress (lines, paragraphs, speakers).
+  // WHY: Powers real-time line-by-line status updates, progress bars, and character tags in the screenplay editor.
+  subscribe_to_attribution_progress: (callback_function_for_updates) => {
+    ipcRenderer.on("system:attribution-progress", (event_source, progress_update_payload) => {
       callback_function_for_updates(progress_update_payload);
     });
   },

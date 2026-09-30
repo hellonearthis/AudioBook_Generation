@@ -97,6 +97,16 @@ function populate_screenplay_cards_in_editor_view() {
 
     individual_script_segment_card_element.id = `screenplay_card_node_${segment_index_counter}`;
 
+    if (segment_index_counter === active_inspected_segment_index) {
+      individual_script_segment_card_element.classList.add("active_inspected_card");
+    }
+
+    individual_script_segment_card_element.addEventListener("click", (click_evt) => {
+      if (!click_evt.target.closest("button, select, textarea, span.inline_qwen_input")) {
+        select_and_inspect_segment(segment_index_counter);
+      }
+    });
+
     // WHAT: Checking if this specific screenplay segment has custom workflow override properties active.
     // WHY: Provides instant visual cues to the user about which cards deviate from global cast configurations.
     //      We only check workflowType here so that auto-generated seeds during regeneration don't trigger the "Override Active" badge.
@@ -269,6 +279,10 @@ function populate_screenplay_cards_in_editor_view() {
       update_individual_card_synthesis_status_lights(segment_index_counter, active_script_segment_item.audioPath ? "completed" : "idle");
     }
   }
+
+  // WHAT: Automatically refresh Line Studio Inspector (Column 3) for the currently active card.
+  // WHY: Keeps inspector telemetry, waveforms, subtext, and pacing synced with active screenplay state.
+  render_line_inspector_view(active_inspected_segment_index);
 }
 
 // =========================================================================
@@ -676,12 +690,19 @@ function handle_card_qwen_style_modification_event(index_position_of_screenplay_
 // WHAT: Serializes state changes and flushes JSON database to workspace.
 // WHY: Ensures zero data loss when character allocations or text cues are modified.
 async function trigger_project_state_disk_flush() {
-  if (active_selected_workspace_directory_path && active_loaded_project_state_object) {
+  const current_workspace_path = typeof active_selected_workspace_directory_path !== "undefined" && active_selected_workspace_directory_path
+    ? active_selected_workspace_directory_path
+    : (typeof window !== "undefined" ? window.active_selected_workspace_directory_path : null);
+  const current_project_state = typeof active_loaded_project_state_object !== "undefined" && active_loaded_project_state_object
+    ? active_loaded_project_state_object
+    : (typeof window !== "undefined" ? window.active_loaded_project_state_object : null);
+
+  if (current_workspace_path && current_project_state && typeof window !== "undefined" && window.audiobook_api && window.audiobook_api.save_audiobook_project_state) {
     try {
       await window.audiobook_api.save_audiobook_project_state(
-        active_selected_workspace_directory_path,
-        active_loaded_project_state_object.projectName,
-        active_loaded_project_state_object
+        current_workspace_path,
+        current_project_state.projectName,
+        current_project_state
       );
     } catch (save_exception) {
       console.error("Failed to persist project state to disk.", save_exception);
@@ -767,6 +788,197 @@ async function run_tech_book_sentence_split() {
 }
 
 // =========================================================================
+// REAL-TIME DIALOGUE ATTRIBUTION PROGRESS TRACKING STATE & UI
+// =========================================================================
+
+let active_attribution_status_state = {
+  is_running: false,
+  engine: "laya",
+  is_unmarked: false,
+  chunk_index: 0,
+  total_chunks: 1,
+  current_line: 0,
+  total_lines: 0,
+  current_paragraph: 0,
+  total_paragraphs: 0,
+  phase: "",
+  snippet: "",
+  speaker: "",
+  emotion: "",
+  energy: null,
+  confidence: null
+};
+
+// WHAT: Receives real-time attribution progress events from main process IPC.
+// WHY: Streams line-by-line attribution status, percentage, text snippets, and character assignments.
+function handle_incoming_attribution_progress_update(payload) {
+  if (!payload) return;
+
+  if (typeof payload.current_line === "number") active_attribution_status_state.current_line = payload.current_line;
+  if (typeof payload.total_lines === "number" && payload.total_lines > 0) active_attribution_status_state.total_lines = payload.total_lines;
+  if (typeof payload.current_paragraph === "number") active_attribution_status_state.current_paragraph = payload.current_paragraph;
+  if (typeof payload.total_paragraphs === "number" && payload.total_paragraphs > 0) active_attribution_status_state.total_paragraphs = payload.total_paragraphs;
+  if (payload.phase) active_attribution_status_state.phase = payload.phase;
+  if (payload.snippet) active_attribution_status_state.snippet = payload.snippet;
+  if (payload.speaker) active_attribution_status_state.speaker = payload.speaker;
+  if (payload.emotion) active_attribution_status_state.emotion = payload.emotion;
+  if (typeof payload.energy === "number") active_attribution_status_state.energy = payload.energy;
+  if (typeof payload.confidence === "number") active_attribution_status_state.confidence = payload.confidence;
+  if (payload.engine) active_attribution_status_state.engine = payload.engine;
+
+  render_or_update_attribution_progress_ui();
+}
+
+// WHAT: Renders or dynamically updates the attribution progress container with line counts, progress bar, and speaker tag.
+// WHY: Gives the user immediate granular visibility into ongoing AI attribution passes (doing X of Y lines).
+function render_or_update_attribution_progress_ui() {
+  const screenplay_cards_wrapper_element = document.getElementById("screenplay_segment_cards_wrapper");
+  if (!screenplay_cards_wrapper_element) return;
+
+  const {
+    engine,
+    is_unmarked,
+    chunk_index,
+    total_chunks,
+    current_line,
+    total_lines,
+    current_paragraph,
+    total_paragraphs,
+    phase,
+    snippet,
+    speaker,
+    emotion,
+    confidence
+  } = active_attribution_status_state;
+
+  // Compute progress percentage
+  let progress_percent = 0;
+  if (total_lines > 0) {
+    const line_fraction = Math.min(1, current_line / total_lines);
+    progress_percent = total_chunks > 1
+      ? Math.round(((chunk_index + line_fraction) / total_chunks) * 100)
+      : Math.round(line_fraction * 100);
+  } else if (total_paragraphs > 0) {
+    const para_fraction = Math.min(1, current_paragraph / total_paragraphs);
+    progress_percent = total_chunks > 1
+      ? Math.round(((chunk_index + para_fraction) / total_chunks) * 100)
+      : Math.round(para_fraction * 100);
+  } else {
+    progress_percent = Math.round(((chunk_index + 0.5) / Math.max(1, total_chunks)) * 100);
+  }
+  progress_percent = Math.max(0, Math.min(100, progress_percent));
+
+  // Determine Engine Badge Title
+  let engine_badge_title = is_unmarked ? "📖 2-Stage Unmarked Attribution" : "⚡ Laya Fast Attribution";
+  if (engine === "clm") {
+    engine_badge_title = is_unmarked ? "📖 2-Stage Unmarked Attribution (CLM-8B)" : "🎯 CLM-8B System One Attribution";
+  } else if (engine === "cascade" || engine === "clm_cascade") {
+    engine_badge_title = is_unmarked ? "📖 2-Stage Unmarked Attribution (Cascade)" : "⚡🎯 Smart Cascade (Laya → CLM)";
+  } else if (engine === "llm" || engine === "hybrid" || engine === "llm_qc") {
+    engine_badge_title = "🧠 LLM Dialogue Attribution";
+  } else if (engine === "joint_llm") {
+    engine_badge_title = "📖 Joint LLM Unmarked Attribution";
+  }
+
+  // Format Line / Progress Counter Text
+  let counter_label = "";
+  if (total_lines > 0) {
+    counter_label = `Doing line ${current_line} of ${total_lines} (${progress_percent}%)`;
+  } else if (total_paragraphs > 0) {
+    counter_label = `Paragraph ${current_paragraph} of ${total_paragraphs} (${progress_percent}%)`;
+  } else {
+    counter_label = `Pass ${chunk_index + 1} of ${total_chunks} (${progress_percent}%)`;
+  }
+
+  // Format Chunk / Details label
+  let details_label = `Chunk ${chunk_index + 1}/${total_chunks}`;
+  if (total_paragraphs > 0) {
+    details_label += ` • Para ${current_paragraph || 1}/${total_paragraphs}`;
+  }
+
+  // Update Automate Attribution Button
+  const automate_btn = document.getElementById("btn_automate_attribution");
+  if (automate_btn && active_attribution_status_state.is_running) {
+    automate_btn.disabled = true;
+    if (total_lines > 0) {
+      automate_btn.innerHTML = `<span class="status_dot state_processing d-inline-block mr-4"></span> Line ${current_line}/${total_lines}`;
+    } else if (total_paragraphs > 0) {
+      automate_btn.innerHTML = `<span class="status_dot state_processing d-inline-block mr-4"></span> Para ${current_paragraph}/${total_paragraphs}`;
+    } else {
+      automate_btn.innerHTML = `<span class="status_dot state_processing d-inline-block mr-4"></span> Attributing...`;
+    }
+  }
+
+  // If progress container already exists in DOM, update properties directly for silky-smooth 60fps rendering
+  const existing_box = document.getElementById("attribution_progress_box");
+  if (existing_box) {
+    const title_el = document.getElementById("attribution_progress_title");
+    if (title_el) title_el.textContent = `${engine_badge_title} (Pass ${chunk_index + 1}/${total_chunks})...`;
+
+    const phase_el = document.getElementById("attribution_progress_phase");
+    if (phase_el && phase) phase_el.textContent = phase;
+
+    const counter_el = document.getElementById("attribution_progress_counter");
+    if (counter_el) counter_el.textContent = counter_label;
+
+    const chunk_info_el = document.getElementById("attribution_progress_chunk_info");
+    if (chunk_info_el) chunk_info_el.textContent = details_label;
+
+    const fill_el = document.getElementById("attribution_progress_bar_fill");
+    if (fill_el) fill_el.style.width = `${progress_percent}%`;
+
+    const snippet_el = document.getElementById("attribution_progress_snippet");
+    if (snippet_el) {
+      snippet_el.textContent = snippet ? `“${snippet.replace(/^"|"$/g, '')}”` : "Analyzing dialogue line...";
+    }
+
+    const result_el = document.getElementById("attribution_progress_result");
+    if (result_el) {
+      if (speaker) {
+        result_el.style.display = "flex";
+        result_el.innerHTML = `
+          <span class="badge radius-4 p-2-6" style="background: rgba(157, 78, 221, 0.25); color: #e9d5ff; border: 1px solid rgba(157, 78, 221, 0.5);">Speaker: ${speaker}</span>
+          <span style="color: #9ca3af;">${emotion ? emotion + " • " : ""}${typeof confidence === "number" ? Math.round(confidence * 100) + "% conf" : ""}</span>
+        `;
+      } else {
+        result_el.style.display = "none";
+      }
+    }
+    return;
+  }
+
+  // Otherwise, render initial progress container
+  screenplay_cards_wrapper_element.innerHTML = `
+    <div class="empty_state_screen vh-50 d-flex flex-column align-items-center justify-content-center p-20">
+      <div class="status_dot state_processing w-40px h-40px mb-15"></div>
+      <h4 class="empty_state_title mb-8" id="attribution_progress_title">${engine_badge_title} (Pass ${chunk_index + 1}/${total_chunks})...</h4>
+      <p class="empty_state_tagline mb-15" id="attribution_progress_phase" style="color: #d1d5db;">${phase || "Executing dialogue attribution and staging passes. Please stand by..."}</p>
+      
+      <div id="attribution_progress_box" class="w-100 max-w-500px p-16 radius-8" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1);">
+        <div class="d-flex justify-content-between align-items-center mb-8 text-12">
+          <span class="font-weight-bold" id="attribution_progress_counter" style="color: #c084fc;">${counter_label}</span>
+          <span class="text-11" id="attribution_progress_chunk_info" style="color: #9ca3af;">${details_label}</span>
+        </div>
+        
+        <div class="progress_track_bar_bg w-100 h-8px radius-4 overflow-hidden mb-12" style="background: rgba(255, 255, 255, 0.08);">
+          <div id="attribution_progress_bar_fill" class="progress_track_bar_fill h-100" style="width: ${progress_percent}%; background: linear-gradient(90deg, #9d4edd, #00f0ff); box-shadow: 0 0 10px rgba(0, 240, 255, 0.4); transition: width 0.2s ease;"></div>
+        </div>
+        
+        <div class="d-flex flex-column gap-6 text-11">
+          <div id="attribution_progress_snippet" class="font-italic text-truncate" style="color: #e5e7eb; max-width: 460px;">
+            ${snippet ? `“${snippet.replace(/^"|"$/g, '')}”` : "Scanning manuscript paragraphs..."}
+          </div>
+          <div id="attribution_progress_result" class="align-items-center gap-8 text-10" style="display: ${speaker ? "flex" : "none"};">
+            <span class="badge radius-4 p-2-6" style="background: rgba(157, 78, 221, 0.25); color: #e9d5ff; border: 1px solid rgba(157, 78, 221, 0.5);">Speaker: ${speaker}</span>
+            <span style="color: #9ca3af;">${emotion ? emotion + " • " : ""}${typeof confidence === "number" ? Math.round(confidence * 100) + "% conf" : ""}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// =========================================================================
 
 // WHAT: Automatically divides prose blocks into speaker segments and generates staging guides.
 // WHY: Pass 2 and 3 convert unstructured txt paragraphs into dialogue screenplay records.
@@ -815,11 +1027,38 @@ async function run_main_pipeline_pass_one_and_two() {
   const total_attribution_chunks = Math.ceil(raw_book_text_input.length / target_chunk_size);
   const screenplay_cards_wrapper_element = document.getElementById("screenplay_segment_cards_wrapper");
 
-  const list_of_new_segments = [];
+  let list_of_new_segments = [];
   const discovered_characters_matrix = active_loaded_project_state_object.voiceMapping || {};
 
   const selected_attribution_engine = document.getElementById("attribution_engine_selector")?.value || (typeof configuration_attribution_engine !== "undefined" ? configuration_attribution_engine : "laya");
   const is_unmarked_dialogue = document.getElementById("unmarked_dialogue_toggle")?.checked || (typeof configuration_unmarked_dialogue !== "undefined" ? configuration_unmarked_dialogue : false);
+
+  const automate_btn = document.getElementById("btn_automate_attribution");
+  let original_btn_html = "";
+  if (automate_btn) {
+    original_btn_html = automate_btn.innerHTML;
+    automate_btn.disabled = true;
+    automate_btn.innerHTML = `<span class="status_dot state_processing d-inline-block mr-4"></span> Initializing...`;
+  }
+
+  active_attribution_status_state = {
+    is_running: true,
+    engine: selected_attribution_engine,
+    is_unmarked: is_unmarked_dialogue,
+    chunk_index: 0,
+    total_chunks: total_attribution_chunks,
+    current_line: 0,
+    total_lines: 0,
+    current_paragraph: 0,
+    total_paragraphs: 0,
+    phase: is_unmarked_dialogue ? "Detecting dialogue spans..." : "Scanning quotation lines...",
+    snippet: "",
+    speaker: "",
+    emotion: "",
+    energy: null,
+    confidence: null
+  };
+  render_or_update_attribution_progress_ui();
 
   try {
     // WHAT: Iterating through the text in blocks.
@@ -828,28 +1067,13 @@ async function run_main_pipeline_pass_one_and_two() {
       const chunk_start_index = current_chunk_index * target_chunk_size;
       const sample_text_window_block = raw_book_text_input.substring(chunk_start_index, chunk_start_index + target_chunk_size);
 
+      active_attribution_status_state.chunk_index = current_chunk_index;
+      active_attribution_status_state.phase = `Processing Chunk ${current_chunk_index + 1} of ${total_attribution_chunks}...`;
+      render_or_update_attribution_progress_ui();
+
       let parsing_response_json = null;
 
       if (["laya", "clm", "cascade", "hybrid"].includes(selected_attribution_engine)) {
-        let engine_badge_title = is_unmarked_dialogue ? "📖 2-Stage Unmarked Attribution" : "⚡ Orchestrating Laya Fast Attribution";
-        let engine_badge_desc = is_unmarked_dialogue ? "Detecting dialogue spans (Pass 2A) -> Laya ModernBERT attribution & emotional staging (Pass 2B)..." : "Executing sub-25ms non-autoregressive dialogue classification and acting staging via ModernBERT. Please stand by...";
-
-        if (selected_attribution_engine === "clm") {
-          engine_badge_title = is_unmarked_dialogue ? "📖 2-Stage Unmarked Attribution (CLM-8B)" : "🎯 Orchestrating CLM-8B Attribution";
-          engine_badge_desc = is_unmarked_dialogue ? "Detecting dialogue spans (Pass 2A) -> CLM-v0.1-8B System One attribution & emotional staging (Pass 2B)..." : "Executing contrastive decision calls and emotional staging via local CLM-v0.1-8B (port 8700). Please stand by...";
-        } else if (selected_attribution_engine === "cascade") {
-          engine_badge_title = is_unmarked_dialogue ? "📖 2-Stage Unmarked Attribution (Cascade)" : "⚡🎯 Orchestrating Smart Cascade (Laya → CLM)";
-          engine_badge_desc = is_unmarked_dialogue ? "Detecting dialogue spans (Pass 2A) -> Fast Laya attribution with CLM-8B contrastive escalation (Pass 2B)..." : "Evaluating sub-25ms ModernBERT pass with automatic CLM-8B contrastive escalation for ambiguous lines. Please stand by...";
-        }
-
-        screenplay_cards_wrapper_element.innerHTML = `
-          <div class="empty_state_screen vh-50">
-            <div class="status_dot state_processing w-40px h-40px"></div>
-            <h4 class="empty_state_title">${engine_badge_title} (Pass ${current_chunk_index + 1}/${total_attribution_chunks})...</h4>
-            <p class="empty_state_tagline">${engine_badge_desc}</p>
-          </div>
-        `;
-
         try {
           parsing_response_json = await window.audiobook_api.trigger_laya_attribution({
             book_text_segment: sample_text_window_block,
@@ -866,13 +1090,10 @@ async function run_main_pipeline_pass_one_and_two() {
           // In hybrid mode, if Laya was offline (returned fallback_reason), seamlessly fall back to llama.cpp
           if (selected_attribution_engine === "hybrid" && parsing_response_json && parsing_response_json.fallback_reason) {
             console.warn("Hybrid Mode: Laya offline or fallback triggered, routing to llama.cpp.", parsing_response_json.fallback_reason);
-            screenplay_cards_wrapper_element.innerHTML = `
-              <div class="empty_state_screen vh-50">
-                <div class="status_dot state_processing w-40px h-40px"></div>
-                <h4 class="empty_state_title">🧠 Hybrid Fallback: Querying llama.cpp (Pass ${current_chunk_index + 1}/${total_attribution_chunks})...</h4>
-                <p class="empty_state_tagline">Laya engine unavailable. Converting paragraphs into screenplay script segments using local LLM engine...</p>
-              </div>
-            `;
+            active_attribution_status_state.engine = "hybrid";
+            active_attribution_status_state.phase = "Hybrid Fallback: Querying local LLM engine...";
+            render_or_update_attribution_progress_ui();
+
             parsing_response_json = await window.audiobook_api.trigger_dialogue_attribution(
               sample_text_window_block,
               configuration_lm_studio_api_url_address
@@ -881,13 +1102,10 @@ async function run_main_pipeline_pass_one_and_two() {
         } catch (laya_err) {
           console.warn("Laya invocation error:", laya_err);
           if (selected_attribution_engine === "hybrid") {
-            screenplay_cards_wrapper_element.innerHTML = `
-              <div class="empty_state_screen vh-50">
-                <div class="status_dot state_processing w-40px h-40px"></div>
-                <h4 class="empty_state_title">🧠 Hybrid Fallback: Querying llama.cpp (Pass ${current_chunk_index + 1}/${total_attribution_chunks})...</h4>
-                <p class="empty_state_tagline">Converting paragraphs into screenplay script segments using local LLM engine...</p>
-              </div>
-            `;
+            active_attribution_status_state.engine = "hybrid";
+            active_attribution_status_state.phase = "Hybrid Fallback: Querying local LLM engine...";
+            render_or_update_attribution_progress_ui();
+
             parsing_response_json = await window.audiobook_api.trigger_dialogue_attribution(
               sample_text_window_block,
               configuration_lm_studio_api_url_address
@@ -897,18 +1115,11 @@ async function run_main_pipeline_pass_one_and_two() {
           }
         }
       } else {
-        // WHAT: Disabling panels and showing loading overlays for LLM mode.
-        // WHY: Prevents user interactions while local API threads process parsing blocks.
-        screenplay_cards_wrapper_element.innerHTML = `
-          <div class="empty_state_screen vh-50">
-            <div class="status_dot state_processing w-40px h-40px"></div>
-            <h4 class="empty_state_title">🧠 Orchestrating LLM Attribution (Pass ${current_chunk_index + 1}/${total_attribution_chunks})...</h4>
-            <p class="empty_state_tagline">Converting paragraphs into screenplay script segments using local LLM engine. Please stand by...</p>
-          </div>
-        `;
+        // LLM Mode
+        active_attribution_status_state.engine = "llm";
+        active_attribution_status_state.phase = "Querying local LLM engine...";
+        render_or_update_attribution_progress_ui();
 
-        // WHAT: Dispatching raw block dialogue tags to llama-server.
-        // WHY: Local LLM executes attribution passes programmatically.
         parsing_response_json = await window.audiobook_api.trigger_dialogue_attribution(
           sample_text_window_block,
           configuration_lm_studio_api_url_address
@@ -1043,6 +1254,52 @@ async function run_main_pipeline_pass_one_and_two() {
     }
   }
 
+  // WHAT: Pass 2.6 Directorial Staging and Speech Tag Harvester pass.
+  // WHY: Brings directorial intelligence directly into the Screenplay Script Editor, extracting
+  //      acoustic descriptors (e.g. "her voice was flat, clipped by the environmental seal of her collar")
+  //      and synthesizing [Voice Quality], [Prosody], [Style], and [Emotion] onto screenplay cards.
+  if (window.audiobook_api && typeof window.audiobook_api.enrich_directorial_staging === "function") {
+    try {
+      active_attribution_status_state.phase = "Directorial Staging: Extracting prosody, style, and vocal cues...";
+      render_or_update_attribution_progress_ui();
+
+      const enriched_segments = await window.audiobook_api.enrich_directorial_staging(
+        list_of_new_segments,
+        discovered_characters_matrix,
+        active_loaded_project_state_object.relationships || []
+      );
+
+      if (Array.isArray(enriched_segments) && enriched_segments.length > 0) {
+        list_of_new_segments = enriched_segments;
+        active_loaded_project_state_object.scriptSegments = list_of_new_segments;
+      }
+    } catch (staging_error) {
+      console.warn("Pass 2.6 Directorial Staging non-fatal warning:", staging_error.message);
+    }
+  } else if (typeof enrich_script_segments_with_directorial_staging === "function" || (typeof window !== "undefined" && typeof window.enrich_script_segments_with_directorial_staging === "function")) {
+    try {
+      active_attribution_status_state.phase = "Directorial Staging: Extracting prosody, style, and vocal cues...";
+      render_or_update_attribution_progress_ui();
+
+      const staging_fn = typeof enrich_script_segments_with_directorial_staging === "function"
+        ? enrich_script_segments_with_directorial_staging
+        : window.enrich_script_segments_with_directorial_staging;
+
+      const enriched_segments = staging_fn(
+        list_of_new_segments,
+        discovered_characters_matrix,
+        active_loaded_project_state_object.relationships || []
+      );
+
+      if (Array.isArray(enriched_segments) && enriched_segments.length > 0) {
+        list_of_new_segments = enriched_segments;
+        active_loaded_project_state_object.scriptSegments = list_of_new_segments;
+      }
+    } catch (direct_staging_err) {
+      console.warn("Directorial Staging direct fallback error:", direct_staging_err.message);
+    }
+  }
+
   if (typeof window !== "undefined") {
     window.active_loaded_project_state_object = active_loaded_project_state_object;
   }
@@ -1058,6 +1315,15 @@ async function run_main_pipeline_pass_one_and_two() {
     console.error("Master parsing pipeline failed.", pipeline_execution_error);
     alert(`Dialogue attribution pipeline failed: ${pipeline_execution_error.message}`);
     populate_screenplay_cards_in_editor_view();
+  } finally {
+    active_attribution_status_state.is_running = false;
+    const automate_btn = document.getElementById("btn_automate_attribution");
+    if (automate_btn) {
+      automate_btn.disabled = false;
+      if (original_btn_html) {
+        automate_btn.innerHTML = original_btn_html;
+      }
+    }
   }
 }
 
@@ -1661,6 +1927,7 @@ function highlight_synchronize_active_segment(segment_index_position, is_trigger
   // WHAT: Highlight and programmatically center the classic card in Column 2.
   // WHY: Bypasses standard browser scrolling jitter to align the matched screenplay card side-by-side.
   if (classic_active_index !== -1) {
+    select_and_inspect_segment(classic_active_index);
     const targeted_classic_card_element = document.getElementById(`screenplay_card_node_${classic_active_index}`);
     if (targeted_classic_card_element && classic_cards_scroll_wrapper) {
       targeted_classic_card_element.classList.add("active_highlight_card");
@@ -1794,12 +2061,447 @@ function play_individual_line_clip(index_position_of_card) {
 }
 
 // =========================================================================
-// DIRECTORIAL SCREENPLAY RENDERER - DOM CARD BUILDER
+// LINE STUDIO INSPECTOR - COLUMN 3 CONTROLLER & DOM BUILDER
 // =========================================================================
+
+let active_inspected_segment_index = 0;
+
+function escape_html_entities(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function select_and_inspect_segment(index) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segments = active_loaded_project_state_object.scriptSegments;
+  if (index < 0 || index >= segments.length) return;
+
+  active_inspected_segment_index = index;
+
+  // Update visual outline on screenplay cards in Column 2
+  document.querySelectorAll(".screenplay_item_card").forEach((card, idx) => {
+    if (idx === index) {
+      card.classList.add("active_inspected_card");
+    } else {
+      card.classList.remove("active_inspected_card");
+    }
+  });
+
+  // Update header badge
+  const line_badge = document.getElementById("inspector_active_line_badge");
+  if (line_badge) {
+    const target_seg = segments[index];
+    line_badge.textContent = `Line ${index} • ${target_seg.speaker || 'Narrator'}`;
+  }
+
+  render_line_inspector_view(index);
+}
+
+function generate_simulated_waveform_html(take_number, energy) {
+  const bars_count = 28;
+  let bars_html = "";
+  for (let b = 0; b < bars_count; b++) {
+    const pseudo_random = Math.sin((b + 1) * 0.7 * (take_number || 1)) * 0.5 + 0.5;
+    const height_pct = Math.max(15, Math.min(100, Math.round(pseudo_random * 80 * (energy || 1.0))));
+    bars_html += `<div class="waveform_bar_sim" style="height: ${height_pct}%;"></div>`;
+  }
+  return bars_html;
+}
+
+function render_line_inspector_view(line_index) {
+  const inspector_container = document.getElementById("line_inspector_content_container");
+  if (!inspector_container) return;
+
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments || active_loaded_project_state_object.scriptSegments.length === 0) {
+    inspector_container.innerHTML = `
+      <div class="empty_state_screen vh-50">
+        <div class="empty_state_hex_glow text-purple">
+          <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+        </div>
+        <h4 class="empty_state_title">No Script Segments Loaded</h4>
+        <p class="empty_state_tagline">Load a project and run Automate Attribution to inspect line-level telemetry.</p>
+      </div>`;
+    return;
+  }
+
+  const segments = active_loaded_project_state_object.scriptSegments;
+  const valid_index = Math.max(0, Math.min(segments.length - 1, line_index !== undefined ? line_index : 0));
+  active_inspected_segment_index = valid_index;
+  const segment = segments[valid_index];
+
+  // Update header badge
+  const line_badge = document.getElementById("inspector_active_line_badge");
+  if (line_badge) {
+    line_badge.textContent = `Line ${valid_index} • ${segment.speaker || 'Narrator'}`;
+  }
+
+  // Section 1: Narrative State & Subtext
+  const active_relationships = active_loaded_project_state_object.relationships || [];
+  const relevant_rel = active_relationships.find(r => r.source_character === segment.speaker || r.target_character === segment.speaker);
+  let relationship_badge_html = "";
+  if (relevant_rel) {
+    const partner = relevant_rel.source_character === segment.speaker ? relevant_rel.target_character : relevant_rel.source_character;
+    relationship_badge_html = `
+      <div class="d-flex align-items-center justify-content-between p-6-10 radius-6 text-11" style="background: rgba(157, 78, 221, 0.12); border: 1px solid rgba(157, 78, 221, 0.35); color: #e9d5ff;">
+        <span>👥 <strong>${segment.speaker}</strong> ➔ <strong>${partner}</strong></span>
+        <span style="color: #c084fc;">[${relevant_rel.relation_tone || 'Guarded'} • ${relevant_rel.relation_type || 'Formal'}]</span>
+        ${relevant_rel.status ? `<span class="badge radius-3 p-1-4 text-10" style="background: rgba(0,240,255,0.15); color: #38bdf8;">${relevant_rel.status}</span>` : ''}
+      </div>`;
+  } else {
+    relationship_badge_html = `
+      <div class="p-6-10 radius-6 text-11" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); color: #94a3b8;">
+        <span>${segment.speaker === 'Narrator' ? '📖 Narrative Exposition: Omniscient storyteller voice' : '👤 Character Dynamic: Solo delivery / Baseline stance'}</span>
+      </div>`;
+  }
+
+  const current_intent = segment.intent || (segment.qwen_style && segment.qwen_style.rich_emotion) || "Direct spoken dialogue.";
+  const detected_emotion = segment.emotion || "calm";
+  const energy_level = typeof segment.energy === "number" ? segment.energy : 1.0;
+  const energy_pct = Math.min(100, Math.round((energy_level / 3.0) * 100));
+
+  // Section 2: Pronunciation & Phonetic Overrides
+  segment.phonetic_overrides = segment.phonetic_overrides || {};
+  const override_keys = Object.keys(segment.phonetic_overrides);
+  let chips_html = "";
+  if (override_keys.length > 0) {
+    chips_html = `<div class="phonetic_chip_list">` + override_keys.map(term => `
+      <span class="phonetic_chip">
+        <strong>${term}</strong> ➔ <em>${segment.phonetic_overrides[term]}</em>
+        <span class="phonetic_chip_remove" onclick="handle_inspector_remove_phonetic_override(${valid_index}, '${term.replace(/'/g, "\\'")}')" title="Remove override">✕</span>
+      </span>
+    `).join('') + `</div>`;
+  } else {
+    chips_html = `<div class="text-11 text-muted font-italic">No phonetic overrides active for this line.</div>`;
+  }
+
+  // Section 3: Take A/B Testing & Waveform Telemetry
+  const audio_takes = Array.isArray(segment.audioVersions) ? segment.audioVersions : [];
+  let takes_list_html = "";
+  if (audio_takes.length > 0) {
+    takes_list_html = audio_takes.map(take => {
+      const is_master = !!take.isActive;
+      const take_energy = typeof take.energy === "number" ? take.energy : 1.0;
+      return `
+        <div class="take_comparison_item ${is_master ? 'take_active_master' : ''}">
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="font-weight-bold text-11 d-flex align-items-center gap-6">
+              ${is_master ? '<span class="text-green font-bold">★ Take ' + take.take + ' (Master)</span>' : 'Take ' + take.take}
+            </span>
+            <span class="text-10 text-muted">${take.duration ? Number(take.duration).toFixed(1) + 's' : ''} • Energy: ${Math.round(take_energy * 100)}%</span>
+          </div>
+          <div class="mini_waveform_track">
+            ${generate_simulated_waveform_html(take.take, take_energy)}
+          </div>
+          <div class="d-flex justify-content-end gap-6 text-10">
+            <button class="cyber_btn btn_secondary p-2-6 text-10" onclick="play_specific_card_take(${valid_index}, ${take.take})" title="Audition this take">▶ Audition</button>
+            ${!is_master ? `<button class="cyber_btn p-2-6 text-10 text-green" onclick="handle_card_take_change_event(${valid_index}, ${take.take}, false)" title="Set as master audio take">★ Set Master</button>` : ''}
+            <button class="cyber_btn btn_secondary p-2-6 text-10 text-purple" onclick="open_auk_edit_tools_modal(${valid_index}, false)" title="AuK Audio Editing Suite">🪄 Edit</button>
+            <button class="cyber_btn btn_secondary p-2-6 text-10 text-coral" onclick="trigger_delete_specific_take(${valid_index}, ${take.take})" title="Delete take">🗑</button>
+          </div>
+        </div>`;
+    }).join('');
+  } else {
+    takes_list_html = `
+      <div class="text-11 text-muted font-italic p-10 text-center radius-6" style="background: rgba(0,0,0,0.25); border: 1px dashed rgba(255,255,255,0.1);">
+        No synthesized takes recorded yet. Click "⚡ Synthesize Line" above.
+      </div>`;
+  }
+
+  // Section 4: Micro-Pacing & Breath Controls
+  const pre_pause = segment.pre_pause_ms !== undefined ? segment.pre_pause_ms : 150;
+  const post_pause = segment.post_pause_ms !== undefined ? segment.post_pause_ms : 300;
+  const inject_breath = segment.inject_breath !== undefined ? segment.inject_breath : true;
+
+  // Section 5: AI Confidence & Shadow QC Insights
+  const engine_name = segment.engine === 'clm' ? 'CLM-8B' : (segment.engine === 'clm_cascade' ? 'Cascade (CLM-8B)' : (segment.engine === 'llm' ? 'llama.cpp' : 'Laya Fast'));
+  const conf_score = typeof segment.confidence === "number" ? segment.confidence : (segment.is_user_locked ? 1.0 : 0.85);
+  const conf_pct = Math.round(conf_score * 100);
+  let conf_color = "#10b981";
+  let conf_gradient = "linear-gradient(90deg, #10b981, #059669)";
+  let conf_label = "High Confidence";
+  if (conf_pct < 60) {
+    conf_color = "#ef4444";
+    conf_gradient = "linear-gradient(90deg, #ef4444, #dc2626)";
+    conf_label = "Low (Ambiguous)";
+  } else if (conf_pct < 85) {
+    conf_color = "#f59e0b";
+    conf_gradient = "linear-gradient(90deg, #f59e0b, #d97706)";
+    conf_label = "Moderate Confidence";
+  }
+
+  inspector_container.innerHTML = `
+    <!-- MODULE 1: Narrative State & Subtext -->
+    <div class="inspector_section_card">
+      <div class="inspector_section_header">
+        <span class="inspector_section_title">🎭 1. Narrative State & Subtext</span>
+        <span class="badge radius-4 p-2-6 text-10 font-mono" style="background: rgba(0,240,255,0.15); color: #38bdf8;">${segment.speaker || 'Narrator'}</span>
+      </div>
+      ${relationship_badge_html}
+      <div>
+        <div class="inspector_field_label">Subtext & Dramatic Intent:</div>
+        <textarea class="inspector_input_area" rows="2" placeholder="Subtext or emotional motivation (e.g. Sarcastic, hiding grief)" onchange="handle_inspector_subtext_change(${valid_index}, this.value)">${escape_html_entities(current_intent)}</textarea>
+      </div>
+      <div class="d-flex justify-content-between align-items-center text-11">
+        <span class="text-muted">Emotion: <strong class="text-white">${detected_emotion}</strong></span>
+        <div class="d-flex align-items-center gap-6">
+          <span class="text-muted">Energy:</span>
+          <div style="width: 70px; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+            <div style="width: ${energy_pct}%; height: 100%; background: linear-gradient(90deg, #38bdf8, #9d4edd);"></div>
+          </div>
+          <span class="text-muted font-mono text-10">${energy_level.toFixed(1)}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODULE 2: Pronunciation & Phonetic Overrides -->
+    <div class="inspector_section_card">
+      <div class="inspector_section_header">
+        <span class="inspector_section_title">🗣 2. Pronunciation & Phonetics</span>
+        <span class="text-10 text-muted">${override_keys.length} overrides</span>
+      </div>
+      ${chips_html}
+      <div class="d-flex flex-column gap-6 mt-6">
+        <div class="d-flex gap-6">
+          <input type="text" id="inspector_phonetic_term_input" class="form_text_field p-4-8 text-11 flex-grow-1" placeholder="Term (e.g. cupola)">
+          <input type="text" id="inspector_phonetic_val_input" class="form_text_field p-4-8 text-11 flex-grow-1" placeholder="Phonetic (e.g. KOO-puh-luh)">
+          <button class="cyber_btn p-4-8 text-11" onclick="handle_inspector_add_phonetic_override(${valid_index})">+ Add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODULE 3: Take A/B Testing & Waveform Telemetry -->
+    <div class="inspector_section_card">
+      <div class="inspector_section_header">
+        <span class="inspector_section_title">📊 3. Take A/B Auditioning</span>
+        <span class="text-10 text-muted">${audio_takes.length} takes available</span>
+      </div>
+      <div class="d-flex flex-column gap-8">
+        ${takes_list_html}
+      </div>
+    </div>
+
+    <!-- MODULE 4: Micro-Pacing & Breath Controls -->
+    <div class="inspector_section_card">
+      <div class="inspector_section_header">
+        <span class="inspector_section_title">⏱ 4. Micro-Pacing & Breath</span>
+      </div>
+      <div class="d-flex flex-column gap-8">
+        <div>
+          <div class="d-flex justify-content-between text-11 mb-2">
+            <span class="inspector_field_label mb-0">Pre-Line Silence:</span>
+            <span class="pacing_slider_badge" id="val_pre_pause_${valid_index}">${pre_pause} ms</span>
+          </div>
+          <div class="pacing_slider_row">
+            <input type="range" class="pacing_slider_input" min="0" max="2000" step="25" value="${pre_pause}" oninput="handle_inspector_pause_change(${valid_index}, 'pre_pause_ms', this.value)">
+          </div>
+        </div>
+        <div>
+          <div class="d-flex justify-content-between text-11 mb-2">
+            <span class="inspector_field_label mb-0">Post-Line Silence:</span>
+            <span class="pacing_slider_badge" id="val_post_pause_${valid_index}">${post_pause} ms</span>
+          </div>
+          <div class="pacing_slider_row">
+            <input type="range" class="pacing_slider_input" min="0" max="2000" step="25" value="${post_pause}" oninput="handle_inspector_pause_change(${valid_index}, 'post_pause_ms', this.value)">
+          </div>
+        </div>
+        <label class="d-flex align-items-center gap-8 text-11 cursor-pointer mt-4" style="color: #cbd5e1;">
+          <input type="checkbox" ${inject_breath ? 'checked' : ''} onchange="handle_inspector_breath_toggle(${valid_index}, this.checked)">
+          <span>Insert natural breath sound before spoken line</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- MODULE 5: AI Confidence & Shadow QC Insights -->
+    <div class="inspector_section_card">
+      <div class="inspector_section_header">
+        <span class="inspector_section_title">🛡 5. Confidence & Shadow QC</span>
+        <span class="badge radius-4 p-2-6 text-10 font-mono" style="background: rgba(255,255,255,0.06); color: #cbd5e1;">${engine_name}</span>
+      </div>
+      <div>
+        <div class="d-flex justify-content-between align-items-center text-11 mb-4">
+          <span class="font-weight-bold">Attribution Confidence</span>
+          <span style="color: ${conf_color}; font-weight: 600;">${conf_pct}% • ${conf_label}</span>
+        </div>
+        <div class="qc_confidence_track_bg">
+          <div class="qc_confidence_fill" style="width: ${conf_pct}%; background: ${conf_gradient};"></div>
+        </div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-6">
+        <button class="cyber_btn ${segment.is_user_locked ? 'text-green border-green-glow' : 'btn_secondary'} p-4-10 text-11 radius-4" onclick="handle_inspector_lock_toggle(${valid_index})" title="Protect this line attribution as ground truth">
+          ${segment.is_user_locked ? '🔒 Locked Ground Truth' : '🔓 Lock as Ground Truth'}
+        </button>
+        <button class="cyber_btn btn_secondary p-4-10 text-11 radius-4" onclick="handle_inspector_reattribute_line(${valid_index})" title="Re-run attribution classifier on this segment">
+          ⚡ Re-attribute Line
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function play_inspector_active_take() {
+  play_individual_line_clip(active_inspected_segment_index);
+}
+
+function trigger_inspector_line_synthesis() {
+  trigger_single_line_speech_synthesis(active_inspected_segment_index);
+}
+
+function play_specific_card_take(card_index, take_number) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[card_index];
+  if (!segment || !segment.audioVersions) return;
+
+  const target_take = segment.audioVersions.find(t => t.take === take_number);
+  if (target_take && target_take.audioPath) {
+    const clip_player_node = document.getElementById("individual_clip_audio_player");
+    if (clip_player_node) {
+      clip_player_node.dataset.currentCardIndex = String(card_index);
+      clip_player_node.src = target_take.audioPath;
+      clip_player_node.play().catch(e => console.error("Audition playback failed:", e));
+    }
+  } else {
+    alert("Audio take file not available on disk.");
+  }
+}
+
+async function trigger_delete_specific_take(card_index, take_number) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[card_index];
+  if (!segment || !segment.audioVersions) return;
+
+  segment.audioVersions = segment.audioVersions.filter(t => t.take !== take_number);
+  if (segment.audioVersions.length > 0) {
+    const has_active = segment.audioVersions.some(t => t.isActive);
+    if (!has_active) {
+      segment.audioVersions[0].isActive = true;
+      segment.audioPath = segment.audioVersions[0].audioPath;
+    }
+  } else {
+    segment.audioPath = null;
+  }
+
+  await trigger_project_state_disk_flush();
+  populate_screenplay_cards_in_editor_view();
+  render_line_inspector_view(card_index);
+}
+
+async function handle_inspector_subtext_change(index, new_intent) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[index];
+  if (segment) {
+    segment.intent = new_intent;
+    await trigger_project_state_disk_flush();
+  }
+}
+
+async function handle_inspector_add_phonetic_override(index) {
+  const term_input = document.getElementById("inspector_phonetic_term_input");
+  const val_input = document.getElementById("inspector_phonetic_val_input");
+  if (!term_input || !val_input) return;
+
+  const term = term_input.value.trim();
+  const phonetic = val_input.value.trim();
+  if (!term || !phonetic) return;
+
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[index];
+  if (segment) {
+    segment.phonetic_overrides = segment.phonetic_overrides || {};
+    segment.phonetic_overrides[term] = phonetic;
+
+    active_loaded_project_state_object.pronunciationDictionary = active_loaded_project_state_object.pronunciationDictionary || {};
+    active_loaded_project_state_object.pronunciationDictionary[term] = phonetic;
+
+    await trigger_project_state_disk_flush();
+    render_line_inspector_view(index);
+  }
+}
+
+async function handle_inspector_remove_phonetic_override(index, term) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[index];
+  if (segment && segment.phonetic_overrides) {
+    delete segment.phonetic_overrides[term];
+    await trigger_project_state_disk_flush();
+    render_line_inspector_view(index);
+  }
+}
+
+async function handle_inspector_pause_change(index, key, value) {
+  const int_val = parseInt(value, 10);
+  const badge = document.getElementById(key === 'pre_pause_ms' ? `val_pre_pause_${index}` : `val_post_pause_${index}`);
+  if (badge) badge.textContent = `${int_val} ms`;
+
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[index];
+  if (segment) {
+    segment[key] = int_val;
+    await trigger_project_state_disk_flush();
+  }
+}
+
+async function handle_inspector_breath_toggle(index, is_checked) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[index];
+  if (segment) {
+    segment.inject_breath = is_checked;
+    await trigger_project_state_disk_flush();
+  }
+}
+
+async function handle_inspector_lock_toggle(index) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[index];
+  if (segment) {
+    segment.is_user_locked = !segment.is_user_locked;
+    await trigger_project_state_disk_flush();
+    populate_screenplay_cards_in_editor_view();
+    render_line_inspector_view(index);
+  }
+}
+
+async function handle_inspector_reattribute_line(index) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[index];
+  if (!segment) return;
+
+  if (window.audiobook_api && typeof window.audiobook_api.trigger_laya_attribution === "function") {
+    try {
+      const result = await window.audiobook_api.trigger_laya_attribution({
+        book_text_segment: segment.text,
+        voice_mapping_context: active_loaded_project_state_object.voiceMapping || {},
+        existing_script_segments: [segment],
+        laya_endpoint_url: configuration_laya_api_url_address,
+        clm_endpoint_url: (typeof configuration_clm_api_url_address !== "undefined") ? configuration_clm_api_url_address : "http://127.0.0.1:8700",
+        attribution_engine: "laya",
+        confidence_threshold: 0.55
+      });
+      if (result && result.script_segments && result.script_segments.length > 0) {
+        const reattributed = result.script_segments[0];
+        segment.speaker = reattributed.speaker || segment.speaker;
+        segment.confidence = reattributed.confidence || segment.confidence;
+        segment.emotion = reattributed.emotion || segment.emotion;
+        segment.engine = reattributed.engine || segment.engine;
+        await trigger_project_state_disk_flush();
+        populate_screenplay_cards_in_editor_view();
+        render_line_inspector_view(index);
+      }
+    } catch (err) {
+      console.warn("Re-attribution error:", err);
+    }
+  }
+}
 
 // WHAT: Populates the rightmost directorial orchestration panel (Column 3) with interactive cards.
 // WHY: Renders a highly detailed directorial screenplay detailing intents, delivery options, and Zonos emotion sliders.
 function populate_directorial_cards_in_editor_view() {
+  render_line_inspector_view(active_inspected_segment_index);
+
   const directorial_cards_wrapper_element = document.getElementById("directorial_segment_cards_wrapper");
   if (!directorial_cards_wrapper_element) {
     return;
@@ -3057,5 +3759,19 @@ function switch_modal_tab(target_tab_identifier) {
   }
 }
 
-
-
+// WHAT: Registers real-time attribution progress listener when renderer loads.
+// WHY: Ensures progress events from Laya/CLM/LLM immediately update the UI.
+if (typeof window !== "undefined") {
+  const register_attribution_listener = () => {
+    if (window.audiobook_api && typeof window.audiobook_api.subscribe_to_attribution_progress === "function") {
+      window.audiobook_api.subscribe_to_attribution_progress((progress_payload) => {
+        handle_incoming_attribution_progress_update(progress_payload);
+      });
+    }
+  };
+  if (typeof document !== "undefined" && document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", register_attribution_listener);
+  } else {
+    register_attribution_listener();
+  }
+}

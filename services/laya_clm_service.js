@@ -427,14 +427,59 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
     const detect_spans_fn = typeof getDetectUnmarkedSpans === "function" ? getDetectUnmarkedSpans() : null;
     const detect_joint_fn = typeof getDetectUnmarkedJoint === "function" ? getDetectUnmarkedJoint() : null;
 
+    // WHAT: Helper to stream granular line-by-line attribution progress updates back to renderer UI.
+    // WHY: Informs user of current line/paragraph count, percentage, text snippets, and predicted speakers.
+    function notify_attribution_progress(progress_data) {
+      if (ipc_event_context && ipc_event_context.sender && typeof ipc_event_context.sender.send === "function") {
+        try {
+          ipc_event_context.sender.send("system:attribution-progress", progress_data);
+        } catch (progress_err) {
+          // Graceful fallback if window or webContents was closed
+        }
+      }
+    }
+
     try {
       const paragraphs_list = book_text_segment.split(/\n+/).map(single_paragraph => single_paragraph.trim()).filter(Boolean);
+      const total_paragraphs = paragraphs_list.length;
+
+      // Count pre-computed quotation lines for standard mode
+      let precomputed_total_quotes = 0;
+      if (!is_unmarked_mode) {
+        for (const single_para of paragraphs_list) {
+          const q_matches = single_para.match(/"([^"]+)"/g);
+          if (q_matches) {
+            precomputed_total_quotes += q_matches.length;
+          }
+        }
+      }
+      let completed_dialogue_lines_count = 0;
+
+      notify_attribution_progress({
+        phase: is_unmarked_mode ? "Pass 2: Scanning unmarked dialogue" : `Preparing ${attribution_engine.toUpperCase()} attribution pass...`,
+        engine: attribution_engine,
+        current_paragraph: 0,
+        total_paragraphs: total_paragraphs,
+        current_line: 0,
+        total_lines: precomputed_total_quotes,
+        snippet: paragraphs_list[0] ? paragraphs_list[0].slice(0, 80) : ""
+      });
 
       for (let paragraph_index = 0; paragraph_index < paragraphs_list.length; paragraph_index++) {
         const paragraph_string = paragraphs_list[paragraph_index];
         const quote_tasks = [];
 
         if (is_unmarked_mode) {
+          notify_attribution_progress({
+            phase: `Paragraph ${paragraph_index + 1}/${total_paragraphs}: Scanning unmarked dialogue...`,
+            engine: "joint_llm",
+            current_paragraph: paragraph_index + 1,
+            total_paragraphs: total_paragraphs,
+            current_line: completed_dialogue_lines_count,
+            total_lines: precomputed_total_quotes,
+            snippet: paragraph_string.slice(0, 80)
+          });
+
           // WHAT: Benchmark Arm 3 routing: Joint 1-pass LLM span & attribution.
           // WHY: Achieves 100% speaker accuracy on unmarked prose (McCarthy/Selby) vs 36-74% for decoupled Laya.
           let joint_spans_result = null;
@@ -459,6 +504,20 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
                   engine: "joint_llm"
                 });
               } else {
+                completed_dialogue_lines_count++;
+                notify_attribution_progress({
+                  phase: `Attributed unmarked dialogue (line ${completed_dialogue_lines_count})`,
+                  engine: "joint_llm",
+                  current_paragraph: paragraph_index + 1,
+                  total_paragraphs: total_paragraphs,
+                  current_line: completed_dialogue_lines_count,
+                  total_lines: precomputed_total_quotes,
+                  snippet: span_item.text.slice(0, 80),
+                  speaker: span_item.speaker || "Character",
+                  emotion: span_item.emotion || "calm",
+                  confidence: 0.95
+                });
+
                 const dialogue_segment = {
                   type: "dialogue",
                   speaker: span_item.speaker || "Character",
@@ -511,6 +570,16 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
           // WHAT: Fallback to Stage 2A/2B decoupled detection if Joint LLM is unavailable or fails.
           // WHY: Resilient pipeline ensures uninterrupted operation even under local LLM network timeout.
           if (detect_spans_fn) {
+            notify_attribution_progress({
+              phase: `Pass 2A: Detecting dialogue boundaries (Para ${paragraph_index + 1}/${total_paragraphs})`,
+              engine: attribution_engine,
+              current_paragraph: paragraph_index + 1,
+              total_paragraphs: total_paragraphs,
+              current_line: completed_dialogue_lines_count,
+              total_lines: precomputed_total_quotes,
+              snippet: paragraph_string.slice(0, 80)
+            });
+
             const paragraph_spans = await detect_spans_fn(paragraph_string, lm_studio_api_url_address);
 
             for (let span_sub_index = 0; span_sub_index < paragraph_spans.length; span_sub_index++) {
@@ -598,6 +667,17 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
           }
 
           if (quote_tasks.length === 0 && paragraph_string) {
+            notify_attribution_progress({
+              phase: `Paragraph ${paragraph_index + 1}/${total_paragraphs}: Scene narration`,
+              engine: "narrator",
+              current_paragraph: paragraph_index + 1,
+              total_paragraphs: total_paragraphs,
+              current_line: completed_dialogue_lines_count,
+              total_lines: precomputed_total_quotes,
+              snippet: paragraph_string.slice(0, 80),
+              speaker: "Narrator"
+            });
+
             script_segments.push({
               type: "narrator",
               speaker: "Narrator",
@@ -611,6 +691,17 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
 
         if (quote_tasks.length > 0) {
           laya_queries_count += quote_tasks.length;
+
+          notify_attribution_progress({
+            phase: `Attributing line ${completed_dialogue_lines_count + 1}${precomputed_total_quotes > 0 ? " of " + precomputed_total_quotes : ""}...`,
+            engine: attribution_engine,
+            current_paragraph: paragraph_index + 1,
+            total_paragraphs: total_paragraphs,
+            current_line: completed_dialogue_lines_count + 1,
+            total_lines: precomputed_total_quotes,
+            snippet: quote_tasks[0].quote_text.slice(0, 80)
+          });
+
           const laya_predictions = await Promise.all(
             quote_tasks.map(async (task_item) => {
               const decide_payload = {
@@ -674,6 +765,8 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
           );
 
           laya_predictions.forEach((single_prediction_entry) => {
+            completed_dialogue_lines_count++;
+
             const speaker_answer = single_prediction_entry.answers.speaker || {};
             const emotion_answer = single_prediction_entry.answers.emotion || {};
             const energy_answer = single_prediction_entry.answers.energy || {};
@@ -716,6 +809,20 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
               };
               final_speaker = matching_existing_segment.speaker;
             }
+
+            notify_attribution_progress({
+              phase: `Classified line ${completed_dialogue_lines_count}${precomputed_total_quotes > 0 ? " of " + precomputed_total_quotes : ""}`,
+              engine: single_prediction_entry.engine || attribution_engine,
+              current_paragraph: paragraph_index + 1,
+              total_paragraphs: total_paragraphs,
+              current_line: completed_dialogue_lines_count,
+              total_lines: precomputed_total_quotes,
+              snippet: single_prediction_entry.quote_text.slice(0, 80),
+              speaker: final_speaker,
+              emotion: detected_emotion,
+              energy: energy_score,
+              confidence: speaker_confidence
+            });
 
             script_segments.push({
               type: "dialogue",

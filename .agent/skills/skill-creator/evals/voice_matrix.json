@@ -1,0 +1,37 @@
+{
+  "benchmark_name": "cross-voice-anti-bleed",
+  "test_prompts": [
+    {
+      "id": 1,
+      "prompt": "Write a comedic bit about vending machines.",
+      "expected_hedberg": {
+        "mechanic": "Object re-functionalization with low-stakes observation and self-correction",
+        "prohibited": ["monotone mathematical physics paradox", "serious trauma deconstruction", "audience scolding"]
+      },
+      "expected_wright": {
+        "mechanic": "Zero-emotion literal paraprosdokian / impossibility stated as fact",
+        "prohibited": ["conversational slang (Man, you know)", "laughing at own joke", "character dialogue"]
+      },
+      "expected_gadsby": {
+        "mechanic": "Comic setup broken by structural interruption and honest reflection on artificial tension",
+        "prohibited": ["standalone rapid one-liners", "easy punchline relief", "absurd object puns"]
+      }
+    },
+    {
+      "id": 2,
+      "prompt": "Write a comedic bit about an umbrella.",
+      "expected_hedberg": {
+        "mechanic": "Everyday annoyance, unintended physical feature, rambling delivery",
+        "prohibited": ["existential logic puzzles", "meta-structural deconstruction"]
+      },
+      "expected_wright": {
+        "mechanic": "Paraprosdokian inversion (e.g. umbrella that only opens inside)",
+        "prohibited": ["stoner filler words", "story arcs"]
+      },
+      "expected_gadsby": {
+        "mechanic": "Social metaphor / tension deconstruction / refusal to apologize",
+        "prohibited": ["giggle at own joke", "whimsical surrealism without purpose"]
+      }
+    }
+  ]
+}

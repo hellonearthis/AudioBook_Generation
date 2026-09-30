@@ -23,6 +23,9 @@ const {
   map_emotion_to_auk08_palette
 } = require("./relationship_state_service");
 const {
+  enrich_script_segments_with_directorial_staging
+} = require("./directorial_staging_service");
+const {
   RELATION_TYPES,
   RELATION_TONES,
   STATUSES,
@@ -811,6 +814,17 @@ function register_ai_pipeline_handlers(ipcMain, getMainWindow) {
   ipcMain.handle("ai:attribute-dialogue", async (ipc_event_context, request_arguments) => {
     await release_comfyui_vram();
 
+    // WHAT: Helper to stream attribution progress back to renderer UI.
+    function notify_ai_attribution_progress(progress_data) {
+      if (ipc_event_context && ipc_event_context.sender && typeof ipc_event_context.sender.send === "function") {
+        try {
+          ipc_event_context.sender.send("system:attribution-progress", progress_data);
+        } catch (progress_err) {
+          // Graceful fallback
+        }
+      }
+    }
+
     const raw_text = request_arguments.book_text_segment || "";
     const book_text_segment = raw_text.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
     const lm_studio_api_url_address = request_arguments.lm_studio_api_url_address;
@@ -819,6 +833,14 @@ function register_ai_pipeline_handlers(ipcMain, getMainWindow) {
     const system_instructional_prompt = filesystem_library.readFileSync(prompt_path, "utf8");
 
     const active_loaded_model_id_tag = await retrieve_currently_loaded_model_tag(lm_studio_api_url_address);
+
+    notify_ai_attribution_progress({
+      phase: "Sending text chunk to LLM (llama.cpp)...",
+      engine: "llm",
+      current_line: 0,
+      total_lines: 0,
+      snippet: book_text_segment.slice(0, 80)
+    });
 
     try {
       const api_response_payload = await dispatch_http_post_request(lm_studio_api_url_address, {
@@ -851,6 +873,9 @@ function register_ai_pipeline_handlers(ipcMain, getMainWindow) {
       const parsed_json = extract_json_from_llm_response_text(completion_content_text);
       const extracted_script_blocks = Array.isArray(parsed_json) ? parsed_json : (parsed_json.script_segments || []);
 
+      const dialogue_blocks = extracted_script_blocks.filter(b => b.type === "dialogue");
+      let verified_dialogue_count = 0;
+
       // Gate 3 & Gate 4 QC via Laya
       try {
         const laya_url = (request_arguments.laya_endpoint_url || "http://127.0.0.1:8765").replace(/\/+$/, "");
@@ -861,6 +886,16 @@ function register_ai_pipeline_handlers(ipcMain, getMainWindow) {
         for (let s_idx = 0; s_idx < extracted_script_blocks.length; s_idx++) {
           const seg = extracted_script_blocks[s_idx];
           if (seg.type === "dialogue") {
+            verified_dialogue_count++;
+            notify_ai_attribution_progress({
+              phase: `Verifying attribution QC: line ${verified_dialogue_count} of ${dialogue_blocks.length}`,
+              engine: "llm_qc",
+              current_line: verified_dialogue_count,
+              total_lines: dialogue_blocks.length,
+              snippet: (seg.text || "").slice(0, 80),
+              speaker: seg.speaker || "Character"
+            });
+
             const pre_text = s_idx > 0 ? (extracted_script_blocks[s_idx - 1].text || "").slice(-150) : "";
             const qc_res = await laya_qc.verifySpeakerAttribution({
               spokenText: seg.text,
@@ -907,6 +942,14 @@ function register_ai_pipeline_handlers(ipcMain, getMainWindow) {
       for (let paragraph_index = 0; paragraph_index < paragraphs_list.length; paragraph_index++) {
         const paragraph_string = paragraphs_list[paragraph_index].trim();
         if (!paragraph_string) continue;
+
+        notify_ai_attribution_progress({
+          phase: `Rule-based fallback: parsing paragraph ${paragraph_index + 1} of ${paragraphs_list.length}`,
+          engine: "rule_fallback",
+          current_paragraph: paragraph_index + 1,
+          total_paragraphs: paragraphs_list.length,
+          snippet: paragraph_string.slice(0, 80)
+        });
 
         const quotation_regex_pattern = /"([^"]+)"/g;
         let matched_substring_reference = null;
@@ -1324,6 +1367,17 @@ Merge the styles of Cell 1 and Cell 2 to create a single, unified directorial st
       console.error("Smart merge failed.", api_failure_exception);
       throw api_failure_exception;
     }
+  });
+
+  // WHAT: Directorial Staging and Speech Tag Harvester IPC Handler (Pass 2.6).
+  // WHY: Synthesizes micro-level vocal acoustics, prosody, style, and emotion into screenplay cards.
+  ipcMain.handle("ai:enrich-directorial-staging", async (ipc_event_context, request_arguments) => {
+    const { script_segments, voice_mapping, relationships } = request_arguments || {};
+    return enrich_script_segments_with_directorial_staging(
+      script_segments,
+      voice_mapping,
+      relationships
+    );
   });
 }
 

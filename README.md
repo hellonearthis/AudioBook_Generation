@@ -18,6 +18,13 @@ A local, offline desktop application built using **Electron**, designed to autom
     *   `⚡🧠 Hybrid (Laya + llama)`: Sub-second attribution with automatic fallback to llama-server if Laya is offline.
     *   `🧠 llama.cpp (Deep LLM)`: Full generative LLM parsing via local GGUF models.
 *   **Integrated Emotional Staging & Energy Scoring (Pass 3)**: Analyzes dialogue context to classify acting delivery across an 8-state AuK emotion palette (`calm`, `whisper`, `fearful`, `angry`, `sad`, `happy`, `excited`, `surprised`) and scores vocal energy/intensity.
+*   **🎙️ Directorial Staging & Speech Tag Harvester (Pass 2.6)**: Automatically extracts acoustic, vocal texture, and prosodic cues from surrounding narration (e.g. *"her voice was flat, clipped by the environmental seal of her collar"*, *"in a low whisper"*) and enriches dialogue cues with Qwen style profiles (`pitch`, `vocal_texture`, `pacing`, `cadence`, `acting_persona`, `vocal_technique`, `rich_emotion`) while keeping narrative prose completely intact.
+*   **🎛️ Column 3 Line Studio Inspector Deck**: Replaces the legacy abstract directorial panel with an interactive, line-level studio deck synchronized to the currently selected card:
+    *   *Module 1: Narrative State & Subtext* (dynamic relationship status badge, directional context, and editable subtext/intent prompt).
+    *   *Module 2: Pronunciation & Phonetic Overrides* (inline phonetic chips, custom override editor, and global project dictionary synchronization).
+    *   *Module 3: Take A/B Testing & Waveform Telemetry* (Peaks.js mini-waveform visualization, energy metrics, one-click master take swap, audition playback, and take management).
+    *   *Module 4: Micro-Pacing & Breath Controls* (pre/post pause millisecond sliders and auto-breath injection toggle).
+    *   *Module 5: AI Confidence & Shadow QC Insights* (attribution engine badge, confidence heatmap bar, alternative speaker suggestions, lock ground truth toggle, and re-attribute trigger).
 *   **Confidence Badges & Ambiguity Alerts**: Visual confidence indicators (`⚡ 95%` or amber `⚡ 42%`) and `📖 Unmarked` badges highlight dialogue spans and ambiguous lines for instant user review.
 *   **Sequential Synthesis Worker (Pass 4)**: Enqueues and compiles audio lines one-by-one in the background main thread to safeguard local CPU/GPU hardware capacities.
 *   **🧬 AuK Zero-Shot Voice Clone & Audio Editing Suite**: 17 ComfyUI workflows for zero-shot cloning, whisper conversion, pitch/speed shifts, de-accenting, and speech enhancement.
@@ -25,7 +32,7 @@ A local, offline desktop application built using **Electron**, designed to autom
 *   **Timeline Marker Exporter**: Generates companion CSV marker sheets mapping character spoken events directly to timeline offsets for quick DAW imports.
 *   **Timbre Mapping Matrix**: A dedicated configuration panel to randomize speech seeds, lock in master vocal anchors, and map voice profiles to active cast lists.
 *   **🔬 Independent Laya QC & Calibration Engine**: Audits Qwen's character presence, relationship citations (**canonical 10-type taxonomy** defined in `constants/relationship_taxonomy.js`), dialogue attribution (narrow-window independence), and emotional delivery (binary noul decomposition). Logs uncalibrated probabilities to disk, detects boundary-pegged overfit, dampens provisional temperatures safely, and fits task temperatures dynamically via negative log-likelihood line search.
-*   **🧩 Modular Main Service Architecture**: Decomposed from a monolithic process into 7 decoupled domain services (`services/`) governing workspaces, FFmpeg timelines, Laya/CLM classification, AI LLM pipelines, audio queues, AuK post-production, and VRAM health arbitration.
+*   **🧩 Modular Main Service Architecture**: Decomposed from a monolithic process into 8 decoupled domain services (`services/`) governing workspaces, FFmpeg timelines, Laya/CLM classification, AI LLM pipelines, directorial staging, audio queues, AuK post-production, and VRAM health arbitration.
 *   **⏳ Dynamic Relationship State Timelines**: Discovers character relationships with chronological state progression across chapters and segments, accounting for shifting dynamics, emotional estrangement, and narrative triggers.
 *   **🎭 Two-Level Voice Division of Labour**: Splits static character identity (designed once via Qwen3 VoiceDesign into reference audio anchors) from dynamic line delivery (rendered via AuK Zero-Shot with natural emotional instructions, relationship subtext, and auto-estimated durations).
 *   **Auto-Start Launcher (`start.ps1` / `start.sh`)**: Automatically checks and spawns ComfyUI, llama-server, and Laya if any service is offline, with cross-platform support.
@@ -171,7 +178,45 @@ Re-running **Automate Attribution** or changing attribution engines never destro
 *   **Top Bulk Review Banner**: When diffs are detected across the script, a summary banner appears at the top of Column 2:
     `⚡ X Diffs Found · [✓ Accept All Diffs] [✕ Keep All Existing]`
 *   **Downstream Audio Continuity**: Accepting a diff or changing a speaker **never deletes** existing audio takes. All previous takes remain safely archived in `audioVersions` history (de-activated for current playback, but instantly accessible).
-*   **Directorial Synchronization (`⚠️ Needs Re-sync`)**: Changing a line's speaker flags the corresponding Column 3 directorial card with a high-contrast badge so the director knows staging and delivery instructions should be re-aligned.
+
+### Pass 2.6: Directorial Staging & Speech Tag Harvester (`services/directorial_staging_service.js`)
+When dialogue attribution completes, Pass 2.6 executes deterministic and context-aware harvesting of speech tags, participle clauses, and prosodic descriptors from surrounding narration:
+*   **Acoustic Clause Harvesting**: Detects explicit voice clauses (e.g. *"her voice was flat, clipped by the environmental seal of her collar"*), participle shifts (*"his voice cracking with emotion"*), and prepositional tone descriptions (*"in a low, gravelly rasp"*).
+*   **Speech Tag Modifiers**: Extracts verbs and adverbs (`whispered`, `muttered`, `gasped`, `flatly`, `urgently`) to map delivery to specific vocal parameters.
+*   **Synthesis with Character Voice Profiles**: Blends dynamic cues with the character's cast profile (from the Voice Matrix) to compile a full `qwen_style` specification:
+    *   `pitch`: low, medium, or high floor based on acoustic flags.
+    *   `vocal_texture`: specific timbre descriptors (e.g. *"flat, clipped by the environmental seal of her collar"*).
+    *   `pacing`: measured, normal, fast, or slow.
+    *   `cadence`: rhythmic structure (e.g. *"clipped, precise speech"*, *"hushed, intimate cadence"*).
+    *   `acting_persona`: role-based persona derived from identity background.
+    *   `vocal_technique`: articulation cues (e.g. *"compressed timbre, minimal pitch inflection"*).
+    *   `rich_emotion`: nuanced multi-layer emotion (e.g. *"flat composure, procedural detachment"*).
+*   **Non-Destructive Prose Protection**: All narrator prose in subsequent and preceding cards remains 100% intact without truncation.
+*   **User Lock Integrity**: Lines where users have manually locked or customized directorial notes (`is_user_locked: true`) are never overwritten.
+
+### Column 3: The Line Studio Inspector / Detail Deck
+Replaces the legacy static directorial column with a deep, micro-level line inspection deck wired to the active screenplay card:
+1.  **Module 1: Narrative State & Subtext**:
+    *   *Dynamic Relationship State Badge*: Shows the active interpersonal dynamic resolved from the relationship state timeline (e.g. `Inspector Mara ➔ Archivist Kaelen: [Guarded / Administrative]`).
+    *   *Directorial Delivery Context*: Displays the harvested acoustic style notes.
+    *   *Editable Subtext & Intent*: Live editable prompt allowing directors to steer the AI's internal psychological motivation.
+2.  **Module 2: Pronunciation & Phonetic Overrides**:
+    *   *Inline Phonetic Chips*: Visual chips showing phonetically mapped terms (e.g. `cupola: [KOO-puh-luh]`) with one-click removal.
+    *   *Phonetic Override Editor*: Quick-add form for custom pronunciations.
+    *   *Project Dictionary Synchronization*: Automatically saves overrides to the project's global `pronunciationDictionary` for cross-chapter reusability.
+3.  **Module 3: Take A/B Testing & Waveform Telemetry**:
+    *   *Peaks.js Mini-Waveforms*: Visual telemetry showing amplitude contours, duration in seconds, and energy ratios.
+    *   *One-Click Master Swap*: Switch master take instantly (`Take 1 (Master)` vs `Take 2`) without losing previous takes.
+    *   *Dedicated Controls*: Direct audition playback (`▶ Audition`) and trash deletion per take.
+4.  **Module 4: Micro-Pacing & Breath Controls**:
+    *   *Pre-Line Pause Slider*: Interactive millisecond slider (0–3000 ms) controlling the dramatic pause before the line starts.
+    *   *Post-Line Pause Slider*: Interactive millisecond slider (0–3000 ms) controlling the trailing pause before the next beat.
+    *   *Auto-Breath Injection Toggle*: Enables/disables automated natural breath audio cues prepended to speech synthesis.
+5.  **Module 5: AI Confidence & Shadow QC Insights**:
+    *   *Attribution Engine Badge*: Identifies whether Laya ModernBERT or CLM-8B performed the classification.
+    *   *Confidence Heatmap Bar*: Visual certainty meter color-coded by threshold (Green $\ge 85\%$, Yellow $\ge 70\%$, Orange/Red uncertain).
+    *   *Alternative Speaker Suggestions*: One-click character pills to reassign speakers on the fly.
+    *   *Lock Ground Truth & Re-attribute*: Protects manual human corrections or re-runs attribution for the isolated line.
 
 ### Pass 3: Emotional Staging & Directorial Guides
 Extracts emotional delivery instructions (`whisper`, `fearful`, `angry`, `calm`, etc.) and vocal intensity metrics (`energy` score). These are mapped to parenthetical directions, AuK-08 emotion editing vectors, and AuK performance cues to drive expressive TTS synthesis.
