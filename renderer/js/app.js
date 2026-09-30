@@ -550,6 +550,10 @@ function initialize_universal_custom_tooltip_engine() {
     floating_tooltip_element.setAttribute("role", "tooltip");
     floating_tooltip_element.setAttribute("aria-hidden", "true");
     document.body.appendChild(floating_tooltip_element);
+  } else if (floating_tooltip_element.parentElement !== document.body) {
+    // WHAT: Defensive reparenting of the tooltip element to document.body.
+    // WHY: Prevents the tooltip from being trapped inside hidden modal overlays or styled ancestors.
+    document.body.appendChild(floating_tooltip_element);
   }
 
   // WHAT: Tracking currently active hovered target element.
