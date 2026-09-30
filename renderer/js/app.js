@@ -561,11 +561,12 @@ function initialize_universal_custom_tooltip_engine() {
   let active_hovered_target_element = null;
 
   // WHAT: Defining vertical offset constants for tooltip screen placement.
-  // WHY: The user specified tooltips must be displayed exactly 16 pixels lower on the screen
-  //      than standard cursor clearance (12px base + 16px extra offset = 28px total).
+  // WHY: The user specified tooltips must be displayed another 16 pixels lower on the screen
+  //      (12px base clearance + 16px + 16px extra offset = 44px total offset from cursor, clientY + 44px).
   const VERTICAL_CURSOR_CLEARANCE_BASE_PIXELS = 12;
-  const EXTRA_LOWER_OFFSET_PIXELS = 16;
+  const EXTRA_LOWER_OFFSET_PIXELS = 32;
   const TOTAL_VERTICAL_OFFSET_PIXELS = VERTICAL_CURSOR_CLEARANCE_BASE_PIXELS + EXTRA_LOWER_OFFSET_PIXELS;
+  const FLIPPED_UPWARD_CLEARANCE_PIXELS = 16;
 
   // WHAT: Calculating coordinates and updating the position of the floating tooltip.
   // WHY: Positions the tooltip to the bottom-right of the cursor with strict screen-edge boundary clamps.
@@ -590,18 +591,18 @@ function initialize_universal_custom_tooltip_engine() {
       calculated_horizontal_left_position = 12;
     }
 
-    // WHAT: Vertical placement exactly 16px lower on screen (clientY + 28px).
-    // WHY: Satisfies the design requirement that tooltips clear the hovered button completely.
+    // WHAT: Vertical placement another 16px lower on screen (clientY + 44px).
+    // WHY: Satisfies the requirement that tooltips clear the hovered button with extra spacing.
     let calculated_vertical_top_position = pointer_event.clientY + TOTAL_VERTICAL_OFFSET_PIXELS;
 
-    // WHAT: Flipping or clamping tooltip if it overflows the bottom edge of the browser viewport.
-    // WHY: Prevents the lowered tooltip from extending off-screen when hovering buttons near bottom.
+    // WHAT: Flipping tooltip 16px up if it is going off screen at the bottom of the viewport.
+    // WHY: User requested: "if the tool tip is going off screen then the tip should be 16 pixets up".
     if (calculated_vertical_top_position + floating_tooltip_height_pixels > browser_viewport_height_pixels - 10) {
-      const flipped_vertical_top_position = pointer_event.clientY - floating_tooltip_height_pixels - 12;
-      if (flipped_vertical_top_position > 10) {
+      const flipped_vertical_top_position = pointer_event.clientY - floating_tooltip_height_pixels - FLIPPED_UPWARD_CLEARANCE_PIXELS;
+      if (flipped_vertical_top_position >= 10) {
         calculated_vertical_top_position = flipped_vertical_top_position;
       } else {
-        calculated_vertical_top_position = Math.max(10, browser_viewport_height_pixels - floating_tooltip_height_pixels - 10);
+        calculated_vertical_top_position = Math.max(10, browser_viewport_height_pixels - floating_tooltip_height_pixels - 16);
       }
     }
 

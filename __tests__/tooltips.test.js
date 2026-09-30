@@ -56,7 +56,7 @@ describe('Universal Custom Floating Tooltip Engine', () => {
     expect(tooltip.textContent).toBe('Play audio line');
   });
 
-  test('calculates tooltip top position 16px lower on the screen than standard clearance (clientY + 28px)', () => {
+  test('calculates tooltip top position another 16px lower on the screen than standard clearance (clientY + 44px)', () => {
     window.initialize_universal_custom_tooltip_engine();
     const btn = document.getElementById('btn_with_data_tooltip');
 
@@ -74,11 +74,37 @@ describe('Universal Custom Floating Tooltip Engine', () => {
     const tooltip = document.getElementById('cyber_floating_tooltip');
     expect(tooltip.classList.contains('visible')).toBe(true);
 
-    // Standard base clearance is 12px. With the requested 16px lower position: 12 + 16 = 28px.
-    // Therefore, top should be clientY + 28 = 178px
-    expect(tooltip.style.top).toBe(`${clientY + 28}px`);
+    // Standard base clearance is 12px. With initial 16px + requested another 16px lower: 12 + 16 + 16 = 44px.
+    // Therefore, top should be clientY + 44 = 194px
+    expect(tooltip.style.top).toBe(`${clientY + 44}px`);
     // Left should be clientX + 10 = 90px
     expect(tooltip.style.left).toBe(`${clientX + 10}px`);
+  });
+
+  test('flips tooltip 16px up above cursor when going off bottom of viewport', () => {
+    window.initialize_universal_custom_tooltip_engine();
+    const btn = document.getElementById('btn_with_data_tooltip');
+
+    // Simulate window innerHeight
+    window.innerHeight = 800;
+
+    const clientY = 780;
+    const clientX = 80;
+
+    const mouseOverEvent = new MouseEvent('mouseover', {
+      bubbles: true,
+      cancelable: true,
+      clientX: clientX,
+      clientY: clientY
+    });
+    btn.dispatchEvent(mouseOverEvent);
+
+    const tooltip = document.getElementById('cyber_floating_tooltip');
+    expect(tooltip.classList.contains('visible')).toBe(true);
+
+    // In jsdom without layout, tooltip height fallback is 32px.
+    // Flipped position is clientY - height(32) - 16 = 780 - 32 - 16 = 732px.
+    expect(tooltip.style.top).toBe('732px');
   });
 
   test('hides tooltip on mouseout, mousedown, and scroll', () => {
