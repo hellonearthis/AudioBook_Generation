@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { LayaQCPipeline } = require('../laya_qc_pipeline');
+const { LayaQCPipeline, compute_calibrated_probability_and_gate } = require('../laya_qc_pipeline');
 
 describe('Laya Quality Control (QC) Pipeline (Phases 0-5)', () => {
   const TEST_LOG_PATH = path.join(__dirname, 'test_qc_log.jsonl');
@@ -384,6 +384,21 @@ describe('Laya Quality Control (QC) Pipeline (Phases 0-5)', () => {
       expect(cal.boundary_pegged).toBe(false);
       expect(cal.calibrated_probability).toBe(0.88);
       expect(cal.gate_status).toBe('needs_review');
+    });
+
+    test('compute_calibrated_probability_and_gate executes as pure function without class instance', () => {
+      // WHAT: Testing pure functional calibration calculations without requiring class instantiation.
+      // WHY: Ensures mathematical transformations are testable without stateful dependencies.
+      const task_config = {
+        fitted_temperature: 1.5,
+        auto_approve_threshold: 0.85,
+        review_threshold: 0.40
+      };
+      const result = compute_calibrated_probability_and_gate(task_config, 0.95);
+      expect(result.is_calibrated).toBe(true);
+      expect(result.effective_temperature).toBe(1.5);
+      expect(result.calibrated_probability).toBeGreaterThan(0.70);
+      expect(result.gate_status).toBe('auto_approved');
     });
   });
 });

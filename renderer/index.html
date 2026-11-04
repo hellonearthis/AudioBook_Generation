@@ -179,9 +179,15 @@
           <div class="editor_pane" id="editor_pane_raw">
             <div class="pane_header">
               <span class="pane_header_title">1. Raw Source Book Segment & About</span>
-              <div class="d-flex gap-8">
-                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_cleanup()" title="Remove soft line wraps and clean up raw paragraph formatting">Clean Line Breaks</button>
-                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_reparse()" title="Save raw text to project on disk and re-run dialogue attribution across the chapter">Reparse Text</button>
+              <div class="d-flex gap-8 align-items-center">
+                <select id="raw_manuscript_chapter_selector" class="form_text_field p-4-8 radius-6 text-11" onchange="handle_manuscript_chapter_selection_change()" title="Quick-jump between detected chapters">
+                  <option value="all">📖 Full Manuscript</option>
+                </select>
+                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6 text-gold" onclick="trigger_smart_text_sanitize()" title="Sanitize typography: curled quotes to straight quotes, normalize em-dashes, and strip footnote citations">
+                  🧹 Smart Sanitize
+                </button>
+                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_cleanup()" title="Remove soft line wraps and clean up raw paragraph formatting">Clean Breaks</button>
+                <button class="cyber_btn btn_secondary p-6-12 text-12 radius-6" onclick="trigger_raw_text_reparse()" title="Save raw text to project on disk and re-run dialogue attribution across the chapter">Reparse</button>
               </div>
             </div>
             <div class="pane_content_area d-flex flex-column gap-15">
@@ -207,8 +213,6 @@
               <div class="d-flex gap-8 align-items-center">
                 <select id="attribution_engine_selector" class="form_text_field p-4-8 radius-6 text-11" title="Select decision engine for dialogue attribution and emotional staging" onchange="save_global_configurations()">
                   <option value="laya" selected>⚡ Laya Fast (~20ms)</option>
-                  <option value="clm">🎯 CLM-8B System One (~100ms)</option>
-                  <option value="cascade">⚡🎯 Cascade (Laya → CLM)</option>
                   <option value="hybrid">⚡🧠 Hybrid (Laya + llama)</option>
                   <option value="llm">🧠 llama.cpp (Deep LLM)</option>
                 </select>
@@ -225,10 +229,47 @@
                 <button class="cyber_btn p-6-12 text-11 radius-6" onclick="trigger_queue_synthesis_all_lines()" title="Generate audio takes sequentially for all screenplay lines using assigned character voices">
                   Synthesize Classic
                 </button>
+                <div class="d-flex gap-6 align-items-center">
+                  <button id="btn_triage_prev_doubt" class="cyber_btn btn_secondary p-6-10 text-11 radius-6 text-coral" onclick="jump_to_next_uncertain_line(-1)" title="Jump to previous low-confidence or flagged line (Shift+F8 or Ctrl+Up)">
+                    ⏮️
+                  </button>
+                  <button id="btn_triage_next_doubt" class="cyber_btn btn_secondary p-6-10 text-11 radius-6 text-coral" onclick="jump_to_next_uncertain_line(1)" title="Jump to next low-confidence or flagged line (F8 or Ctrl+Down)">
+                    ⚠️ <span id="label_triage_doubt_counter">Doubt</span>
+                  </button>
+                  <button id="btn_continuous_playback_toggle" class="cyber_btn btn_secondary p-6-10 text-11 radius-6 text-purple" onclick="toggle_continuous_audio_playback()" title="Continuous audition mode: plays audio sequentially across lines with auto-scroll. Press 'F' while listening to flag a line!">
+                    ▶️ Play Continuous
+                  </button>
+                  <button id="btn_batch_speaker_reassign" class="cyber_btn btn_secondary p-6-10 text-11 radius-6" onclick="open_batch_speaker_reassign_modal()" title="Find & replace speaker: reassign all lines of a character to another">
+                    🔄 Reassign
+                  </button>
+                  <button id="btn_auto_cast_suggestions" class="cyber_btn btn_secondary p-6-10 text-11 radius-6 text-emerald" onclick="auto_cast_suggested_voices()" title="Auto-match voices from Voice Matrix to characters based on Pass 1 age/gender/temperament">
+                    🎭 Auto-Cast
+                  </button>
+                  <button id="btn_fountain_export" class="cyber_btn btn_secondary p-6-10 text-11 radius-6" onclick="trigger_export_fountain_script()" title="Export script as open standard Fountain screenplay (.fountain) for editing in Beat or external tools">
+                    🖋️ Fountain
+                  </button>
+                  <button id="btn_fountain_import" class="cyber_btn btn_secondary p-6-10 text-11 radius-6" onclick="trigger_import_fountain_script()" title="Import Fountain screenplay (.fountain) from Beat or human proofreaders">
+                    📥 Import
+                  </button>
+                  <button id="btn_script_analytics" class="cyber_btn btn_secondary p-6-10 text-11 radius-6" onclick="trigger_open_script_analytics_modal()" title="View Beat-style screenplay analytics: dialogue distribution, runtimes, casting tiers, and sanity audits">
+                    📊 Analytics
+                  </button>
+                  <button id="btn_outline_cards" class="cyber_btn btn_secondary p-6-10 text-11 radius-6" onclick="trigger_open_scene_outline_modal()" title="View scene outline index cards with character presence, synopses, and relationship dynamics">
+                    🗂️ Outline
+                  </button>
+                  <button id="btn_incremental_render" class="cyber_btn btn_secondary p-6-10 text-11 radius-6" onclick="trigger_open_revision_diff_modal()" title="Compare script revision against audio cache to re-render only dirty lines">
+                    ⚡ Diff Cache
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="pane_content_area scroll-smooth" id="screenplay_segment_cards_wrapper">
-              <!-- RENDERED SCRIPT CARDS -->
+            <div class="pane_content_area p-0 d-flex flex-row overflow-hidden flex-grow-1">
+              <div class="pane_content_area scroll-smooth flex-grow-1" id="screenplay_segment_cards_wrapper">
+                <!-- RENDERED SCRIPT CARDS -->
+              </div>
+              <div id="screenplay_confidence_minimap" class="screenplay_minimap_container" title="Confidence Minimap: Click any pip to jump to that line (Green=High, Yellow=Med, Red=Low/Flagged)">
+                <!-- MINIMAP PIPS -->
+              </div>
             </div>
           </div>
 
@@ -444,11 +485,6 @@
           <span class="text-muted">Laya:</span>
           <input type="text" id="settings_laya_endpoint_input" style="width: 145px;" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8765" onchange="save_global_configurations()" title="Laya Decision Engine endpoint (default: http://127.0.0.1:8765)">
           <button class="cyber_btn btn_secondary p-4-8 text-10 radius-4" onclick="open_service_web_ui('laya')" title="Open Laya FastAPI Swagger documentation in browser">🌐 Laya Docs</button>
-        </div>
-        <div class="d-flex gap-8 align-items-center">
-          <span class="text-muted">CLM:</span>
-          <input type="text" id="settings_clm_endpoint_input" style="width: 145px;" class="form_text_field p-4-8 radius-4 text-11 mb-0" value="http://127.0.0.1:8700" onchange="save_global_configurations()" title="CLM System One endpoint (default: http://127.0.0.1:8700)">
-          <button class="cyber_btn btn_secondary p-4-8 text-10 radius-4" onclick="open_service_web_ui('clm')" title="Open CLM FastAPI Swagger documentation in browser">🌐 CLM Docs</button>
         </div>
         <div class="d-flex gap-8 align-items-center">
           <span class="text-muted">ComfyUI:</span>
@@ -686,6 +722,48 @@
         <div class="d-flex gap-8">
           <button class="cyber_btn btn_secondary" onclick="close_auk_edit_tools_modal()" title="Cancel audio transformation">Cancel</button>
           <button class="cyber_btn btn_accent" id="btn_execute_auk_edit" onclick="execute_active_auk_edit_task()" title="Execute selected AuK audio transformation on this take and generate a new take">Apply Transformation</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOUNTAIN & BEAT-STYLE SCREENPLAY SUITE MODAL (ANALYTICS, OUTLINE, DIFF) -->
+  <div id="fountain_screenplay_modal" class="fountain_modal_backdrop d-none" onclick="handle_fountain_modal_backdrop_click(event)">
+    <div class="fountain_modal_panel" onclick="event.stopPropagation()">
+      <div class="fountain_modal_header">
+        <div class="fountain_modal_title" id="fountain_modal_title">
+          <span>📊 Screenplay Suite</span>
+        </div>
+        <button class="fountain_modal_close_btn" onclick="close_fountain_screenplay_modal()" title="Close dialog">✕</button>
+      </div>
+      <div class="fountain_modal_body" id="fountain_modal_body_content">
+        <!-- DYNAMICALLY POPULATED -->
+      </div>
+    </div>
+  </div>
+
+  <!-- BATCH SPEAKER REASSIGN MODAL (FIND & REPLACE SPEAKER) -->
+  <div id="batch_reassign_modal" class="fountain_modal_backdrop d-none" onclick="if(event.target.id==='batch_reassign_modal') close_batch_speaker_reassign_modal()">
+    <div class="fountain_modal_panel max-w-500px" onclick="event.stopPropagation()">
+      <div class="fountain_modal_header">
+        <div class="fountain_modal_title">
+          <span>🔄 Batch Speaker Reassignment</span>
+        </div>
+        <button class="fountain_modal_close_btn" onclick="close_batch_speaker_reassign_modal()" title="Close dialog">✕</button>
+      </div>
+      <div class="fountain_modal_body">
+        <p class="text-12 text-muted m-0">Find all occurrences of a misattributed character in this chapter and reassign them all to the correct speaker in one click.</p>
+        <div class="form_input_group mb-12">
+          <label class="form_input_label">Current / Misattributed Speaker</label>
+          <select id="select_batch_source_speaker" class="form_select_dropdown"></select>
+        </div>
+        <div class="form_input_group mb-12">
+          <label class="form_input_label">Reassign All Occurrences To</label>
+          <select id="select_batch_target_speaker" class="form_select_dropdown"></select>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mt-10">
+          <span id="batch_reassign_affected_count_label" class="text-11 text-gold font-bold"></span>
+          <button class="cyber_btn btn_accent" onclick="execute_batch_speaker_reassignment()">Apply Reassignment</button>
         </div>
       </div>
     </div>

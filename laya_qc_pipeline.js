@@ -23,6 +23,56 @@ const {
 const DEFAULT_LOG_PATH = path.join(__dirname, 'benchmarks', 'qc_calibration_log.jsonl');
 const DEFAULT_CONFIG_PATH = path.join(__dirname, 'benchmarks', 'calibrated_qc_config.json');
 
+// WHAT: Deterministic mathematical scaling from raw probability to calibrated probability via temperature scaling.
+// WHY: Pure functional calculation isolating temperature scaling, epsilon clamping, log-odds transformation, and threshold gating.
+function compute_calibrated_probability_and_gate(task_calibration_configuration, raw_input_probability_value) {
+  if (!task_calibration_configuration || !task_calibration_configuration.fitted_temperature) {
+    return {
+      calibrated_probability: raw_input_probability_value,
+      is_calibrated: false,
+      is_provisional: true,
+      boundary_pegged: false,
+      gate_status: 'needs_review'
+    };
+  }
+
+  const raw_fitted_temperature_scalar = task_calibration_configuration.fitted_temperature;
+  const is_provisional_sample = Boolean(task_calibration_configuration.is_provisional);
+  const has_hit_search_boundary = Boolean(task_calibration_configuration.boundary_pegged);
+
+  let effective_calibration_temperature_scalar = raw_fitted_temperature_scalar;
+  if (has_hit_search_boundary && is_provisional_sample) {
+    effective_calibration_temperature_scalar = Math.max(0.5, Math.min(2.0, raw_fitted_temperature_scalar));
+  }
+
+  const numerical_stability_epsilon = 1e-6;
+  const clamped_probability_value = Math.max(
+    numerical_stability_epsilon,
+    Math.min(1 - numerical_stability_epsilon, raw_input_probability_value)
+  );
+  const calculated_log_odds_logit = Math.log(clamped_probability_value / (1 - clamped_probability_value));
+  const calibrated_scaled_probability = 1 / (1 + Math.exp(-calculated_log_odds_logit / effective_calibration_temperature_scalar));
+
+  const auto_approve_minimum_threshold = task_calibration_configuration.auto_approve_threshold || 0.90;
+  const human_review_warning_threshold = task_calibration_configuration.review_threshold || 0.50;
+
+  let evaluated_quality_gate_status = 'needs_review';
+  if (calibrated_scaled_probability >= auto_approve_minimum_threshold) {
+    evaluated_quality_gate_status = 'auto_approved';
+  } else if (calibrated_scaled_probability < human_review_warning_threshold) {
+    evaluated_quality_gate_status = 'flagged_disagreement';
+  }
+
+  return {
+    calibrated_probability: Number(calibrated_scaled_probability.toFixed(4)),
+    is_calibrated: true,
+    is_provisional: is_provisional_sample,
+    boundary_pegged: has_hit_search_boundary,
+    effective_temperature: effective_calibration_temperature_scalar,
+    gate_status: evaluated_quality_gate_status
+  };
+}
+
 class LayaQCPipeline {
   /**
    * @param {Object} options
@@ -42,8 +92,8 @@ class LayaQCPipeline {
     if (!fs.existsSync(logDir)) {
       try {
         fs.mkdirSync(logDir, { recursive: true });
-      } catch (err) {
-        console.warn('LayaQCPipeline: Could not create log directory', err.message);
+      } catch (file_system_exception) {
+        console.warn('LayaQCPipeline: Could not create log directory', file_system_exception.message);
       }
     }
 
@@ -60,8 +110,8 @@ class LayaQCPipeline {
       try {
         const raw = fs.readFileSync(this.configFilePath, 'utf8');
         return JSON.parse(raw);
-      } catch (err) {
-        console.warn('LayaQCPipeline: Failed to load calibration config, using uncalibrated defaults.', err.message);
+      } catch (file_read_exception) {
+        console.warn('LayaQCPipeline: Failed to load calibration config, using uncalibrated defaults.', file_read_exception.message);
       }
     }
     return { tasks: {} };
@@ -105,8 +155,8 @@ class LayaQCPipeline {
 
     try {
       fs.appendFileSync(this.logFilePath, JSON.stringify(record) + '\n', 'utf8');
-    } catch (err) {
-      console.warn('LayaQCPipeline: Failed to append to calibration log', err.message);
+    } catch (file_system_exception) {
+      console.warn('LayaQCPipeline: Failed to append to calibration log', file_system_exception.message);
     }
     return record;
   }
@@ -124,8 +174,8 @@ class LayaQCPipeline {
         .map(line => line.trim())
         .filter(Boolean)
         .map(line => JSON.parse(line));
-    } catch (err) {
-      console.warn('LayaQCPipeline: Failed to read calibration log', err.message);
+    } catch (file_read_exception) {
+      console.warn('LayaQCPipeline: Failed to read calibration log', file_read_exception.message);
       return [];
     }
   }
@@ -159,8 +209,8 @@ class LayaQCPipeline {
         fs.writeFileSync(this.logFilePath, newLines.join('\n') + '\n', 'utf8');
       }
       return updated;
-    } catch (err) {
-      console.warn('LayaQCPipeline: Failed to record human verdict', err.message);
+    } catch (file_write_exception) {
+      console.warn('LayaQCPipeline: Failed to record human verdict', file_write_exception.message);
       return false;
     }
   }
@@ -170,7 +220,7 @@ class LayaQCPipeline {
    * @private
    */
   async _queryLaya(state, questions) {
-    const t0 = performance.now();
+    const start_timestamp_ms = performance.now();
     try {
       const cleanEndpoint = this.layaEndpoint.replace(/\/+$/, "");
       const targetUrl = cleanEndpoint.endsWith("/v1/systemone") || cleanEndpoint.endsWith("/decide")
@@ -190,82 +240,29 @@ class LayaQCPipeline {
       }
 
       const data = await response.json();
-      const elapsed_ms = performance.now() - t0;
+      const elapsed_ms = performance.now() - start_timestamp_ms;
       return {
         answers: data.answers || {},
         elapsed_ms,
         usage: data.usage || null,
         error: null
       };
-    } catch (err) {
-      const elapsed_ms = performance.now() - t0;
+    } catch (network_query_exception) {
+      const elapsed_ms = performance.now() - start_timestamp_ms;
       return {
         answers: {},
         elapsed_ms,
         usage: null,
-        error: err.message
+        error: network_query_exception.message
       };
     }
   }
 
   // WHAT: Applies empirical temperature scaling calibration and decision thresholds for a specific QC task.
-  // WHY: Deep discriminative models often output uncalibrated probabilities that are over- or under-confident.
-  //      Temperature scaling adjusts confidence without altering relative ranking. If a task was fitted on
-  //      a small sample (N < 30) or landed on an optimizer search boundary, we treat it as provisional and apply
-  //      conservative dampening so that premature extreme saturation does not compromise active quality gates.
+  // WHY: Delegates calculation to pure compute_calibrated_probability_and_gate function adhering to Pure Functional Architecture.
   _applyCalibration(task_question_type_identifier, raw_input_probability_value) {
     const task_calibration_configuration = this.calibrationConfig.tasks?.[task_question_type_identifier];
-    if (!task_calibration_configuration || !task_calibration_configuration.fitted_temperature) {
-      // WHAT: Fallback path when no empirical calibration profile exists for this task.
-      // WHY: Safe default prevents pipeline halting; passes through raw confidence with review flag.
-      return {
-        calibrated_probability: raw_input_probability_value,
-        is_calibrated: false,
-        is_provisional: true,
-        boundary_pegged: false,
-        gate_status: 'needs_review'
-      };
-    }
-
-    const raw_fitted_temperature_scalar = task_calibration_configuration.fitted_temperature;
-    const is_provisional_sample = Boolean(task_calibration_configuration.is_provisional);
-    const has_hit_search_boundary = Boolean(task_calibration_configuration.boundary_pegged);
-
-    // WHAT: Guarding against severe overfitting on small samples where temperature landed on boundary.
-    // WHY: When samples are linearly separable with small N (e.g. N=6), T collapses to lower bound (e.g. 0.05),
-    //      causing extreme probability polarization (0.0 or 1.0). In production gates, we dampen the temperature
-    //      to a conservative bound [0.5, 2.0] until sufficient human verdicts (N >= 30) are logged.
-    let effective_calibration_temperature_scalar = raw_fitted_temperature_scalar;
-    if (has_hit_search_boundary && is_provisional_sample) {
-      effective_calibration_temperature_scalar = Math.max(0.5, Math.min(2.0, raw_fitted_temperature_scalar));
-    }
-
-    const numerical_stability_epsilon = 1e-6;
-    const clamped_probability_value = Math.max(
-      numerical_stability_epsilon,
-      Math.min(1 - numerical_stability_epsilon, raw_input_probability_value)
-    );
-    const calculated_log_odds_logit = Math.log(clamped_probability_value / (1 - clamped_probability_value));
-    const calibrated_scaled_probability = 1 / (1 + Math.exp(-calculated_log_odds_logit / effective_calibration_temperature_scalar));
-
-    const auto_approve_minimum_threshold = task_calibration_configuration.auto_approve_threshold || 0.90;
-    const human_review_warning_threshold = task_calibration_configuration.review_threshold || 0.50;
-
-    let evaluated_quality_gate_status = 'needs_review';
-    if (calibrated_scaled_probability >= auto_approve_minimum_threshold) {
-      evaluated_quality_gate_status = 'auto_approved';
-    } else if (calibrated_scaled_probability < human_review_warning_threshold) {
-      evaluated_quality_gate_status = 'flagged_disagreement';
-    }
-
-    return {
-      calibrated_probability: Number(calibrated_scaled_probability.toFixed(4)),
-      is_calibrated: true,
-      is_provisional: is_provisional_sample,
-      boundary_pegged: has_hit_search_boundary,
-      effective_temperature: effective_calibration_temperature_scalar,
-      gate_status: evaluated_quality_gate_status
-    };
+    return compute_calibrated_probability_and_gate(task_calibration_configuration, raw_input_probability_value);
   }
 
   // =========================================================================
@@ -539,6 +536,7 @@ class LayaQCPipeline {
 
 module.exports = {
   LayaQCPipeline,
+  compute_calibrated_probability_and_gate,
   DEFAULT_LOG_PATH,
   DEFAULT_CONFIG_PATH
 };

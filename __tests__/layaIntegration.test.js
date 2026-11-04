@@ -18,15 +18,12 @@ describe("Laya Fast Decision Engine Integration", () => {
       <textarea id="raw_source_book_textarea_editor">"Hello there," said John. "We must hurry!" Jane whispered in terror.</textarea>
       <select id="attribution_engine_selector">
         <option value="laya" selected>⚡ Laya Fast (~20ms)</option>
-        <option value="clm">🎯 CLM-8B System One (~100ms)</option>
-        <option value="cascade">⚡🎯 Cascade (Laya → CLM)</option>
         <option value="hybrid">⚡🧠 Hybrid (Laya + llama)</option>
         <option value="llm">🧠 llama.cpp (Deep LLM)</option>
       </select>
       <input id="settings_lm_studio_endpoint_input" value="http://127.0.0.1:8081/v1" />
       <input id="settings_comfyui_endpoint_input" value="http://127.0.0.1:8188" />
       <input id="settings_laya_endpoint_input" value="http://127.0.0.1:8765" />
-      <input id="settings_clm_endpoint_input" value="http://127.0.0.1:8700" />
       <button id="btn_automate_attribution">Automate Attribution</button>
       <div id="screenplay_segment_cards_wrapper"></div>
       <div id="project_selection_cards_grid"></div>
@@ -87,23 +84,9 @@ describe("Laya Fast Decision Engine Integration", () => {
       save_global_configurations();
 
       expect(localStorage.getItem("setting_laya_url")).toBe("http://127.0.0.1:8765");
-      expect(localStorage.getItem("setting_clm_url")).toBe("http://127.0.0.1:8700");
       expect(localStorage.getItem("setting_attribution_engine")).toBe("hybrid");
       expect(window.configuration_laya_api_url_address).toBe("http://127.0.0.1:8765");
-      expect(window.configuration_clm_api_url_address).toBe("http://127.0.0.1:8700");
       expect(window.configuration_attribution_engine).toBe("hybrid");
-    });
-
-    it("saves and persists CLM engine configuration", () => {
-      document.getElementById("settings_clm_endpoint_input").value = "http://localhost:8700";
-      document.getElementById("attribution_engine_selector").value = "clm";
-
-      save_global_configurations();
-
-      expect(localStorage.getItem("setting_clm_url")).toBe("http://127.0.0.1:8700");
-      expect(localStorage.getItem("setting_attribution_engine")).toBe("clm");
-      expect(window.configuration_clm_api_url_address).toBe("http://127.0.0.1:8700");
-      expect(window.configuration_attribution_engine).toBe("clm");
     });
   });
 
@@ -180,44 +163,6 @@ describe("Laya Fast Decision Engine Integration", () => {
       expect(window.active_loaded_project_state_object.scriptSegments.length).toBe(2);
     });
 
-    it("routes to CLM when engine is set to 'clm'", async () => {
-      document.getElementById("attribution_engine_selector").value = "clm";
-
-      window.audiobook_api.trigger_laya_attribution.mockResolvedValueOnce({
-        script_segments: [
-          { type: "dialogue", speaker: "John", text: "Hello there,", direction: "calm delivery", confidence: 0.94, emotion: "calm", energy: 1.0, is_ambiguous: false, engine: "clm" },
-          { type: "narrator", speaker: "Narrator", text: "said John.", direction: "calm, steady narration", confidence: 1.0, engine: "narrator" }
-        ],
-        performance: { elapsed_ms: 110, decision_queries: 1 }
-      });
-
-      await run_main_pipeline_pass_one_and_two();
-
-      expect(window.audiobook_api.trigger_laya_attribution).toHaveBeenCalledTimes(1);
-      const options_passed = window.audiobook_api.trigger_laya_attribution.mock.calls[0][0];
-      expect(options_passed.attribution_engine).toBe("clm");
-      expect(options_passed.clm_endpoint_url).toBe("http://127.0.0.1:8700");
-      expect(window.active_loaded_project_state_object.scriptSegments[0].engine).toBe("clm");
-      expect(window.active_loaded_project_state_object.scriptSegments[0].confidence).toBe(0.94);
-    });
-
-    it("routes to Cascade when engine is set to 'cascade'", async () => {
-      document.getElementById("attribution_engine_selector").value = "cascade";
-
-      window.audiobook_api.trigger_laya_attribution.mockResolvedValueOnce({
-        script_segments: [
-          { type: "dialogue", speaker: "Jane", text: "We must hurry!", direction: "fearful delivery", confidence: 0.89, emotion: "fearful", energy: 1.4, is_ambiguous: false, engine: "clm_cascade" }
-        ],
-        performance: { elapsed_ms: 65, decision_queries: 1 }
-      });
-
-      await run_main_pipeline_pass_one_and_two();
-
-      expect(window.audiobook_api.trigger_laya_attribution).toHaveBeenCalledTimes(1);
-      const options_passed = window.audiobook_api.trigger_laya_attribution.mock.calls[0][0];
-      expect(options_passed.attribution_engine).toBe("cascade");
-      expect(window.active_loaded_project_state_object.scriptSegments[0].engine).toBe("clm_cascade");
-    });
   });
 
   describe("Screenplay Card UI Rendering with Laya Metadata", () => {
@@ -256,40 +201,6 @@ describe("Laya Fast Decision Engine Integration", () => {
 
       expect(badges[1].textContent).toContain("⚡ 45%");
       expect(badges[1].classList.contains("low_confidence")).toBe(true);
-    });
-
-    it("renders badges for CLM (🎯) and Cascade (⚡🎯)", () => {
-      window.active_loaded_project_state_object.scriptSegments = [
-        {
-          index_position: 0,
-          type: "dialogue",
-          speaker: "John",
-          text: "CLM line",
-          direction: "calm delivery",
-          confidence: 0.88,
-          is_ambiguous: false,
-          engine: "clm"
-        },
-        {
-          index_position: 1,
-          type: "dialogue",
-          speaker: "Jane",
-          text: "Cascade line",
-          direction: "intense delivery",
-          confidence: 0.91,
-          is_ambiguous: false,
-          engine: "clm_cascade"
-        }
-      ];
-
-      populate_screenplay_cards_in_editor_view();
-
-      const cards_container = document.getElementById("screenplay_segment_cards_wrapper");
-      const badges = cards_container.querySelectorAll(".laya_confidence_badge");
-
-      expect(badges.length).toBe(2);
-      expect(badges[0].textContent).toContain("🎯 88%");
-      expect(badges[1].textContent).toContain("⚡🎯 91%");
     });
   });
 

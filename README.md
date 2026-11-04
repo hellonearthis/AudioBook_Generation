@@ -324,6 +324,191 @@ To achieve vocal consistency across an entire novel while allowing expressive em
 
 ---
 
+## Character Voice Calibration & Multi-Layered Performance Staging
+
+To bridge the gap between mathematical accuracy and human theatrical acting, the application implements an advanced performance staging engine. This models what happens *between* and *underneath* dialogue lines, profiling empirical vocal limits upfront before rendering chapters.
+
+### 1. Empirical Voice Calibration & Capability Profiling (`services/voice_calibration_service.js`)
+
+Before committing to rendering an entire novel, character voice clones undergo an **Audition Calibration Pass** across an Emotion × Intensity Band grid (Bands 1 to 5):
+
+*   **Audition Test Line Selection**:
+    *   *Real Manuscript Lines (Preferred)*: The system queries the staged book text via `extract_calibration_test_lines_from_book` for dialogue lines already tagged with the target character, emotion, and intensity band. This audits how the voice clone handles the author's real cadence, vocabulary, and phrasing.
+    *   *Standardized Multi-Length Sentences (Fallback)*: Standardized short, medium, long, suppressed-tension, and whisper-caution sentences ensure controlled acoustic benchmarking.
+*   **Empirical Cell Evaluation**:
+    *   *Speaker Timbre Similarity*: Evaluates cosine similarity against the character's locked neutral reference anchor.
+    *   *Cross-Character Identity Margin (+0.05)*: At high emotional intensities (Band 5 allows $\ge 0.60$ similarity due to dramatic vocal deformation), an absolute threshold alone could pass a take rendered in another cast member's voice. The cross-character check enforces that the take must beat every competing cast member's reference vector by at least $+0.05$ margin.
+    *   *STT Phonetic Accuracy*: Verifies speech-to-text accuracy ($\ge 85\%$) to catch dropped clauses or hallucinations.
+    *   *Pacing Sanity Bounds*: Checks characters-per-second ($7.5 \le \text{CPS} \le 26.0$) to reject time-stretch glitching.
+*   **Capability Capping & Downward Remapping**:
+    *   If a voice clone distorts or fails identity at Band 4 or 5, the profile records an empirical cap (e.g. `anger: Band 3`).
+    *   When the narrative screenplay calls for Band 5 rage, the remapper clamps the request to Band 3 and automatically injects acoustic compensation cues (`pacing_speed_ratio = 0.88`, `inter_segment_pause_multiplier = 1.35`, and `expression_override = "suppressed"`). A character who cannot scream cleanly delivers intensity through cold, tightly clipped articulation and deliberate pauses.
+
+```
+                    ┌────────────────────────────────────────┐
+                    │    Audition Take (Emotion x Band)     │
+                    └───────────────────┬────────────────────┘
+                                        │
+             ┌──────────────────────────┼──────────────────────────┐
+             ▼                          ▼                          ▼
+   [Timbre Similarity]        [Cross-Character Margin]       [STT & CPS Checks]
+   Measures cosine score      Must beat all competing cast   Verifies words &
+   against neutral anchor     members by >= +0.05 margin     speech pace (7.5-26)
+             │                          │                          │
+             └──────────────────────────┼──────────────────────────┘
+                                        │
+                           /─────────────────────────\
+                          <   Passed All Assertions?  >
+                           \─────────────────────────/
+                              /                   \
+                        YES  /                     \  NO
+                            ▼                       ▼
+                    [Cell Approved]         [Cap at Previous Band]
+                    Record settings         Remap downstream staging
+                    and similarity          with acoustic compensation
+```
+
+---
+
+### 2. Multi-Layered Performance Direction & Subtext (`services/performance_direction_service.js`)
+
+Great acting depends on tension underneath the spoken words. The performance direction record models these layers explicitly:
+
+*   **Subtext (`displayed_emotion` vs. `felt_emotion`)**:
+    Separates surface reading from internal psychological state (e.g., surface calm with underlying seething anger, polite sarcasm, or cheerful grief). The instruction prompt directs the model to shade the surface delivery with the suppressed subtext.
+*   **Acoustic Proximity & Addressee**:
+    Tracks who the character is speaking to and spatial distance:
+    *   `intimate`: Close, confidential delivery with heightened proximity effect and breathiness.
+    *   `conversational`: Standard room dialogue.
+    *   `projected`: Projected vocal delivery addressing someone across distance or shouting to a room.
+*   **Word-Level Targeted Emphasis**:
+    Selectively stresses 0 to 2 key words per line (e.g. *"I didn't take it"* vs. *"I didn't take it"*), passing targeted emphasis without over-saturating the prose.
+*   **Physical State Modifiers**:
+    Extracts bodily conditions from surrounding prose (`tired`, `breathless`, `trembling`, `voice cracking with tears`).
+*   **Human Director's Notes & Override Precedence**:
+    Allows directors to append plain-language guidance directly on any screenplay card (e.g. `[Director: quieter, she is holding back tears]`). Notes persist across re-renders and take swaps. When `resolve_human_override` is enabled, the director's explicit note takes precedence over conflicting automated staging (e.g. suppressing AI rage tags when the human requested a quiet, tearful delivery), eliminating cognitive dissonance for the model.
+*   **Prompt Ablation Testing & Leakage Audit (`scripts/ablation_prompt_tester.js`)**:
+    To prevent prompt clause bloat (where 7–8 clauses cause instruction leakage or clause blurring on smaller models), run the ablation harness:
+    ```bash
+    node scripts/ablation_prompt_tester.js
+    ```
+    This decomposes lines into an 8-level prompt ablation ladder (Bare text, Band only, Subtext, Proximity, Emphasis, Physical state, Full stack, and Human override), providing word-count metrics and automated leakage risk ratings (`LOW`, `MEDIUM`, `HIGH`).
+
+#### Expanded Per-Line Performance Record:
+```javascript
+const dialogueLinePerformanceDirection = {
+  speakingCharacterIdentifier: "josh",
+  addresseeCharacterIdentifier: "maren",
+  distanceBetweenSpeakerAndListener: "conversational", // "intimate" | "conversational" | "projected"
+  displayedEmotion: { emotion: "calm", intensityBand: 1 },
+  feltEmotion: { emotion: "angry", intensityBand: 4 },
+  expressionMode: "suppressed",                        // "suppressed" | "released" | "balanced"
+  physicalStateTags: ["tired"],
+  emphasizedWordsInLine: ["you"],
+  secondsOfSilenceBeforeLine: 1.2,
+  secondsOfSilenceAfterLine: 0.4,
+  lineIsInterruptedByNextSpeaker: false,
+  directorNoteFromHuman: "quieter, she is holding back tears"
+};
+```
+
+---
+
+### 3. The Division of Labour: Prompt Instruction vs. Timeline Assembly
+
+A fundamental architectural principle ensures high-fidelity results without AI hallucinations:
+
+| Responsibility | Handled By | Why This Division is Critical |
+| :--- | :--- | :--- |
+| **Vocal Acting & Subtext** | **AuK Prompt Instruction** | Neural TTS models excel at tone, accent, breathiness, and emotional coloration from natural language descriptions. |
+| **Acoustic Proximity & Emphasis** | **AuK Prompt Instruction** | Directs projection energy and word stress during speech synthesis. |
+| **Pauses & Dramatic Timing** | **Assembly / Timeline (`ffmpeg`)** | **Never ask a neural TTS model to generate silence.** Asking for "1.2s silence" causes models to hallucinate static or clip early. The assembly layer places exact millisecond gaps deterministically. |
+| **Reproducible Timing Jitter** | **Assembly / Timeline (`ffmpeg`)** | Applies a deterministic ±12% jitter based on line ID hash, preventing metronomic mechanical rhythm while guaranteeing 100% reproducible chapter renders. |
+| **Scene Tempo Scaling** | **Assembly / Timeline (`ffmpeg`)** | Scales pause gaps by scene pace: `fast` scenes reduce pauses by 25% (0.75x) for rapid-fire dialogue; `slow` scenes expand pauses by 25% (1.25x). |
+| **Interruption Disambiguation** | **Assembly / Timeline (`ffmpeg`)** | Distinguishes **Cross-Speaker Interruptions** (preceding speaker cut off with `--`, another speaker cuts in with `0.0s` or `-150ms` overlap) from **Self-Interruptions / Trailing Thoughts** (same speaker trails off, leaving a longer 0.75s hesitation). |
+| **Loudness Normalization** | **Assembly / Timeline (`ffmpeg`)** | Enforces broadcast-standard EBU R128 (-19 LUFS) across all voices without artificial room noise. |
+
+---
+
+### 4. Deterministic Content Caching & Pronunciation Lexicon
+
+*   **Content-Hash Audio Caching (`services/audio_cache_service.js`)**:
+    Computes a deterministic SHA-256 fingerprint from `{ text, speaker, voice, seed, workflowType, emotion, instruction, speed, pitch, volume, intensity_band, expression_axis }`. If an edit is made to line 42, lines 1–41 instantly resolve from disk cache without redundant GPU rendering.
+*   **Pronunciation Lexicon (`services/pronunciation_lexicon_service.js`)**:
+    Applies whole-word boundary phonetic replacements (e.g. `Maren -> /mɛər.ɪn/`) prior to dispatching synthesis. Includes an automated manuscript scanner that discovers rare capitalized proper nouns and acronyms across the book for review before generation starts.
+
+---
+
+### 5. Special Literary Content & Acoustic Transmission Filters (`services/special_content_service.js`)
+
+Real novels contain complex non-standard prose formats that break traditional dialogue systems:
+
+*   **Inner Thoughts & Italics (`detect_inner_thought_content`)**:
+    Automatically detects typographic italics (`*thought*`, `<i>thought</i>`) or internal monologue speech tags (*"he thought"*, *"she wondered to herself"*). Instead of reading like narrator prose, inner thoughts are assigned intimate, close-mic delivery with suppressed, held-back expression.
+*   **Filtered Voices & Transmission Contexts (`resolve_acoustic_filter_chain`)**:
+    Applies hardware-accurate frequency bandpass and saturation filters directly in the timeline assembly layer without re-rendering voice takes:
+    *   `phone_call`: PSTN bandpass (`highpass=f=300,lowpass=f=3400,volume=1.05`).
+    *   `radio_intercom`: Tactical radio bandpass (`highpass=f=450,lowpass=f=2800,volume=1.1,aecho=0.8:0.88:12:0.25`).
+    *   `through_wall`: Partition lowpass attenuation (`lowpass=f=550,volume=0.85`).
+    *   `megaphone_pa`: Public address projection (`highpass=f=500,lowpass=f=4500,volume=1.2,aecho=0.8:0.7:40:0.3`).
+*   **Epistolary Content (Letters, Emails, Texts)**:
+    Resolves the reader's voice according to book-level editorial policy:
+    *   `sender_voice`: Spoken as if recalled from the letter writer's memory.
+    *   `recipient_voice`: Spoken by the character reading the document aloud.
+    *   `narrator_formal`: Read by the narrator in a measured, neutral document cadence.
+*   **Minor Character / Walk-On Voice Pooling (`assign_minor_character_voice_pool`)**:
+    Incidental one-line characters (guards, waitresses, clerks) are deterministically hashed into a reusable pool of 6 diverse voice presets with randomized pitch (`±1` to `±2` semitones) and speed offsets (`0.94x - 1.05x`), eliminating the review overhead of designing 40 separate voice clones.
+
+---
+
+### 6. Word-Level Forced Alignment & EPUB3 Media Overlays (`services/forced_alignment_service.js`)
+
+*   **Syllabic & STT Timestamp Computation**:
+    Calculates exact start and end timestamps for every word in an audio take (`compute_word_level_timestamps`), weighting word lengths and punctuation pauses.
+*   **W3C WebVTT Subtitle Track Export**:
+    Generates `.vtt` cue tracks for video audiograms and synchronized player displays (`export_webvtt_cues`).
+*   **EPUB3 SMIL Media Overlays Export**:
+    Generates compliant EPUB3 SMIL XML documents (`export_epub3_smil_media_overlay`) mapping audio clip intervals to XHTML paragraph tokens for eBook read-along highlighting.
+
+---
+
+### 7. Pipeline Telemetry & QC Efficiency Metrics (`services/pipeline_metrics_service.js`)
+
+Tracks quantitative metrics per chapter and project in `<project>/audio/telemetry_metrics.json`:
+*   **Review Minutes Per Hour of Audio**: Measures total human editorial triage time spent listening to flagged takes.
+*   **Flagged Line Rate (%)**: Proportion of screenplay lines routed to the human exception queue.
+*   **False Positive QC Rate (%)**: Tracks what percentage of flagged takes are approved without modification (indicating whether automated QC thresholds should be relaxed).
+*   **Re-Render Rate (%)**: Ratio of total takes generated relative to total manuscript lines.
+*   **Defect Root-Cause Distribution**: Categorizes failures across STT word mismatches, timbre drift, pacing anomalies, and cross-character margin breaches.
+
+---
+
+### 8. Multi-Chapter Organization & Persistent Global Cast (`services/chapter_service.js`)
+
+In production audiobooks, authors rarely record a 100,000-word novel in a single pass. The multi-chapter architecture splits large manuscripts into manageable chapter units while maintaining absolute cast continuity:
+*   **Automated Manuscript Heading Detection (`split_manuscript_into_chapters`)**:
+    Parses Markdown headings (`# Chapter 1`), standard numbered labels (`Chapter 2`), Roman numerals (`CHAPTER III`), and prologues/epilogues into discrete chapter objects with word counts and estimated audio runtimes.
+*   **Shared Global Cast & Voice Matrix Persistence (`upgrade_project_state_to_multichapter`)**:
+    While script segments and raw text are scoped under `chapters[]`, the character cast (`voiceMapping`), relationship timelines (`relationships`), pronunciation rules (`pronunciationDictionary`), and calibration profiles (`calibrationProfiles`) are anchored at the root project level. Characters discovered or voice-designed in Chapter 1 are instantly active and attributed consistently in Chapters 2 through 30.
+*   **Chapter Switching & Scoped Persistence (`switch_active_chapter`, `save_chapter_segments_to_project`)**:
+    Switching chapters in the editor updates active screenplay segments without touching other chapters or corrupting the global cast roster.
+*   **Full-Book Master Timeline Assembly (`compile_master_book_timeline_segments`)**:
+    Aggregates all chapter takes sequentially with global segment indices, chapter start flags, and metadata ready for single-file master mixdown or chapter-by-chapter export.
+
+---
+
+### 9. Direct Audio Voice Import & Phonetic Calibration Tuning (`services/voice_import_service.js`)
+
+Authors and producers frequently have existing reference audio clips, audition takes, or actor recordings that they wish to clone directly rather than generating synthetic voices from text prompts:
+*   **Bypassing 100% Synthetic Generation**:
+    Users can select an external audio file (`.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`) via native OS file dialog. The file is normalized and copied directly into `<project>/audio/anchors/character_voice_<name>.wav`. The character record is marked with `source: "imported_audio"` and `skipped_voice_design: true`, completely skipping Qwen3 VoiceDesign prompt generation.
+*   **Standardized Phonetic Tuning Sentences (`PHONETIC_TUNING_SENTENCES`)**:
+    Before chapter synthesis begins, the imported voice is tuned by rendering a phonetically balanced calibration phrase (e.g., *The Rainbow Passage*, *Arthur the Rat*, or *Pan-Phonetic Pangram*) using AuK-02 VoiceClone.
+*   **Empirical Acoustic Verification (`evaluate_phonetic_tuning_take`)**:
+    Evaluates the synthesized tuning take against the imported anchor embedding, verifying speaker identity similarity ($\ge 0.75$), pacing, and STT articulation before establishing the character's baseline profile.
+
+---
+
 ## External Services & Workflows Setup
 
 ### 1. Cross-Platform Configuration & Path Resolution (`config.json` / `.env`)

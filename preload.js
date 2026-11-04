@@ -89,12 +89,10 @@ contextBridge.exposeInMainWorld("audiobook_api", {
     });
   },
 
-  // WHAT: Query health and embedder status of the local CLM System One engine (port 8700).
-  // WHY: Lets the UI detect whether CLM-v0.1-8B contrastive decision server is active.
-  check_clm_status: (clm_endpoint_url) => {
-    return ipcRenderer.invoke("ai:clm-status", {
-      clm_endpoint_url: clm_endpoint_url
-    });
+  // WHAT: Tests if Laya NPU service is running on demand, and launches it if offline.
+  // WHY: Allows the frontend UI to ensure the Intel AI Boost NPU engine is running.
+  ensure_laya_ready: () => {
+    return ipcRenderer.invoke("ai:ensure-laya-ready");
   },
 
   // WHAT: Ultra-fast Dialogue Attribution and Emotional Staging via Laya (~17-25ms forward passes).
@@ -400,6 +398,343 @@ contextBridge.exposeInMainWorld("audiobook_api", {
   // WHY: Allows the frontend script editor to invoke post-processing (whisper, pitch, speed, volume, denoise, emotion) on takes.
   apply_auk_audio_edit: (edit_request_configuration_payload) => {
     return ipcRenderer.invoke("audio:apply-auk-edit", edit_request_configuration_payload);
+  },
+
+  // WHAT: Exports screenplay segments into standard Fountain plain-text format.
+  // WHY: Allows opening and proofreading scripts in screenwriting software like Beat or VS Code.
+  export_fountain_screenplay: (export_configuration_payload) => {
+    return ipcRenderer.invoke("fountain:export-script", export_configuration_payload);
+  },
+
+  // WHAT: Imports standard Fountain plain-text scripts and parses them into screenplay segments.
+  // WHY: Enables round-trip editing where human changes in Beat can be re-imported into the audiobook engine.
+  import_fountain_screenplay: (import_configuration_payload) => {
+    return ipcRenderer.invoke("fountain:import-script", import_configuration_payload);
+  },
+
+  // WHAT: Calculates Beat-style screenplay statistics, casting tiers, and attribution sanity checks.
+  // WHY: Displays character speaking distribution, estimated runtimes, and detects misattributed lines.
+  compute_screenplay_analytics: (analytics_request_payload) => {
+    return ipcRenderer.invoke("fountain:compute-analytics", analytics_request_payload);
+  },
+
+  // WHAT: Aggregates screenplay segments into high-level scene index cards.
+  // WHY: Provides a visual overview of characters present, synopses, and relationship dynamics before rendering.
+  generate_scene_outline_cards: (outline_request_payload) => {
+    return ipcRenderer.invoke("fountain:generate-outline-cards", outline_request_payload);
+  },
+
+  // WHAT: Compares script revisions against audio cache to compute a surgical diff re-render plan.
+  // WHY: Avoids regenerating unaltered audio, saving GPU compute time.
+  compute_revision_diff: (diff_request_payload) => {
+    return ipcRenderer.invoke("fountain:compute-revision-diff", diff_request_payload);
+  },
+
+  // WHAT: Sanitizes manuscript prose (curled quotes, em-dashes, soft line breaks, footnote stripping).
+  // WHY: Normalizes raw prose for LLM attribution and TTS pronunciation.
+  sanitize_manuscript_text: (raw_text, options) => {
+    const { sanitize_book_manuscript_text } = require("./services/text_sanitizer_service");
+    return sanitize_book_manuscript_text(raw_text, options);
+  },
+
+  // WHAT: Detects chapter and section boundaries in book manuscript text.
+  // WHY: Allows the user to switch between chapters and work on smaller chunks without UI slowdowns.
+  detect_manuscript_chapters: (text) => {
+    const { detect_manuscript_chapters } = require("./services/text_sanitizer_service");
+    return detect_manuscript_chapters(text);
+  },
+
+  // WHAT: Validates synthesized speech audio takes against expected script dialogue using Whistle STT.
+  // WHY: Evaluates whether TTS model matched dialogue text with strict 90% threshold, word diffs, and latency telemetry.
+  validate_audio_take: (file_path, expected_text, options) => {
+    return ipcRenderer.invoke("audio:validate-take", {
+      file_path: file_path,
+      expected_text: expected_text,
+      options: options || {}
+    });
+  },
+
+  // WHAT: Queries Whistle engine readiness and local installation status.
+  // WHY: Allows the UI to check if the 16.9 MB CPU speech model is operational.
+  get_whistle_status: () => {
+    return ipcRenderer.invoke("audio:get-whistle-status");
+  },
+
+  // WHAT: Loads the pronunciation lexicon dictionary for a project.
+  // WHY: Provides custom phonetic overrides for fantasy names, technical terms, and acronyms.
+  get_project_lexicon: (workspace_directory_path, project_name) => {
+    return ipcRenderer.invoke("lexicon:get-project-lexicon", {
+      workspace_directory_path: workspace_directory_path,
+      project_name: project_name
+    });
+  },
+
+  // WHAT: Saves updated pronunciation lexicon entries to `<project>/lexicon.json`.
+  // WHY: Persists user-defined vocabulary rules to disk.
+  save_project_lexicon: (workspace_directory_path, project_name, entries) => {
+    return ipcRenderer.invoke("lexicon:save-project-lexicon", {
+      workspace_directory_path: workspace_directory_path,
+      project_name: project_name,
+      entries: entries
+    });
+  },
+
+  // WHAT: Previews phonetic lexicon substitutions on sample text passages without modifying disk.
+  // WHY: Gives the user immediate feedback on how words will be respelled for TTS.
+  preview_lexicon_replacements: (text, entries) => {
+    return ipcRenderer.invoke("lexicon:preview-replacements", {
+      text: text,
+      entries: entries
+    });
+  },
+
+  // WHAT: Assembles project audio into master normalized files with calibrated pauses and -19 LUFS loudnorm.
+  // WHY: Automates final publication-ready audio assembly without manual DAW editing or artificial room tone.
+  assemble_project_audio: (assembly_options) => {
+    return ipcRenderer.invoke("mastering:assemble-project-audio", assembly_options);
+  },
+
+  // WHAT: Previews the timeline pause progression across character lines and scene breaks.
+  // WHY: Visualizes pause durations and estimated cumulative chapter runtime.
+  preview_chapter_timeline: (preview_options) => {
+    return ipcRenderer.invoke("mastering:preview-chapter-timeline", preview_options);
+  },
+
+  // WHAT: Scans manuscript for rare capitalized words, proper nouns, and acronyms for pronunciation review.
+  // WHY: Discovers fantasy names and unusual terms before synthesis begins.
+  scan_manuscript_rare_tokens: (text, options) => {
+    return ipcRenderer.invoke("lexicon:scan-manuscript-tokens", {
+      text: text,
+      options: options || {}
+    });
+  },
+
+  // WHAT: Restores unfinished tasks from disk into the live audio generation queue.
+  // WHY: Recovers gracefully after application restart or ComfyUI crash without losing batch progress.
+  restore_audio_queue: (workspace_directory_path, project_name) => {
+    return ipcRenderer.invoke("audio:restore-queue", {
+      workspace_directory_path: workspace_directory_path,
+      project_name: project_name
+    });
+  },
+
+  // WHAT: Sorts screenplay segments into a risk-prioritized "Listen by Exception" review queue.
+  // WHY: Focuses human review on the top 10% risky lines with combined attribution, STT, pacing, and timbre signals.
+  build_risk_prioritized_review_queue: (screenplay_segments, filter_options) => {
+    const { build_risk_prioritized_review_queue } = require("./services/triage_risk_service");
+    return build_risk_prioritized_review_queue(screenplay_segments, filter_options);
+  },
+
+  // WHAT: Resolves nicknames, titles, and conversational aliases to single canonical character IDs.
+  // WHY: Prevents wrong voice casting from nickname or honorific variations.
+  resolve_character_alias: (candidate_speaker_name, cast_profiles_list) => {
+    const { build_character_alias_index, resolve_speaker_alias } = require("./services/character_alias_service");
+    const alias_index = build_character_alias_index(cast_profiles_list);
+    return resolve_speaker_alias(candidate_speaker_name, alias_index);
+  },
+
+  // WHAT: Models character emotional intensity progression, exponential decay, and discrete bands.
+  // WHY: Enforces smooth emotional arcs across scenes rather than erratic line-by-line guessing.
+  update_character_emotional_intensity: (parameters_payload) => {
+    const { update_character_emotional_intensity } = require("./services/emotional_arc_service");
+    return update_character_emotional_intensity(parameters_payload);
+  },
+
+  // WHAT: Resolves discrete 1-5 intensity band descriptor for an emotion and continuous level.
+  // WHY: Maps continuous sliders to discrete acting adjectives for AuK and Qwen3.
+  resolve_emotional_intensity_band: (emotion, intensity_value) => {
+    const { resolve_emotional_intensity_band } = require("./services/emotional_arc_service");
+    return resolve_emotional_intensity_band(emotion, intensity_value);
+  },
+
+  // WHAT: Resolves initial baseline tension floor from active relationship state.
+  // WHY: Hostile and tense relationships start scenes with higher baseline tension.
+  resolve_relationship_emotional_baseline: (relationship_status, tone) => {
+    const { resolve_relationship_emotional_baseline } = require("./services/emotional_arc_service");
+    return resolve_relationship_emotional_baseline(relationship_status, tone);
+  },
+
+  // WHAT: Retrieves standard multi-length audition test sentences for voice calibration passes.
+  // WHY: Fixed sentences allow empirical measurement of identity and intensity limits across bands.
+  get_calibration_test_sentences: () => {
+    return ipcRenderer.invoke("calibration:get-test-sentences");
+  },
+
+  // WHAT: Fetches a character's saved empirical capability and band limit profile from disk.
+  // WHY: Guides directorial staging to avoid requesting vocal extremes that distort identity.
+  get_character_calibration_profile: (workspace_directory_path, project_name, character_name) => {
+    return ipcRenderer.invoke("calibration:get-profile", {
+      workspace_directory_path,
+      project_name,
+      character_name
+    });
+  },
+
+  // WHAT: Persists a character's measured calibration profile to disk.
+  // WHY: Stores empirical per-band thresholds, caps, and compensation rules for the character.
+  save_character_calibration_profile: (workspace_directory_path, project_name, character_name, profile) => {
+    return ipcRenderer.invoke("calibration:save-profile", {
+      workspace_directory_path,
+      project_name,
+      character_name,
+      profile
+    });
+  },
+
+  // WHAT: Pure functional remapper adapting story directorial requests to character limits.
+  // WHY: Downward-remaps requests exceeding voice caps and injects pacing compensation cues.
+  remap_staging_for_character_limits: (staging_request) => {
+    return ipcRenderer.invoke("calibration:remap-staging", staging_request);
+  },
+
+  // WHAT: Extracts dialogue lines from the manuscript matching a character, emotion, and band as audition test lines.
+  // WHY: Auditioning and profiling a character on their actual dialogue tests true cadence, prose style, and emotion.
+  extract_calibration_test_lines_from_book: (screenplay_segments, character_identifier, target_emotion, target_band_number, options) => {
+    return ipcRenderer.invoke("calibration:extract-book-test-lines", {
+      screenplay_segments,
+      character_identifier,
+      target_emotion,
+      target_band_number,
+      options
+    });
+  },
+
+  // WHAT: Compiles an advanced multi-layered performance instruction for AuK Instruct-TTS.
+  // WHY: Formats subtext (displayed vs felt emotion), distance, emphasis, physical states, and director notes into prompt.
+  compile_advanced_performance_instruction: (performance_record, dialogue_text) => {
+    const { compile_advanced_auk_performance_instruction } = require("./services/performance_direction_service");
+    return compile_advanced_auk_performance_instruction(performance_record, dialogue_text);
+  },
+
+  // WHAT: Derives dramatic pause timing and interruption flags between adjacent dialogue segments.
+  // WHY: Computes pauses based on emotional tension, trailing ellipses, and interruption cuts.
+  derive_dramatic_pause_timing: (current_segment, preceding_segment) => {
+    const { derive_dramatic_pause_timing } = require("./services/performance_direction_service");
+    return derive_dramatic_pause_timing(current_segment, preceding_segment);
+  },
+
+  // WHAT: Detects inner thoughts, italics, and internal monologues for intimate delivery treatment.
+  // WHY: Differentiates internal character thoughts from outward dialogue and narrator prose.
+  detect_inner_thought_content: (segment) => {
+    const { detect_inner_thought_content } = require("./services/special_content_service");
+    return detect_inner_thought_content(segment);
+  },
+
+  // WHAT: Resolves FFmpeg filter chains for phone calls, radio intercoms, and voices through walls.
+  // WHY: Colors transmission contexts authentically in post-production without re-rendering voice takes.
+  resolve_acoustic_filter_chain: (acoustic_context_name) => {
+    const { resolve_acoustic_filter_chain } = require("./services/special_content_service");
+    return resolve_acoustic_filter_chain(acoustic_context_name);
+  },
+
+  // WHAT: Resolves which voice reads letters, text messages, and emails per book policy.
+  // WHY: Supports sender-voice, recipient-voice, or formal-narrator reading conventions.
+  resolve_epistolary_reader_speaker: (epistolary_context) => {
+    const { resolve_epistolary_reader_speaker } = require("./services/special_content_service");
+    return resolve_epistolary_reader_speaker(epistolary_context);
+  },
+
+  // WHAT: Deterministically maps minor incidental characters to a reusable voice pool.
+  // WHY: Prevents the overhead of creating 40 separate voice clones for one-line characters.
+  assign_minor_character_voice_pool: (minor_character_name, gender_hint) => {
+    const { assign_minor_character_voice_pool } = require("./services/special_content_service");
+    return assign_minor_character_voice_pool(minor_character_name, gender_hint);
+  },
+
+  // WHAT: Computes word-level timestamp intervals and forced alignment across a spoken take.
+  // WHY: Enables WebVTT subtitles, EPUB3 media overlays, and precise audio trimming.
+  compute_word_level_timestamps: (dialogue_text, total_audio_duration_seconds, stt_observed_tokens) => {
+    const { compute_word_level_timestamps } = require("./services/forced_alignment_service");
+    return compute_word_level_timestamps(dialogue_text, total_audio_duration_seconds, stt_observed_tokens);
+  },
+
+  // WHAT: Exports W3C WebVTT subtitle track cues for word-level sync.
+  export_webvtt_cues: (word_intervals, timeline_offset_seconds) => {
+    const { export_webvtt_cues } = require("./services/forced_alignment_service");
+    return export_webvtt_cues(word_intervals, timeline_offset_seconds);
+  },
+
+  // WHAT: Exports EPUB3 SMIL Media Overlays XML document for synchronized eBook read-alongs.
+  export_epub3_smil_media_overlay: (smil_payload) => {
+    const { export_epub3_smil_media_overlay } = require("./services/forced_alignment_service");
+    return export_epub3_smil_media_overlay(smil_payload);
+  },
+
+  // WHAT: Calculates production efficiency metrics (review minutes per hour, false positive rate, re-render rate).
+  calculate_pipeline_telemetry_metrics: (telemetry_payload) => {
+    const { calculate_pipeline_telemetry_metrics } = require("./services/pipeline_metrics_service");
+    return calculate_pipeline_telemetry_metrics(telemetry_payload);
+  },
+
+  // WHAT: Loads saved pipeline efficiency metrics from disk.
+  load_pipeline_metrics: (workspace_directory_path, project_name) => {
+    const { load_pipeline_metrics } = require("./services/pipeline_metrics_service");
+    return load_pipeline_metrics(workspace_directory_path, project_name);
+  },
+
+  // WHAT: Saves pipeline efficiency metrics to disk.
+  save_pipeline_metrics: (workspace_directory_path, project_name, metrics_payload) => {
+    const { save_pipeline_metrics } = require("./services/pipeline_metrics_service");
+    return save_pipeline_metrics(workspace_directory_path, project_name, metrics_payload);
+  },
+
+  // =========================================================================
+  // MULTI-CHAPTER MANUSCRIPT & SHARED GLOBAL CAST MANAGEMENT
+  // =========================================================================
+
+  // WHAT: Splits raw book manuscript into discrete chapter records while preserving global cast.
+  split_manuscript_into_chapters: (raw_manuscript_text) => {
+    return ipcRenderer.invoke("chapter:split-manuscript", { raw_manuscript_text });
+  },
+
+  // WHAT: Upgrades existing single-chapter project state to multi-chapter while preserving global cast.
+  upgrade_project_to_multichapter: (current_project_state, raw_text_or_chapters) => {
+    return ipcRenderer.invoke("chapter:upgrade-project-state", { current_project_state, raw_text_or_chapters });
+  },
+
+  // WHAT: Switches active editor chapter while retaining global cast.
+  switch_active_chapter: (project_state, target_chapter_id) => {
+    return ipcRenderer.invoke("chapter:switch-active-chapter", { project_state, target_chapter_id });
+  },
+
+  // WHAT: Saves segments and text for a specific chapter back into project state.
+  save_chapter_segments: (project_state, chapter_id, updated_script_segments, updated_raw_text) => {
+    return ipcRenderer.invoke("chapter:save-chapter-segments", { project_state, chapter_id, updated_script_segments, updated_raw_text });
+  },
+
+  // WHAT: Compiles continuous master timeline segments across all chapters for full-book export.
+  compile_master_book_timeline: (project_state) => {
+    return ipcRenderer.invoke("chapter:compile-master-timeline", { project_state });
+  },
+
+  // =========================================================================
+  // DIRECT AUDIO VOICE IMPORT & PHONETIC CALIBRATION TUNING
+  // =========================================================================
+
+  // WHAT: Opens native OS file dialog to select reference audio file (.wav, .mp3, .m4a, .flac, .ogg).
+  select_audio_file: () => {
+    return ipcRenderer.invoke("dialog:select-audio-file");
+  },
+
+  // WHAT: Retrieves list of standardized phonetic tuning test phrases.
+  get_phonetic_test_sentences: () => {
+    return ipcRenderer.invoke("voice:get-phonetic-test-sentences");
+  },
+
+  // WHAT: Imports an external audio file as a character reference voice (skips 100% synthetic VoiceDesign).
+  import_character_voice_audio: (request_options) => {
+    return ipcRenderer.invoke("voice:import-reference-audio", request_options);
+  },
+
+  // WHAT: Generates phonetic tuning task payload to synthesize calibration test phrase with clone.
+  create_phonetic_tuning_task: (request_options) => {
+    return ipcRenderer.invoke("voice:create-phonetic-tuning-task", request_options);
+  },
+
+  // WHAT: Evaluates completed phonetic tuning take and updates character calibration profile.
+  evaluate_phonetic_tuning: (request_options) => {
+    return ipcRenderer.invoke("voice:evaluate-phonetic-tuning", request_options);
   }
 });
+
 

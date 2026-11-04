@@ -18,7 +18,7 @@ let last_known_comfyui_endpoint_url = "http://127.0.0.1:8188";
 
 // WHAT: Normalizing any "localhost" string in a URL to the literal IPv4 address 127.0.0.1.
 // WHY: Node.js v17+ resolves "localhost" through OS DNS, which returns IPv6 ::1 first.
-//      Local AI servers (llama-server, ComfyUI, Laya, CLM) bind exclusively to IPv4.
+//      Local AI servers (llama-server, ComfyUI, Laya) bind exclusively to IPv4.
 function normalize_localhost_url_to_ipv4_address(input_url_string) {
   if (!input_url_string) return "http://127.0.0.1:8081";
   return input_url_string.replace(/^(https?:\/\/)localhost/i, "$1127.0.0.1");
@@ -165,6 +165,88 @@ async function ensure_llama_vram_released(llama_base_endpoint_url, maximum_wait_
   return true;
 }
 
+// WHAT: On-demand launcher for llama-server.
+// WHY: Ensures llama.cpp (qwen3.8-27b or default model) is active before cast extraction or directorial staging starts.
+async function ensure_llama_ready(llama_base_endpoint_url = "http://127.0.0.1:8081", maximum_wait_seconds = 35, getMainWindow = null) {
+  const normalized_endpoint_url = normalize_localhost_url_to_ipv4_address(llama_base_endpoint_url).replace(/\/+$/, "");
+  const is_service_already_up = await probe_service_health(`${normalized_endpoint_url}/v1/models`);
+  if (is_service_already_up) {
+    return true;
+  }
+
+  const config = get_resolved_configuration();
+  const llama_dir = config.llama_path;
+
+  if (!llama_dir || !filesystem_library.existsSync(llama_dir)) {
+    console.warn(`[On-Demand] llama-server directory not found at ${llama_dir}`);
+    return false;
+  }
+
+  const candidate_launcher_names = [
+    "start_webui_qwen3_8-27b-abliterated_8081.bat",
+    "start_webui_8081.bat",
+    "start_webui_8080.bat",
+    "start.bat",
+    "llama-server.exe"
+  ];
+
+  let resolved_launcher_script_path = null;
+  for (const single_launcher_name of candidate_launcher_names) {
+    const combined_launcher_path = path_library.join(llama_dir, single_launcher_name);
+    if (filesystem_library.existsSync(combined_launcher_path)) {
+      resolved_launcher_script_path = combined_launcher_path;
+      break;
+    }
+  }
+
+  if (!resolved_launcher_script_path) {
+    console.warn(`[On-Demand] No llama-server batch launcher found in ${llama_dir}`);
+    return false;
+  }
+
+  console.log(`[On-Demand] Launching llama-server (${resolved_launcher_script_path})...`);
+  const primary_window_instance = typeof getMainWindow === "function" ? getMainWindow() : null;
+  if (primary_window_instance) {
+    primary_window_instance.webContents.send("system:ai-status-update", {
+      service: "llama",
+      status: "starting",
+      message: "Starting llama-server on-demand..."
+    });
+  }
+
+  try {
+    const spawned_llama_process = child_process_library.spawn("cmd.exe", ["/c", resolved_launcher_script_path], {
+      cwd: llama_dir,
+      detached: true,
+      stdio: "ignore"
+    });
+    spawned_llama_process.unref();
+  } catch (process_spawn_error) {
+    console.error("[On-Demand] Failed to spawn llama-server:", process_spawn_error.message);
+    return false;
+  }
+
+  const wait_start_timestamp = Date.now();
+  while (Date.now() - wait_start_timestamp < maximum_wait_seconds * 1000) {
+    await new Promise(resolve_polling_delay => setTimeout(resolve_polling_delay, 1500));
+    const is_service_ready_probe = await probe_service_health(`${normalized_endpoint_url}/v1/models`);
+    if (is_service_ready_probe) {
+      console.log(`[On-Demand] llama-server initialized and ready in ${Math.round((Date.now() - wait_start_timestamp) / 1000)}s.`);
+      if (primary_window_instance) {
+        primary_window_instance.webContents.send("system:ai-status-update", {
+          service: "llama",
+          status: "ready",
+          message: "llama-server initialized."
+        });
+      }
+      return true;
+    }
+  }
+
+  console.warn(`[On-Demand] llama-server failed to respond within ${maximum_wait_seconds}s.`);
+  return false;
+}
+
 // WHAT: On-demand launcher for ComfyUI audio TTS engine.
 // WHY: ComfyUI is only loaded when speech synthesis or audio editing begins, preserving GPU memory for LLM during cast discovery and script writing.
 async function ensure_comfyui_ready(comfyui_base_endpoint_url = "http://127.0.0.1:8188", maximum_wait_seconds = 30, getMainWindow = null) {
@@ -232,7 +314,7 @@ async function ensure_comfyui_ready(comfyui_base_endpoint_url = "http://127.0.0.
 
 // WHAT: On-demand launcher for Laya Decision Engine.
 // WHY: Laya is only loaded when fast attribution is selected by the user.
-async function ensure_laya_ready(laya_base_endpoint_url = "http://127.0.0.1:8765", maximum_wait_seconds = 45, getMainWindow = null) {
+async function ensure_laya_ready(laya_base_endpoint_url = "http://127.0.0.1:8765", maximum_wait_seconds = 90, getMainWindow = null) {
   const normalized_endpoint_url = normalize_localhost_url_to_ipv4_address(laya_base_endpoint_url).replace(/\/+$/, "");
   const is_service_already_up = await probe_service_health(`${normalized_endpoint_url}/health`);
   if (is_service_already_up) {
@@ -249,7 +331,7 @@ async function ensure_laya_ready(laya_base_endpoint_url = "http://127.0.0.1:8765
     return false;
   }
 
-  console.log(`[On-Demand] Launching Laya Decision Engine for fast dialogue attribution (${launcher_script_path})...`);
+  console.log(`[On-Demand] Launching Laya NPU Decision Engine for fast dialogue attribution (${launcher_script_path})...`);
   const primary_window_instance = typeof getMainWindow === "function" ? getMainWindow() : null;
   if (primary_window_instance) {
     primary_window_instance.webContents.send("system:ai-status-update", {
@@ -295,76 +377,12 @@ async function ensure_laya_ready(laya_base_endpoint_url = "http://127.0.0.1:8765
   return false;
 }
 
-// WHAT: On-demand launcher for CLM Decision Engine.
-async function ensure_clm_ready(clm_base_endpoint_url = "http://127.0.0.1:8700", maximum_wait_seconds = 45, getMainWindow = null) {
-  const normalized_endpoint_url = normalize_localhost_url_to_ipv4_address(clm_base_endpoint_url).replace(/\/+$/, "");
-  const is_service_already_up = await probe_service_health(`${normalized_endpoint_url}/health`);
-  if (is_service_already_up) {
-    return true;
-  }
-
-  const config = get_resolved_configuration();
-  const clm_dir = config.clm_path;
-  const is_windows = process.platform === "win32";
-  const launcher_script_name = is_windows ? "run_clm_server.ps1" : "run_clm_server.sh";
-  const launcher_script_path = path_library.join(clm_dir, launcher_script_name);
-
-  if (!filesystem_library.existsSync(launcher_script_path)) {
-    return false;
-  }
-
-  console.log(`[On-Demand] Launching CLM Decision Engine for contrastive attribution (${launcher_script_path})...`);
-  const primary_window_instance = typeof getMainWindow === "function" ? getMainWindow() : null;
-  if (primary_window_instance) {
-    primary_window_instance.webContents.send("system:ai-status-update", {
-      service: "clm",
-      status: "starting",
-      message: "Starting CLM System One on-demand..."
-    });
-  }
-
-  try {
-    const spawn_cmd = is_windows ? "powershell.exe" : "bash";
-    const spawn_args = is_windows
-      ? ["-ExecutionPolicy", "Bypass", "-File", launcher_script_path]
-      : [launcher_script_path];
-
-    const spawned_clm_process = child_process_library.spawn(spawn_cmd, spawn_args, {
-      cwd: clm_dir,
-      detached: true,
-      stdio: "ignore"
-    });
-    spawned_clm_process.unref();
-  } catch (process_spawn_error) {
-    console.error("[On-Demand] Failed to spawn CLM:", process_spawn_error.message);
-    return false;
-  }
-
-  const wait_start_timestamp = Date.now();
-  while (Date.now() - wait_start_timestamp < maximum_wait_seconds * 1000) {
-    await new Promise(resolve_polling_delay => setTimeout(resolve_polling_delay, 1500));
-    const is_service_ready_probe = await probe_service_health(`${normalized_endpoint_url}/health`);
-    if (is_service_ready_probe) {
-      console.log(`[On-Demand] CLM initialized and ready in ${Math.round((Date.now() - wait_start_timestamp) / 1000)}s.`);
-      if (primary_window_instance) {
-        primary_window_instance.webContents.send("system:ai-status-update", {
-          service: "clm",
-          status: "ready",
-          message: "CLM initialized."
-        });
-      }
-      return true;
-    }
-  }
-  return false;
-}
-
 module.exports = {
   normalize_localhost_url_to_ipv4_address,
   probe_service_health,
   release_comfyui_vram,
   ensure_llama_vram_released,
+  ensure_llama_ready,
   ensure_comfyui_ready,
-  ensure_laya_ready,
-  ensure_clm_ready
+  ensure_laya_ready
 };

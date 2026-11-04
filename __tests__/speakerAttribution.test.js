@@ -16,6 +16,8 @@ const {
   evaluate_multi_paragraph_monologue_continuation,
   identify_vocative_listener_character_ids,
   calculate_conversational_alternation_hint,
+  create_active_scene_conversational_state,
+  record_attributed_speaker_turn_transition,
   UNKNOWN_SPEAKER_IDENTIFIER
 } = require("../services/speaker_attribution");
 
@@ -84,6 +86,25 @@ describe("Speaker Attribution Engine", () => {
       };
       const alternation_hint = calculate_conversational_alternation_hint(mock_state, mock_cast_profiles_list, true);
       expect(alternation_hint).toBe("josh");
+    });
+
+    test("pure conversational state transition creates and updates state immutably", () => {
+      // WHAT: Testing pure functional state transition and immutability.
+      // WHY: Ensures state transitions do not mutate prior states in place.
+      const initial_state = create_active_scene_conversational_state(mock_cast_profiles_list);
+      expect(initial_state.recent_speaker_history_list).toEqual([]);
+      expect(initial_state.last_attributed_speaker_record).toBeNull();
+
+      const next_state = record_attributed_speaker_turn_transition(
+        initial_state,
+        { speaker: "josh" },
+        { paraIndex: 2 }
+      );
+
+      // Verify immutability
+      expect(initial_state.recent_speaker_history_list).toEqual([]);
+      expect(next_state.recent_speaker_history_list).toEqual(["josh"]);
+      expect(next_state.last_attributed_speaker_record).toEqual({ speaker: "josh", paraIndex: 2 });
     });
   });
 

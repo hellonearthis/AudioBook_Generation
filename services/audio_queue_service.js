@@ -28,10 +28,60 @@ const {
   dispatch_http_post_request
 } = require("./ai_pipeline_service");
 
+const {
+  compute_take_content_hash,
+  resolve_audio_cache_directory_path,
+  find_cached_audio_take_file_path,
+  store_audio_take_in_cache
+} = require("./audio_cache_service");
+
+const {
+  apply_pronunciation_lexicon,
+  load_project_lexicon_from_disk
+} = require("./pronunciation_lexicon_service");
+
+const {
+  compile_auk_emotional_instruction,
+  resolve_emotional_intensity_band
+} = require("./emotional_arc_service");
+
 let audio_generation_task_queue = [];
 let audio_generation_queue_is_processing = false;
 let cached_comfyui_base_directory_path = null;
 let last_known_comfyui_endpoint_url = "http://127.0.0.1:8188";
+
+// WHAT: Persists pending audio queue tasks to `<project>/audio/queue_state.json`.
+// WHY: Ensures crash-safe, resumable background generation across system restarts.
+function persist_queue_state_to_disk(workspace_directory_path, project_name, queue_items) {
+  try {
+    if (!workspace_directory_path || !project_name) return;
+    const queue_file_path = path_library.join(workspace_directory_path, project_name, "audio", "queue_state.json");
+    const parent_dir = path_library.dirname(queue_file_path);
+    if (!filesystem_library.existsSync(parent_dir)) {
+      filesystem_library.mkdirSync(parent_dir, { recursive: true });
+    }
+    filesystem_library.writeFileSync(queue_file_path, JSON.stringify({
+      saved_at: Date.now(),
+      pending_tasks: queue_items
+    }, null, 2), "utf-8");
+  } catch (error) {
+    console.warn("Failed to persist queue state to disk:", error.message);
+  }
+}
+
+// WHAT: Loads previously persisted queue tasks from disk.
+// WHY: Allows resuming unfinished batch tasks if ComfyUI crashed or user closed the app.
+function load_persisted_queue_state(workspace_directory_path, project_name) {
+  try {
+    const queue_file_path = path_library.join(workspace_directory_path, project_name, "audio", "queue_state.json");
+    if (!filesystem_library.existsSync(queue_file_path)) return [];
+    const payload = JSON.parse(filesystem_library.readFileSync(queue_file_path, "utf-8"));
+    return Array.isArray(payload.pending_tasks) ? payload.pending_tasks : [];
+  } catch (error) {
+    console.warn("Failed to load persisted queue state from disk:", error.message);
+    return [];
+  }
+}
 
 // WHAT: Resolving the absolute base folder path of the ComfyUI installation.
 // WHY: We need to stage cloning reference inputs into ComfyUI's 'input/' directory and retrieve completed takes from its 'output/' directory.
@@ -412,12 +462,70 @@ async function execute_sequential_generation_queue(getMainWindow) {
     const active_seed_value = Number(cell_override_mapping.seed || global_character_mapping.seed || deterministic_fallback_seed_value);
     const target_dialogue_text = current_active_task.script_segment_data.text;
 
+    const project_root_directory_path = path_library.join(
+      current_active_task.workspace_directory_path,
+      current_active_task.project_name
+    );
+    const audio_cache_directory_path = resolve_audio_cache_directory_path(
+      current_active_task.workspace_directory_path,
+      current_active_task.project_name
+    );
+
+    // WHAT: Compute deterministic content hash for this take.
+    // WHY: If an identical take was generated previously, we can skip GPU synthesis entirely.
+    const take_content_hash_string = compute_take_content_hash({
+      text: target_dialogue_text,
+      speaker: active_speaker_name,
+      voice: cell_override_mapping.voice || global_character_mapping.voice,
+      seed: active_seed_value,
+      workflowType: active_workflow_type,
+      emotion: rich_emotional_description_string,
+      instruction: current_active_task.script_segment_data.direction || "",
+      speed: current_active_task.script_segment_data.speed || "1.0",
+      pitch: active_pitch_level,
+      volume: active_volume_level
+    });
+
+    // WHAT: Check if we have an instant cache hit on disk.
+    const cached_audio_file_path = find_cached_audio_take_file_path(
+      audio_cache_directory_path,
+      take_content_hash_string
+    );
+
+    if (cached_audio_file_path) {
+      console.log(`[Audio Cache Hit] Restoring segment ${segment_index_position} (take ${target_take_number}) from cache (${take_content_hash_string}).`);
+      filesystem_library.copyFileSync(cached_audio_file_path, destination_audio_file_path);
+
+      notify_renderer({
+        index_position: segment_index_position,
+        status: "completed",
+        filePath: destination_audio_file_path,
+        is_directorial: current_active_task.is_directorial_segment_flag ? true : false,
+        take_number: target_take_number,
+        cached: true,
+        content_hash: take_content_hash_string,
+        message: "Synthesis completed (restored from content cache)."
+      });
+
+      // WHAT: Advance to the next item in the queue without blocking GPU.
+      execute_sequential_generation_queue(getMainWindow);
+      return;
+    }
+
+    // WHAT: Apply project pronunciation lexicon overrides before synthesis.
+    // WHY: Replaces fantasy words and acronyms with phonetic respellings for the TTS model.
+    const project_lexicon_entries = load_project_lexicon_from_disk(project_root_directory_path);
+    const { transformed_text: phonetically_conditioned_dialogue_text } = apply_pronunciation_lexicon(
+      target_dialogue_text,
+      project_lexicon_entries
+    );
+
     let save_node_id_string = "43";
 
     if (active_workflow_type === "custom") {
       save_node_id_string = "43";
       if (comfyui_workflow_nodes_payload["41"]) {
-        comfyui_workflow_nodes_payload["41"].inputs.value = target_dialogue_text;
+        comfyui_workflow_nodes_payload["41"].inputs.value = phonetically_conditioned_dialogue_text;
       }
       if (comfyui_workflow_nodes_payload["42"]) {
         comfyui_workflow_nodes_payload["42"].inputs.value = generated_qwen3_style_prompt_string;
@@ -440,7 +548,7 @@ async function execute_sequential_generation_queue(getMainWindow) {
     } else if (active_workflow_type === "design") {
       save_node_id_string = "41";
       if (comfyui_workflow_nodes_payload["42"]) {
-        comfyui_workflow_nodes_payload["42"].inputs.value = target_dialogue_text;
+        comfyui_workflow_nodes_payload["42"].inputs.value = phonetically_conditioned_dialogue_text;
       }
       if (comfyui_workflow_nodes_payload["43"]) {
         const precompiled_design_prompt_string = cell_override_mapping.designPrompt || 
@@ -482,7 +590,7 @@ async function execute_sequential_generation_queue(getMainWindow) {
     } else if (active_workflow_type === "clone") {
       save_node_id_string = "4";
       if (comfyui_workflow_nodes_payload["6"]) {
-        comfyui_workflow_nodes_payload["6"].inputs.value = target_dialogue_text;
+        comfyui_workflow_nodes_payload["6"].inputs.value = phonetically_conditioned_dialogue_text;
       }
 
       if (is_anchor_rerouted_to_clone_workflow && resolved_anchor_wav_absolute_path) {
@@ -601,7 +709,7 @@ async function execute_sequential_generation_queue(getMainWindow) {
       save_node_id_string = "99";
 
       if (comfyui_workflow_nodes_payload["10"]) {
-        comfyui_workflow_nodes_payload["10"].inputs.target_text = target_dialogue_text;
+        comfyui_workflow_nodes_payload["10"].inputs.target_text = phonetically_conditioned_dialogue_text;
         comfyui_workflow_nodes_payload["10"].inputs.seed = active_seed_value;
         comfyui_workflow_nodes_payload["10"].inputs.language = "English";
         comfyui_workflow_nodes_payload["10"].inputs.temperature = 0.3;
@@ -633,11 +741,14 @@ async function execute_sequential_generation_queue(getMainWindow) {
                             current_active_task.script_segment_data.delivery?.instruction || "";
 
       if (!auk_instruction) {
-        if (active_emotional_state && active_emotional_state !== "neutral") {
-          auk_instruction = `Say the following with the same voice, ${active_emotional_state}: '${target_dialogue_text}'`;
-        } else {
-          auk_instruction = `Say the following with the same voice: '${target_dialogue_text}'`;
-        }
+        const raw_intensity = segment_render_block.intensity ?? current_active_task.script_segment_data.intensity ?? 0.4;
+        const raw_expression = segment_render_block.expression ?? current_active_task.script_segment_data.expression ?? "balanced";
+        auk_instruction = compile_auk_emotional_instruction({
+          emotion: active_emotional_state || "neutral",
+          intensity_value: raw_intensity,
+          expression: raw_expression,
+          dialogue_text: phonetically_conditioned_dialogue_text
+        });
       }
 
       // WHAT: Estimating duration from word count or explicit gen_seconds hint.
@@ -654,7 +765,7 @@ async function execute_sequential_generation_queue(getMainWindow) {
 
       if (comfyui_workflow_nodes_payload["3"]) {
         comfyui_workflow_nodes_payload["3"].inputs.task = "Zero-Shot TTS (Voice Clone)";
-        comfyui_workflow_nodes_payload["3"].inputs.primary = target_dialogue_text;
+        comfyui_workflow_nodes_payload["3"].inputs.primary = phonetically_conditioned_dialogue_text;
         comfyui_workflow_nodes_payload["3"].inputs.secondary = auk_instruction;
         comfyui_workflow_nodes_payload["3"].inputs.seed = active_seed_value;
         comfyui_workflow_nodes_payload["3"].inputs.generation_seconds = estimated_seconds;
@@ -733,7 +844,7 @@ async function execute_sequential_generation_queue(getMainWindow) {
 
       if (comfyui_workflow_nodes_payload["2"]) {
         comfyui_workflow_nodes_payload["2"].inputs.task = "Instruct TTS (Description)";
-        comfyui_workflow_nodes_payload["2"].inputs.primary = target_dialogue_text;
+        comfyui_workflow_nodes_payload["2"].inputs.primary = phonetically_conditioned_dialogue_text;
         comfyui_workflow_nodes_payload["2"].inputs.secondary = generated_qwen3_style_prompt_string || global_character_mapping.traits || "A natural, clear, and warm speaking voice";
         comfyui_workflow_nodes_payload["2"].inputs.seed = active_seed_value;
         comfyui_workflow_nodes_payload["2"].inputs.duration_mode = "Auto Estimate (TTS Recommended)";
@@ -792,6 +903,10 @@ async function execute_sequential_generation_queue(getMainWindow) {
           );
 
           filesystem_library.copyFileSync(absolute_comfyui_output_wav_path, destination_audio_file_path);
+
+          // WHAT: Storing newly synthesized take in project content cache.
+          // WHY: Enables instant restoration on subsequent runs with matching parameters.
+          store_audio_take_in_cache(audio_cache_directory_path, take_content_hash_string, destination_audio_file_path);
         } else {
           throw new Error(`Synthesized file was not found in ComfyUI output at: ${absolute_comfyui_output_wav_path}`);
         }
@@ -954,12 +1069,34 @@ function register_audio_queue_handlers(ipcMain, getMainWindow) {
   });
 
   // WHAT: Forcefully clears the background synthesis queue and resets processing flags.
-  ipcMain.handle("audio:reset-queue", async () => {
+  ipcMain.handle("audio:reset-queue", async (ipc_event_context, request_arguments = {}) => {
+    const { workspace_directory_path, project_name } = request_arguments;
     audio_generation_task_queue = [];
     audio_generation_queue_is_processing = false;
+    if (workspace_directory_path && project_name) {
+      persist_queue_state_to_disk(workspace_directory_path, project_name, []);
+    }
     await release_comfyui_vram();
     console.log("[Queue Reset] Main process audio generation queue has been manually flushed.");
     return { success: true, message: "Queue flushed and reset." };
+  });
+
+  // WHAT: Restores unfinished tasks from disk into the live audio generation queue.
+  // WHY: Resumes batch jobs safely after unexpected crashes or application restart.
+  ipcMain.handle("audio:restore-queue", async (ipc_event_context, request_arguments) => {
+    const { workspace_directory_path, project_name } = request_arguments;
+    const restored_tasks = load_persisted_queue_state(workspace_directory_path, project_name);
+    if (restored_tasks.length > 0) {
+      audio_generation_task_queue = [...audio_generation_task_queue, ...restored_tasks];
+      if (!audio_generation_queue_is_processing) {
+        execute_sequential_generation_queue(getMainWindow);
+      }
+    }
+    return {
+      success: true,
+      restoredCount: restored_tasks.length,
+      currentQueueLength: audio_generation_task_queue.length
+    };
   });
 
   // WHAT: Registering the Voice Anchor Bake IPC handler.
@@ -1287,5 +1424,7 @@ function register_audio_queue_handlers(ipcMain, getMainWindow) {
 module.exports = {
   register_audio_queue_handlers,
   resolve_comfyui_base_directory,
-  fetch_comfyui_queue_history
+  fetch_comfyui_queue_history,
+  persist_queue_state_to_disk,
+  load_persisted_queue_state
 };

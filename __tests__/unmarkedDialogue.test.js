@@ -7,7 +7,6 @@ jest.mock("../services/service_health_service", () => {
   return {
     ...actual,
     ensure_laya_ready: jest.fn().mockResolvedValue(true),
-    ensure_clm_ready: jest.fn().mockResolvedValue(true),
     probe_service_health: jest.fn().mockResolvedValue(false)
   };
 });

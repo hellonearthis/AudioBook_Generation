@@ -95,6 +95,10 @@ function populate_screenplay_cards_in_editor_view() {
       individual_script_segment_card_element.className = "screenplay_item_card narrator_type_card";
     }
 
+    if (active_script_segment_item.is_flagged) {
+      individual_script_segment_card_element.classList.add("card_flagged_for_review");
+    }
+
     individual_script_segment_card_element.id = `screenplay_card_node_${segment_index_counter}`;
 
     if (segment_index_counter === active_inspected_segment_index) {
@@ -193,10 +197,13 @@ function populate_screenplay_cards_in_editor_view() {
           ${active_script_segment_item.unmarked ? `
             <span class="unmarked_span_badge" title="Extracted via Stage 2A Literary Boundary Detection (Unmarked Dialogue)">📖 Unmarked</span>
           ` : ''}
-          ${(active_script_segment_item.engine === 'laya' || active_script_segment_item.engine === 'clm' || active_script_segment_item.engine === 'clm_cascade') && active_script_segment_item.confidence ? `
-            <span class="laya_confidence_badge ${active_script_segment_item.is_ambiguous ? 'low_confidence' : ''}" title="${active_script_segment_item.engine === 'clm' ? 'CLM-8B' : (active_script_segment_item.engine === 'clm_cascade' ? 'Cascade (CLM-8B)' : 'Laya')} Decision Confidence: ${(active_script_segment_item.confidence * 100).toFixed(0)}%">
-              ${active_script_segment_item.engine === 'clm' ? '🎯' : (active_script_segment_item.engine === 'clm_cascade' ? '⚡🎯' : '⚡')} ${(active_script_segment_item.confidence * 100).toFixed(0)}%
+          ${(active_script_segment_item.engine === 'laya') && active_script_segment_item.confidence ? `
+            <span class="laya_confidence_badge ${active_script_segment_item.is_ambiguous ? 'low_confidence' : ''}" title="Laya Decision Confidence: ${(active_script_segment_item.confidence * 100).toFixed(0)}%">
+              ⚡ ${(active_script_segment_item.confidence * 100).toFixed(0)}%
             </span>
+          ` : ''}
+          ${active_script_segment_item.is_flagged ? `
+            <span class="badge radius-3 p-1-4 text-10 cursor-pointer" onclick="toggle_segment_flag(${segment_index_counter})" title="Flagged for director review (Press F to toggle)" style="background: rgba(214,121,62,0.25); color: #ff9d66; border: 1px solid rgba(214,121,62,0.45);">🚩 Flagged</span>
           ` : ''}
           <span class="card_type_badge ${is_tech_book ? 'd-none' : ''}" title="Segment category: dialogue, narrative exposition, or parenthetical direction">${active_script_segment_item.type}</span>
         </div>
@@ -249,6 +256,12 @@ function populate_screenplay_cards_in_editor_view() {
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
             </button>
           ` : ''}
+          <button class="card_operation_btn ${active_script_segment_item.is_flagged ? 'text-coral' : 'text-muted'}" title="Flag line for review (Press F)" onclick="toggle_segment_flag(${segment_index_counter})">
+            <span>🚩</span>
+          </button>
+          <button class="card_operation_btn text-muted" title="Split line into two segments" onclick="trigger_split_segment_prompt(${segment_index_counter})">
+            <span>✂️</span>
+          </button>
           <button class="card_operation_btn btn_regenerate" title="Synthesize this line" onclick="trigger_single_line_speech_synthesis(${segment_index_counter})">
             <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
           </button>
@@ -283,6 +296,14 @@ function populate_screenplay_cards_in_editor_view() {
   // WHAT: Automatically refresh Line Studio Inspector (Column 3) for the currently active card.
   // WHY: Keeps inspector telemetry, waveforms, subtext, and pacing synced with active screenplay state.
   render_line_inspector_view(active_inspected_segment_index);
+
+  // WHAT: Update confidence heatmap minimap and triage doubt counts.
+  if (typeof render_screenplay_confidence_minimap === "function") {
+    render_screenplay_confidence_minimap();
+  }
+  if (typeof update_triage_doubt_counter === "function") {
+    update_triage_doubt_counter();
+  }
 }
 
 // =========================================================================
@@ -870,11 +891,7 @@ function render_or_update_attribution_progress_ui() {
 
   // Determine Engine Badge Title
   let engine_badge_title = is_unmarked ? "📖 2-Stage Unmarked Attribution" : "⚡ Laya Fast Attribution";
-  if (engine === "clm") {
-    engine_badge_title = is_unmarked ? "📖 2-Stage Unmarked Attribution (CLM-8B)" : "🎯 CLM-8B System One Attribution";
-  } else if (engine === "cascade" || engine === "clm_cascade") {
-    engine_badge_title = is_unmarked ? "📖 2-Stage Unmarked Attribution (Cascade)" : "⚡🎯 Smart Cascade (Laya → CLM)";
-  } else if (engine === "llm" || engine === "hybrid" || engine === "llm_qc") {
+  if (engine === "llm" || engine === "hybrid" || engine === "llm_qc") {
     engine_badge_title = "🧠 LLM Dialogue Attribution";
   } else if (engine === "joint_llm") {
     engine_badge_title = "📖 Joint LLM Unmarked Attribution";
@@ -1073,14 +1090,13 @@ async function run_main_pipeline_pass_one_and_two() {
 
       let parsing_response_json = null;
 
-      if (["laya", "clm", "cascade", "hybrid"].includes(selected_attribution_engine)) {
+      if (["laya", "hybrid"].includes(selected_attribution_engine)) {
         try {
           parsing_response_json = await window.audiobook_api.trigger_laya_attribution({
             book_text_segment: sample_text_window_block,
             voice_mapping_context: active_loaded_project_state_object.voiceMapping || {},
             existing_script_segments: existing_script_segments_list,
             laya_endpoint_url: configuration_laya_api_url_address,
-            clm_endpoint_url: (typeof configuration_clm_api_url_address !== "undefined") ? configuration_clm_api_url_address : "http://127.0.0.1:8700",
             attribution_engine: selected_attribution_engine,
             confidence_threshold: 0.55,
             unmarked_dialogue_mode: is_unmarked_dialogue,
@@ -1201,7 +1217,7 @@ async function run_main_pipeline_pass_one_and_two() {
             energy: typeof parsed_item.energy === "number" ? parsed_item.energy : (matched_existing_segment && matched_existing_segment.energy) || null,
             is_ambiguous: is_segment_locked ? false : (!!parsed_item.is_ambiguous || !!segment_proposed_diff),
             unmarked: !!parsed_item.unmarked,
-            engine: parsed_item.engine || (selected_attribution_engine === "llm" ? "llm" : (selected_attribution_engine === "clm" ? "clm" : "laya")),
+            engine: parsed_item.engine || (selected_attribution_engine === "llm" ? "llm" : "laya"),
             audioPath: matched_existing_segment ? (matched_existing_segment.audioPath || null) : null,
             audioVersions: (matched_existing_segment && Array.isArray(matched_existing_segment.audioVersions)) ? matched_existing_segment.audioVersions : [],
             workflowOverride: matched_existing_segment ? (matched_existing_segment.workflowOverride || null) : null,
@@ -2066,6 +2082,16 @@ function play_individual_line_clip(index_position_of_card) {
 
 let active_inspected_segment_index = 0;
 
+// WHAT: Accessor functions for active_inspected_segment_index.
+// WHY: Enables modular inspection and headless automated testing without polluting globals.
+function get_active_inspected_segment_index() {
+  return active_inspected_segment_index;
+}
+
+function set_active_inspected_segment_index(new_index) {
+  active_inspected_segment_index = new_index;
+}
+
 function escape_html_entities(str) {
   if (!str) return "";
   return String(str)
@@ -2186,6 +2212,46 @@ function render_line_inspector_view(line_index) {
     takes_list_html = audio_takes.map(take => {
       const is_master = !!take.isActive;
       const take_energy = typeof take.energy === "number" ? take.energy : 1.0;
+      const validation = take.validation;
+      let validation_badge_html = "";
+
+      if (validation) {
+        const match_score = validation.match_percentage !== undefined ? validation.match_percentage : 0;
+        const is_strict_passed = match_score >= 90.0;
+        const badge_style = is_strict_passed
+          ? "background: rgba(16, 185, 129, 0.16); border: 1px solid #059669; color: #34d399;"
+          : (match_score >= 80.0
+            ? "background: rgba(245, 158, 11, 0.16); border: 1px solid #d97706; color: #fbbf24;"
+            : "background: rgba(239, 68, 68, 0.16); border: 1px solid #dc2626; color: #f87171;");
+        const status_label = is_strict_passed
+          ? `✓ ${match_score}% Match`
+          : (match_score >= 80.0 ? `⚠️ ${match_score}% Match (<90%)` : `✗ ${match_score}% Match (<90%)`);
+
+        validation_badge_html = `
+          <div class="d-flex align-items-center justify-content-between mt-6 pt-4 border-top-glass-subtle">
+            <span class="badge radius-4 p-2-6 text-10 font-mono" style="${badge_style}" title="Whistle STT alignment (Strict 90% benchmark)">
+              ${status_label}
+            </span>
+            <div class="d-flex gap-4">
+              <button class="cyber_btn btn_secondary p-1-4 text-10 text-cyan" onclick="open_whistle_validation_details_modal(${valid_index}, ${take.take})" title="Inspect word-by-word diff, missing words, and telemetry">
+                🔍 Diff
+              </button>
+              <button class="cyber_btn btn_secondary p-1-4 text-10" id="btn_whistle_${valid_index}_${take.take}" onclick="handle_validate_take_with_whistle(${valid_index}, ${take.take})" title="Re-run Whistle STT validation">
+                ⚡ Validate
+              </button>
+            </div>
+          </div>
+        `;
+      } else {
+        validation_badge_html = `
+          <div class="d-flex align-items-center justify-content-end mt-4">
+            <button class="cyber_btn btn_secondary p-2-6 text-10" id="btn_whistle_${valid_index}_${take.take}" onclick="handle_validate_take_with_whistle(${valid_index}, ${take.take})" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);" title="Test whether audio matches dialogue text (Strict 90% threshold)">
+              🎯 Validate (Whistle)
+            </button>
+          </div>
+        `;
+      }
+
       return `
         <div class="take_comparison_item ${is_master ? 'take_active_master' : ''}">
           <div class="d-flex justify-content-between align-items-center">
@@ -2203,6 +2269,7 @@ function render_line_inspector_view(line_index) {
             <button class="cyber_btn btn_secondary p-2-6 text-10 text-purple" onclick="open_auk_edit_tools_modal(${valid_index}, false)" title="AuK Audio Editing Suite">🪄 Edit</button>
             <button class="cyber_btn btn_secondary p-2-6 text-10 text-coral" onclick="trigger_delete_specific_take(${valid_index}, ${take.take})" title="Delete take">🗑</button>
           </div>
+          ${validation_badge_html}
         </div>`;
     }).join('');
   } else {
@@ -2218,7 +2285,7 @@ function render_line_inspector_view(line_index) {
   const inject_breath = segment.inject_breath !== undefined ? segment.inject_breath : true;
 
   // Section 5: AI Confidence & Shadow QC Insights
-  const engine_name = segment.engine === 'clm' ? 'CLM-8B' : (segment.engine === 'clm_cascade' ? 'Cascade (CLM-8B)' : (segment.engine === 'llm' ? 'llama.cpp' : 'Laya Fast'));
+  const engine_name = segment.engine === 'llm' ? 'llama.cpp' : 'Laya Fast';
   const conf_score = typeof segment.confidence === "number" ? segment.confidence : (segment.is_user_locked ? 1.0 : 0.85);
   const conf_pct = Math.round(conf_score * 100);
   let conf_color = "#10b981";
@@ -2235,6 +2302,18 @@ function render_line_inspector_view(line_index) {
   }
 
   inspector_container.innerHTML = `
+    <!-- DIRECTORIAL QUICK-PALETTE CHIPS -->
+    <div class="directorial_quick_chips_bar">
+      <span class="text-10 text-muted uppercase font-bold mr-4 d-flex align-items-center">Directorial:</span>
+      <button class="quick_chip_btn" onclick="apply_quick_direction_chip(${valid_index}, 'whispering, breathless')">🤫 Whisper</button>
+      <button class="quick_chip_btn" onclick="apply_quick_direction_chip(${valid_index}, 'shouted, forceful')">🗣️ Shout</button>
+      <button class="quick_chip_btn" onclick="apply_quick_direction_chip(${valid_index}, 'cold, clipped, deadpan')">🥶 Flat</button>
+      <button class="quick_chip_btn" onclick="apply_quick_direction_chip(${valid_index}, 'sarcastic, dry amusement')">😏 Sarcastic</button>
+      <button class="quick_chip_btn" onclick="apply_quick_direction_chip(${valid_index}, 'urgent, high tension')">⚡ Urgent</button>
+      <button class="quick_chip_btn" onclick="apply_quick_direction_chip(${valid_index}, 'softly, vulnerable, trembling')">🥺 Soft</button>
+      <button class="quick_chip_btn" onclick="apply_quick_direction_chip(${valid_index}, 'angry, snarling, bitter')">😤 Angry</button>
+    </div>
+
     <!-- MODULE 1: Narrative State & Subtext -->
     <div class="inspector_section_card">
       <div class="inspector_section_header">
@@ -2339,6 +2418,49 @@ function render_line_inspector_view(line_index) {
           ⚡ Re-attribute Line
         </button>
       </div>
+
+      ${(() => {
+        const active_take_item = audio_takes.find(t => t.isActive) || audio_takes[0];
+        if (active_take_item && active_take_item.validation) {
+          const val_score = active_take_item.validation.match_percentage !== undefined ? active_take_item.validation.match_percentage : 0;
+          const is_strict_pass = val_score >= 90.0;
+          const val_color = is_strict_pass ? "#10b981" : (val_score >= 80.0 ? "#f59e0b" : "#ef4444");
+          const val_label = is_strict_pass ? "Strict Passed (≥90%)" : (val_score >= 80.0 ? "Warning (<90%)" : "Strict Failed (<90%)");
+          const val_gradient = is_strict_pass
+            ? "linear-gradient(90deg, #10b981, #059669)"
+            : (val_score >= 80.0 ? "linear-gradient(90deg, #f59e0b, #d97706)" : "linear-gradient(90deg, #ef4444, #dc2626)");
+
+          return `
+            <div class="mt-12 pt-8 border-top-glass-subtle">
+              <div class="d-flex justify-content-between align-items-center text-11 mb-4">
+                <span class="font-weight-bold d-flex align-items-center gap-4">
+                  <span>🎯 Whistle Audio Match (Take ${active_take_item.take})</span>
+                </span>
+                <span style="color: ${val_color}; font-weight: 600;">${val_score}% • ${val_label}</span>
+              </div>
+              <div class="qc_confidence_track_bg">
+                <div class="qc_confidence_fill" style="width: ${val_score}%; background: ${val_gradient};"></div>
+              </div>
+              <div class="d-flex justify-content-between align-items-center mt-6 text-10 text-muted">
+                <span>WER: <strong class="text-white font-mono">${active_take_item.validation.word_error_rate || 0}</strong></span>
+                <button class="cyber_btn btn_secondary p-2-6 text-10 text-cyan" onclick="open_whistle_validation_details_modal(${valid_index}, ${active_take_item.take})" title="Inspect word-by-word diff">
+                  🔍 Diff Details
+                </button>
+              </div>
+            </div>
+          `;
+        } else if (active_take_item) {
+          return `
+            <div class="mt-12 pt-8 border-top-glass-subtle d-flex justify-content-between align-items-center">
+              <span class="text-11 text-muted">Audio Validation:</span>
+              <button class="cyber_btn btn_secondary p-2-6 text-10 text-cyan" onclick="handle_validate_take_with_whistle(${valid_index}, ${active_take_item.take})" title="Validate active take against dialogue">
+                🎯 Validate Take ${active_take_item.take} (Whistle)
+              </button>
+            </div>
+          `;
+        }
+        return "";
+      })()}
     </div>
   `;
 }
@@ -2389,6 +2511,186 @@ async function trigger_delete_specific_take(card_index, take_number) {
   populate_screenplay_cards_in_editor_view();
   render_line_inspector_view(card_index);
 }
+
+// WHAT: Validates an audio take against script dialogue using Cactus Whistle STT.
+// WHY: Executes on-demand quality audit with strict 90% threshold on CPU in milliseconds (<15ms TTFT).
+async function handle_validate_take_with_whistle(card_index, take_number) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[card_index];
+  if (!segment || !segment.audioVersions) return;
+
+  const target_take = segment.audioVersions.find(t => t.take === take_number);
+  if (!target_take) return;
+
+  const audio_file_path = target_take.filePath || target_take.audioPath;
+  if (!audio_file_path) {
+    alert("Audio file path not found for this take.");
+    return;
+  }
+
+  const btn = document.getElementById(`btn_whistle_${card_index}_${take_number}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status"></span> Validating...`;
+  }
+
+  try {
+    if (typeof window !== "undefined" && window.audiobook_api && window.audiobook_api.validate_audio_take) {
+      const result = await window.audiobook_api.validate_audio_take(
+        audio_file_path,
+        segment.text || "",
+        { strict_threshold: 90.0 }
+      );
+
+      if (result && result.success) {
+        target_take.validation = result;
+        await trigger_project_state_disk_flush();
+        render_line_inspector_view(card_index);
+      } else {
+        alert(`Whistle validation error: ${result?.error || "Unknown error"}`);
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "🎯 Validate (Whistle)";
+        }
+      }
+    } else {
+      alert("Whistle validation API is not available in this environment.");
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "🎯 Validate (Whistle)";
+      }
+    }
+  } catch (error) {
+    console.error("Whistle validation failed:", error);
+    alert(`Validation failed: ${error.message}`);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🎯 Validate (Whistle)";
+    }
+  }
+}
+
+// WHAT: Opens the detailed Whistle STT validation modal report.
+// WHY: Provides word-level diff tokens, missing words, hallucinated insertions,
+//      and engine telemetry (TTFT, decode TPS) with strict 90% threshold comparison.
+function open_whistle_validation_details_modal(card_index, take_number) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segment = active_loaded_project_state_object.scriptSegments[card_index];
+  if (!segment || !segment.audioVersions) return;
+
+  const target_take = segment.audioVersions.find(t => t.take === take_number);
+  if (!target_take || !target_take.validation) return;
+
+  const validation = target_take.validation;
+  const match_pct = validation.match_percentage !== undefined ? validation.match_percentage : 0;
+  const is_strict_passed = match_pct >= 90.0;
+  const status_color = is_strict_passed ? "#10b981" : (match_pct >= 80.0 ? "#f59e0b" : "#ef4444");
+  const status_label = is_strict_passed ? "PASSED (Strict ≥90%)" : (match_pct >= 80.0 ? "WARNING (<90%)" : "FAILED (<90%)");
+
+  let existing_modal = document.getElementById("whistle_validation_details_modal");
+  if (existing_modal) existing_modal.remove();
+
+  const modal_element = document.createElement("div");
+  modal_element.id = "whistle_validation_details_modal";
+  modal_element.className = "position-fixed top-0 left-0 w-100 h-100 d-flex align-items-center justify-content-center";
+  modal_element.style.background = "rgba(0, 0, 0, 0.78)";
+  modal_element.style.backdropFilter = "blur(6px)";
+  modal_element.style.zIndex = "99999";
+
+  let diff_html = "";
+  if (Array.isArray(validation.diff_tokens) && validation.diff_tokens.length > 0) {
+    diff_html = validation.diff_tokens.map(token => {
+      if (token.type === "match") {
+        return `<span style="color: #e2e8f0; margin-right: 4px;">${escape_html_entities(token.word)}</span>`;
+      } else if (token.type === "omission") {
+        return `<span style="background: rgba(239, 68, 68, 0.25); border-bottom: 2px solid #ef4444; color: #fca5a5; margin-right: 4px; padding: 1px 4px; border-radius: 3px;" title="Missing word in spoken audio">${escape_html_entities(token.word)}</span>`;
+      } else if (token.type === "insertion") {
+        return `<span style="background: rgba(56, 189, 248, 0.25); border-bottom: 2px solid #38bdf8; color: #7dd3fc; margin-right: 4px; padding: 1px 4px; border-radius: 3px;" title="Hallucinated or extra word">${escape_html_entities(token.word)}</span>`;
+      }
+      return `<span>${escape_html_entities(token.word)}</span>`;
+    }).join("");
+  } else {
+    diff_html = `<span class="text-muted font-italic">No word-level tokens available.</span>`;
+  }
+
+  const missing_words_count = Array.isArray(validation.missing_words) ? validation.missing_words.length : 0;
+  const hallucinated_words_count = Array.isArray(validation.hallucinated_words) ? validation.hallucinated_words.length : 0;
+  const ttft_ms = validation.telemetry?.ttft_ms !== undefined ? Number(validation.telemetry.ttft_ms).toFixed(1) : "—";
+  const tps = validation.telemetry?.decode_tps !== undefined ? Number(validation.telemetry.decode_tps).toFixed(0) : "—";
+
+  modal_element.innerHTML = `
+    <div class="radius-lg p-24 text-white shadow-lg" style="background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.35); max-width: 680px; width: 92%; max-height: 88vh; overflow-y: auto;">
+      <div class="d-flex justify-content-between align-items-center pb-12 mb-16 border-bottom-glass-subtle">
+        <div>
+          <h3 class="m-0 text-16 font-bold d-flex align-items-center gap-8">
+            <span>🎯 Whistle Audio Validator</span>
+            <span class="badge radius-4 p-2-6 text-11 font-mono" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">Line ${card_index} • Take ${take_number}</span>
+          </h3>
+          <span class="text-11 text-muted">Speaker: <strong class="text-white">${escape_html_entities(segment.speaker || "Narrator")}</strong></span>
+        </div>
+        <button class="cyber_btn btn_secondary p-4-8 text-12 text-muted" onclick="document.getElementById('whistle_validation_details_modal').remove()">✕ Close</button>
+      </div>
+
+      <div class="p-16 radius-8 mb-16 d-flex align-items-center justify-content-between" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+        <div>
+          <div class="text-11 text-muted uppercase font-bold mb-2">Alignment Match Score</div>
+          <div class="text-28 font-bold font-mono" style="color: ${status_color};">${match_pct}%</div>
+          <div class="text-11 font-bold" style="color: ${status_color};">${status_label}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-11 text-muted">Word Error Rate (WER): <strong class="text-white font-mono">${validation.word_error_rate !== undefined ? validation.word_error_rate : 0}</strong></div>
+          <div class="text-11 text-muted">Whistle Engine Latency: <strong class="text-white font-mono">${ttft_ms} ms TTFT</strong> • <strong class="text-white font-mono">${tps} tps</strong></div>
+          <div class="text-11 text-muted">Strict Pass Benchmark: <strong class="text-white">≥ 90.0%</strong></div>
+        </div>
+      </div>
+
+      <div class="mb-16">
+        <div class="text-12 font-bold mb-6 text-cyan d-flex justify-content-between">
+          <span>Alignment Word Diff:</span>
+          <span class="text-10 text-muted font-normal">
+            <span style="color: #ef4444;">■ Missing (${missing_words_count})</span> &nbsp;•&nbsp; 
+            <span style="color: #38bdf8;">■ Extra (${hallucinated_words_count})</span>
+          </span>
+        </div>
+        <div class="p-12 radius-6 text-13 line-height-1-6" style="background: #020617; border: 1px solid rgba(255,255,255,0.1); max-height: 180px; overflow-y: auto;">
+          ${diff_html}
+        </div>
+      </div>
+
+      <div class="d-flex flex-column gap-10 mb-16">
+        <div>
+          <div class="text-11 text-muted uppercase font-bold mb-4">Expected Script Dialogue:</div>
+          <div class="p-10 radius-6 text-12 text-slate-300" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);">
+            "${escape_html_entities(validation.expected_text || segment.text || '')}"
+          </div>
+        </div>
+        <div>
+          <div class="text-11 text-muted uppercase font-bold mb-4">Whistle Transcribed Speech:</div>
+          <div class="p-10 radius-6 text-12 text-slate-300 font-mono" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);">
+            "${escape_html_entities(validation.transcribed_text || '')}"
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center pt-12 border-top-glass-subtle">
+        <button class="cyber_btn btn_secondary p-6-14 text-11" onclick="play_specific_card_take(${card_index}, ${take_number})">
+          ▶ Audition Take
+        </button>
+        <div class="d-flex gap-8">
+          <button class="cyber_btn btn_secondary p-6-14 text-11" onclick="document.getElementById('whistle_validation_details_modal').remove(); handle_validate_take_with_whistle(${card_index}, ${take_number});">
+            ⚡ Re-run Validation
+          </button>
+          <button class="cyber_btn p-6-14 text-11" onclick="document.getElementById('whistle_validation_details_modal').remove()">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal_element);
+}
+
 
 async function handle_inspector_subtext_change(index, new_intent) {
   if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
@@ -2477,7 +2779,6 @@ async function handle_inspector_reattribute_line(index) {
         voice_mapping_context: active_loaded_project_state_object.voiceMapping || {},
         existing_script_segments: [segment],
         laya_endpoint_url: configuration_laya_api_url_address,
-        clm_endpoint_url: (typeof configuration_clm_api_url_address !== "undefined") ? configuration_clm_api_url_address : "http://127.0.0.1:8700",
         attribution_engine: "laya",
         confidence_threshold: 0.55
       });
@@ -3760,7 +4061,7 @@ function switch_modal_tab(target_tab_identifier) {
 }
 
 // WHAT: Registers real-time attribution progress listener when renderer loads.
-// WHY: Ensures progress events from Laya/CLM/LLM immediately update the UI.
+// WHY: Ensures progress events from Laya/LLM immediately update the UI.
 if (typeof window !== "undefined") {
   const register_attribution_listener = () => {
     if (window.audiobook_api && typeof window.audiobook_api.subscribe_to_attribution_progress === "function") {
@@ -3774,4 +4075,830 @@ if (typeof window !== "undefined") {
   } else {
     register_attribution_listener();
   }
+}
+
+// =========================================================================
+// FOUNTAIN & BEAT-STYLE SCREENPLAY SUITE CONTROLLERS
+// =========================================================================
+
+// WHAT: Exports current screenplay segments into an open-standard .fountain file.
+// WHY: Allows the user to open and proofread the script in Beat, Highland, or VS Code.
+async function trigger_export_fountain_script() {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments || active_loaded_project_state_object.scriptSegments.length === 0) {
+    alert("Please run speaker attribution first before exporting to Fountain.");
+    return;
+  }
+
+  if (typeof window === "undefined" || !window.audiobook_api || !window.audiobook_api.export_fountain_screenplay) {
+    alert("Fountain export API is unavailable in this environment.");
+    return;
+  }
+
+  try {
+    const export_result = await window.audiobook_api.export_fountain_screenplay({
+      script_segments: active_loaded_project_state_object.scriptSegments,
+      options: {
+        title: active_loaded_project_state_object.projectName || "Audiobook Screenplay",
+        author: active_loaded_project_state_object.projectAuthor || "Unknown Author",
+        source: "Antigravity Audiobook Engine"
+      },
+      save_dialog: true
+    });
+
+    if (export_result && export_result.success && export_result.file_path) {
+      alert(`Screenplay successfully exported to:\n${export_result.file_path}\n\nYou can now open this file in Beat, Highland, or any text editor.`);
+    }
+  } catch (export_error) {
+    console.error("Failed to export Fountain screenplay:", export_error);
+    alert(`Export failed: ${export_error.message}`);
+  }
+}
+
+// WHAT: Imports an external .fountain script and reconstructs screenplay segments.
+// WHY: Enables round-trip proofreading where edits made in Beat are loaded back into the engine.
+async function trigger_import_fountain_script() {
+  if (typeof window === "undefined" || !window.audiobook_api || !window.audiobook_api.import_fountain_screenplay) {
+    alert("Fountain import API is unavailable in this environment.");
+    return;
+  }
+
+  try {
+    const import_result = await window.audiobook_api.import_fountain_screenplay({
+      open_dialog: true
+    });
+
+    if (import_result && import_result.success && Array.isArray(import_result.script_segments)) {
+      if (!active_loaded_project_state_object) {
+        active_loaded_project_state_object = {
+          projectName: (import_result.title_metadata && import_result.title_metadata.title) || "Imported Fountain Script",
+          scriptSegments: [],
+          voiceMapping: {}
+        };
+      }
+
+      active_loaded_project_state_object.scriptSegments = import_result.script_segments;
+      populate_screenplay_cards_in_editor_view();
+      await trigger_project_state_disk_flush();
+
+      alert(`Successfully imported ${import_result.script_segments.length} screenplay segments from Fountain script!`);
+    }
+  } catch (import_error) {
+    console.error("Failed to import Fountain screenplay:", import_error);
+    alert(`Import failed: ${import_error.message}`);
+  }
+}
+
+// WHAT: Opens the Beat-style Screenplay Analytics modal.
+// WHY: Displays character speaking time, estimated audio runtime, casting tiers, and attribution checks.
+async function trigger_open_script_analytics_modal() {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments || active_loaded_project_state_object.scriptSegments.length === 0) {
+    alert("Please parse or attribute script segments first to view analytics.");
+    return;
+  }
+
+  const modal_element = document.getElementById("fountain_screenplay_modal");
+  const title_element = document.getElementById("fountain_modal_title");
+  const body_element = document.getElementById("fountain_modal_body_content");
+  if (!modal_element || !body_element) return;
+
+  title_element.innerHTML = `<span>📊 Beat-Style Screenplay Analytics</span>`;
+  body_element.innerHTML = `<div class="p-20 text-center text-muted">Calculating script analytics...</div>`;
+  modal_element.classList.remove("d-none");
+
+  try {
+    const analytics = await window.audiobook_api.compute_screenplay_analytics({
+      script_segments: active_loaded_project_state_object.scriptSegments,
+      voice_mapping: active_loaded_project_state_object.voiceMapping || {}
+    });
+
+    const summary = analytics.summary || {};
+    const characters = analytics.character_dialogue_distribution || [];
+    const flags = analytics.sanity_flags || [];
+
+    let html_buffer = `
+      <div class="fountain_metric_grid">
+        <div class="fountain_stat_box">
+          <span class="fountain_stat_label">Est. Audio Runtime</span>
+          <span class="fountain_stat_value text-purple">${summary.estimated_runtime_formatted || "0m 00s"}</span>
+        </div>
+        <div class="fountain_stat_box">
+          <span class="fountain_stat_label">Total Words</span>
+          <span class="fountain_stat_value">${summary.total_words_count || 0}</span>
+        </div>
+        <div class="fountain_stat_box">
+          <span class="fountain_stat_label">Dialogue Lines</span>
+          <span class="fountain_stat_value text-gold">${summary.total_dialogue_lines_count || 0}</span>
+        </div>
+        <div class="fountain_stat_box">
+          <span class="fountain_stat_label">Unique Characters</span>
+          <span class="fountain_stat_value">${summary.total_unique_characters_count || 0}</span>
+        </div>
+        <div class="fountain_stat_box">
+          <span class="fountain_stat_label">Scenes (Int / Ext)</span>
+          <span class="fountain_stat_value">${summary.interior_scenes_count || 0} / ${summary.exterior_scenes_count || 0}</span>
+        </div>
+      </div>
+    `;
+
+    // Sanity flags section
+    if (flags.length > 0) {
+      html_buffer += `
+        <div class="p-14 radius-8 border-coral" style="background: rgba(214, 121, 62, 0.12);">
+          <div class="d-flex align-items-center gap-8 mb-8 text-coral font-bold text-13">
+            <span>⚠️ Attribution Sanity Checks (${flags.length})</span>
+          </div>
+          <ul class="m-0 pl-20 text-12 line-height-1-4">
+            ${flags.map((f) => `<li class="mb-4"><strong>${f.speaker}:</strong> ${f.message}</li>`).join("")}
+          </ul>
+        </div>
+      `;
+    }
+
+    // Character breakdown table
+    html_buffer += `
+      <div>
+        <h4 class="mb-12 font-bold text-14 text-white">Speaking Distribution & Casting Recommendations</h4>
+        <div class="table_responsive_wrapper radius-8 overflow-hidden border-glass-subtle">
+          <table class="fountain_char_table">
+            <thead>
+              <tr>
+                <th>Character</th>
+                <th>Lines</th>
+                <th>Dialogue Share</th>
+                <th>Voice Mapping</th>
+                <th>Casting Tier</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${characters.map((c) => `
+                <tr>
+                  <td class="font-bold text-white">${c.speaker}</td>
+                  <td>${c.line_count} (${c.word_count} words)</td>
+                  <td>
+                    <div class="fountain_bar_track">
+                      <div class="fountain_bar_fill" style="width: ${Math.min(100, c.dialogue_line_percentage)}%;"></div>
+                    </div>
+                    <span>${c.dialogue_line_percentage}%</span>
+                  </td>
+                  <td>
+                    ${c.has_assigned_voice ? `<span class="fountain_tag_badge" style="background: rgba(124, 155, 69, 0.3); color: #7c9b45;">✓ Assigned</span>` : `<span class="fountain_tag_badge" style="background: rgba(214, 121, 62, 0.25); color: #d6793e;">Unassigned</span>`}
+                  </td>
+                  <td class="text-11 text-muted">${c.casting_tier}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    body_element.innerHTML = html_buffer;
+  } catch (error) {
+    body_element.innerHTML = `<div class="p-20 text-coral">Failed to calculate analytics: ${error.message}</div>`;
+  }
+}
+
+// WHAT: Opens the Scene Outline & Index Cards corkboard modal.
+// WHY: Displays visual index cards for each scene with character presence and relationship snapshots.
+async function trigger_open_scene_outline_modal() {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments || active_loaded_project_state_object.scriptSegments.length === 0) {
+    alert("Please parse or attribute script segments first to view scene outline cards.");
+    return;
+  }
+
+  const modal_element = document.getElementById("fountain_screenplay_modal");
+  const title_element = document.getElementById("fountain_modal_title");
+  const body_element = document.getElementById("fountain_modal_body_content");
+  if (!modal_element || !body_element) return;
+
+  title_element.innerHTML = `<span>🗂️ Scene Index Cards & Directorial Outline</span>`;
+  body_element.innerHTML = `<div class="p-20 text-center text-muted">Compiling scene index cards...</div>`;
+  modal_element.classList.remove("d-none");
+
+  try {
+    const cards = await window.audiobook_api.generate_scene_outline_cards({
+      script_segments: active_loaded_project_state_object.scriptSegments
+    });
+
+    if (!cards || cards.length === 0) {
+      body_element.innerHTML = `<div class="p-20 text-center text-muted">No scene boundaries found. Add scene headings (e.g. INT. / EXT.) to group into cards.</div>`;
+      return;
+    }
+
+    let cards_html = `
+      <div class="fountain_cards_grid">
+        ${cards.map((c) => `
+          <div class="fountain_index_card">
+            <div class="d-flex justify-content-between align-items-center">
+              <span class="fountain_tag_badge" style="background: rgba(213, 170, 43, 0.2); color: #d5aa2b;">Scene ${c.scene_number}</span>
+              <span class="text-11 text-muted">${c.estimated_runtime_formatted} (${c.word_count} words)</span>
+            </div>
+            <div class="fountain_card_slug">${c.scene_heading}</div>
+            <div class="fountain_card_synopsis">"${c.synopsis}"</div>
+            
+            <div>
+              <div class="text-10 text-muted uppercase font-bold mb-4">Cast Present:</div>
+              <div>
+                ${(c.characters_present && c.characters_present.length > 0)
+                  ? c.characters_present.map((ch) => `<span class="fountain_tag_badge">${ch}</span>`).join("")
+                  : `<span class="text-11 text-muted">Narrator only</span>`
+                }
+              </div>
+            </div>
+
+            ${(c.relationship_snapshot && Object.keys(c.relationship_snapshot).length > 0) ? `
+              <div class="pt-8 border-top-glass-subtle">
+                <div class="text-10 text-muted uppercase font-bold mb-4">Relationship Snapshot:</div>
+                <div class="text-11 text-gold">
+                  ${Object.entries(c.relationship_snapshot).map(([pair, rel]) => `
+                    <div><strong>${pair}:</strong> ${rel.relation_tone || "neutral"} (${rel.power_dynamic || "equal"})</div>
+                  `).join("")}
+                </div>
+              </div>
+            ` : ""}
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+    body_element.innerHTML = cards_html;
+  } catch (error) {
+    body_element.innerHTML = `<div class="p-20 text-coral">Failed to load index cards: ${error.message}</div>`;
+  }
+}
+
+// WHAT: Opens the Revision Diff & Cache Render Plan modal.
+// WHY: Analyzes changes between drafts and shows how many lines will be reused from audio cache.
+async function trigger_open_revision_diff_modal() {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments || active_loaded_project_state_object.scriptSegments.length === 0) {
+    alert("Please parse or attribute script segments first.");
+    return;
+  }
+
+  const modal_element = document.getElementById("fountain_screenplay_modal");
+  const title_element = document.getElementById("fountain_modal_title");
+  const body_element = document.getElementById("fountain_modal_body_content");
+  if (!modal_element || !body_element) return;
+
+  title_element.innerHTML = `<span>⚡ Revision Diff & Audio Cache Plan</span>`;
+  body_element.innerHTML = `<div class="p-20 text-center text-muted">Calculating revision diff against audio cache...</div>`;
+  modal_element.classList.remove("d-none");
+
+  try {
+    const diff_plan = await window.audiobook_api.compute_revision_diff({
+      previous_segments: active_loaded_project_state_object.scriptSegments,
+      current_segments: active_loaded_project_state_object.scriptSegments,
+      audio_cache_index: {}
+    });
+
+    const summary = diff_plan.summary || {};
+
+    let html_buffer = `
+      <div class="fountain_metric_grid">
+        <div class="fountain_stat_box">
+          <span class="fountain_stat_label">Compute Savings</span>
+          <span class="fountain_stat_value text-emerald">${summary.compute_savings_percentage || 0}%</span>
+        </div>
+        <div class="fountain_stat_box">
+          <span class="fountain_stat_label">Reusable Audio Takes</span>
+          <span class="fountain_stat_value">${summary.reusable_cached_count || 0}</span>
+        </div>
+        <div class="fountain_stat_box">
+          <span class="fountain_stat_label">Dirty Lines to Render</span>
+          <span class="fountain_stat_value text-coral">${summary.dirty_rerender_count || 0}</span>
+        </div>
+        <div class="fountain_stat_box">
+          <span class="fountain_stat_label">Total Script Lines</span>
+          <span class="fountain_stat_value">${summary.total_segments_count || 0}</span>
+        </div>
+      </div>
+
+      <div class="p-16 radius-8 bg-dark-overlay border-glass-subtle">
+        <h4 class="font-bold text-13 text-white mb-6">How Surgical Re-Rendering Works:</h4>
+        <p class="text-12 text-muted line-height-1-5 m-0">
+          Each line receives a deterministic SHA-256 fingerprint based on its speaker, delivery parenthetical, dialogue text, and voice model ID. When you modify a typo or alter an emotional delivery in Beat or the script editor, only the modified lines are re-dispatched to ComfyUI. The master chapter is re-spliced with FFmpeg in seconds instead of re-rendering the entire book!
+        </p>
+      </div>
+    `;
+
+    body_element.innerHTML = html_buffer;
+  } catch (error) {
+    body_element.innerHTML = `<div class="p-20 text-coral">Failed to compute revision diff: ${error.message}</div>`;
+  }
+}
+
+// WHAT: Closes the Screenplay Suite modal dialog.
+function close_fountain_screenplay_modal() {
+  const modal_element = document.getElementById("fountain_screenplay_modal");
+  if (modal_element) {
+    modal_element.classList.add("d-none");
+  }
+}
+
+// WHAT: Handles backdrop click to dismiss modal.
+function handle_fountain_modal_backdrop_click(click_event) {
+  if (click_event.target && click_event.target.id === "fountain_screenplay_modal") {
+    close_fountain_screenplay_modal();
+  }
+}
+
+// =========================================================================
+// SCRIPT UNDO / REDO HISTORY STACK
+// =========================================================================
+
+let script_undo_history_stack = [];
+let script_redo_history_stack = [];
+const MAX_UNDO_STACK_SIZE = 40;
+
+// WHAT: Records a deep snapshot of scriptSegments before mutating operations.
+// WHY: Gives the user instantaneous undo/redo recovery for accidental edits or attribution mistakes.
+function push_undo_history_snapshot(action_label = "Script Edit") {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  script_undo_history_stack.push({
+    label: action_label,
+    snapshot: JSON.parse(JSON.stringify(active_loaded_project_state_object.scriptSegments))
+  });
+  if (script_undo_history_stack.length > MAX_UNDO_STACK_SIZE) {
+    script_undo_history_stack.shift();
+  }
+  script_redo_history_stack = [];
+}
+
+function undo_last_script_change() {
+  if (script_undo_history_stack.length === 0 || !active_loaded_project_state_object) return;
+  const previous_state = script_undo_history_stack.pop();
+  script_redo_history_stack.push({
+    label: previous_state.label,
+    snapshot: JSON.parse(JSON.stringify(active_loaded_project_state_object.scriptSegments))
+  });
+  active_loaded_project_state_object.scriptSegments = previous_state.snapshot;
+  populate_screenplay_cards_in_editor_view();
+  trigger_project_state_disk_flush();
+}
+
+function redo_last_script_change() {
+  if (script_redo_history_stack.length === 0 || !active_loaded_project_state_object) return;
+  const next_state = script_redo_history_stack.pop();
+  script_undo_history_stack.push({
+    label: next_state.label,
+    snapshot: JSON.parse(JSON.stringify(active_loaded_project_state_object.scriptSegments))
+  });
+  active_loaded_project_state_object.scriptSegments = next_state.snapshot;
+  populate_screenplay_cards_in_editor_view();
+  trigger_project_state_disk_flush();
+}
+
+// =========================================================================
+// TRIAGE SYSTEM (REVIEW ONLY WHAT MATTERS)
+// =========================================================================
+
+// WHAT: Evaluates whether a screenplay line needs director attention.
+// WHY: Highlights low-confidence attributions (<0.70), unknown speakers, or manual review flags.
+function is_segment_doubtful(segment) {
+  if (!segment) return false;
+  if (segment.is_flagged) return true;
+  if (typeof segment.confidence === "number" && segment.confidence < 0.70) return true;
+  if (!segment.speaker || segment.speaker.toLowerCase() === "unknown" || segment.speaker.toLowerCase() === "character") return true;
+  return false;
+}
+
+// WHAT: Updates the header badge counter showing doubtful lines remaining in the chapter.
+function update_triage_doubt_counter() {
+  const counter_label = document.getElementById("label_triage_doubt_counter");
+  if (!counter_label || !active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segments = active_loaded_project_state_object.scriptSegments;
+  const count = segments.filter(is_segment_doubtful).length;
+  counter_label.textContent = count > 0 ? `${count} Doubt${count > 1 ? 's' : ''}` : "0 Doubts";
+}
+
+// WHAT: Automatically jumps and scrolls directly to the next or previous doubtful line.
+// WHY: Eliminates manual scrolling across hundreds of cards by jumping straight to potential errors.
+function jump_to_next_uncertain_line(step = 1) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segments = active_loaded_project_state_object.scriptSegments;
+  if (segments.length === 0) return;
+
+  const current_idx = active_inspected_segment_index >= 0 ? active_inspected_segment_index : 0;
+  let target_index = -1;
+
+  for (let offset = 1; offset <= segments.length; offset++) {
+    const candidate_index = (current_idx + (offset * step) + segments.length * 10) % segments.length;
+    if (is_segment_doubtful(segments[candidate_index])) {
+      target_index = candidate_index;
+      break;
+    }
+  }
+
+  if (target_index !== -1) {
+    select_and_inspect_segment(target_index);
+    const card_element = document.getElementById(`screenplay_card_node_${target_index}`);
+    if (card_element) {
+      card_element.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  } else {
+    alert("✓ All lines are confident! No uncertain lines or review flags found.");
+  }
+}
+
+// WHAT: Toggles director review flag (🚩) on a specific line.
+// WHY: Lets the user flag lines on the fly during listening or editing.
+function toggle_segment_flag(segment_index) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const seg = active_loaded_project_state_object.scriptSegments[segment_index];
+  if (!seg) return;
+  push_undo_history_snapshot("Toggle Review Flag");
+  seg.is_flagged = !seg.is_flagged;
+  populate_screenplay_cards_in_editor_view();
+  trigger_project_state_disk_flush();
+}
+
+// =========================================================================
+// CONFIDENCE HEATMAP MINIMAP
+// =========================================================================
+
+// WHAT: Generates a vertical color-coded rail reflecting all line confidences.
+// WHY: Provides instant bird's-eye visibility of entire chapter health; clicking jumps instantly.
+function render_screenplay_confidence_minimap() {
+  const minimap_container = document.getElementById("screenplay_confidence_minimap");
+  if (!minimap_container || !active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+
+  const segments = active_loaded_project_state_object.scriptSegments;
+  minimap_container.innerHTML = "";
+  if (segments.length === 0) return;
+
+  const fragment = document.createDocumentFragment();
+  for (let idx = 0; idx < segments.length; idx++) {
+    const seg = segments[idx];
+    const pip = document.createElement("div");
+    pip.className = "minimap_pip";
+
+    if (is_segment_doubtful(seg)) {
+      pip.classList.add("minimap_pip_red");
+    } else if (typeof seg.confidence === "number" && seg.confidence < 0.85) {
+      pip.classList.add("minimap_pip_yellow");
+    } else {
+      pip.classList.add("minimap_pip_green");
+    }
+
+    pip.title = `Line ${idx} • ${seg.speaker || 'Narrator'}${typeof seg.confidence === 'number' ? ` (${Math.round(seg.confidence * 100)}%)` : ''}${seg.is_flagged ? ' [🚩 Flagged]' : ''}`;
+    pip.onclick = () => {
+      select_and_inspect_segment(idx);
+      const card = document.getElementById(`screenplay_card_node_${idx}`);
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    fragment.appendChild(pip);
+  }
+  minimap_container.appendChild(fragment);
+}
+
+// =========================================================================
+// CONTINUOUS AUDITION ENGINE (LISTEN & TOUCH-UP FLOW)
+// =========================================================================
+
+let is_continuous_playback_running = false;
+let continuous_playback_current_index = 0;
+let continuous_playback_timeout_id = null;
+
+// WHAT: Toggles continuous sequential playback of chapter audio takes.
+function toggle_continuous_audio_playback() {
+  if (is_continuous_playback_running) {
+    stop_continuous_audio_playback();
+  } else {
+    start_continuous_audio_playback(active_inspected_segment_index >= 0 ? active_inspected_segment_index : 0);
+  }
+}
+
+// WHAT: Halts continuous playback and restores button state.
+function stop_continuous_audio_playback() {
+  is_continuous_playback_running = false;
+  if (continuous_playback_timeout_id) {
+    clearTimeout(continuous_playback_timeout_id);
+    continuous_playback_timeout_id = null;
+  }
+  const btn = document.getElementById("btn_continuous_playback_toggle");
+  if (btn) btn.innerHTML = "▶️ Play Continuous";
+  const player = document.getElementById("individual_clip_audio_player");
+  if (player) player.pause();
+  document.querySelectorAll(".active_continuous_playing").forEach(el => el.classList.remove("active_continuous_playing"));
+}
+
+// WHAT: Initiates sequential playback starting from a specific segment index.
+function start_continuous_audio_playback(start_index = 0) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const segments = active_loaded_project_state_object.scriptSegments;
+  if (segments.length === 0) return;
+
+  is_continuous_playback_running = true;
+  continuous_playback_current_index = Math.max(0, Math.min(segments.length - 1, start_index));
+
+  const btn = document.getElementById("btn_continuous_playback_toggle");
+  if (btn) btn.innerHTML = "⏸️ Pause Continuous";
+
+  play_continuous_step();
+}
+
+function play_continuous_step() {
+  if (!is_continuous_playback_running || !active_loaded_project_state_object) return;
+  const segments = active_loaded_project_state_object.scriptSegments;
+  if (continuous_playback_current_index >= segments.length) {
+    stop_continuous_audio_playback();
+    alert("Completed continuous playback of chapter!");
+    return;
+  }
+
+  const idx = continuous_playback_current_index;
+  const seg = segments[idx];
+
+  // Highlight active card with pulsing glow and scroll into center
+  select_and_inspect_segment(idx);
+  const card = document.getElementById(`screenplay_card_node_${idx}`);
+  if (card) {
+    document.querySelectorAll(".active_continuous_playing").forEach(el => el.classList.remove("active_continuous_playing"));
+    card.classList.add("active_continuous_playing");
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  const audio_path = seg.audioPath || (seg.audioVersions && seg.audioVersions.find(v => v.isActive)?.audioPath);
+  const player = document.getElementById("individual_clip_audio_player");
+
+  if (audio_path && player) {
+    player.src = audio_path.startsWith("peaksaudio://") || audio_path.startsWith("http") ? audio_path : `peaksaudio://${audio_path}`;
+    player.onended = () => {
+      if (!is_continuous_playback_running) return;
+      const pause_gap = seg.post_pause_ms || 450;
+      continuous_playback_timeout_id = setTimeout(() => {
+        continuous_playback_current_index++;
+        play_continuous_step();
+      }, pause_gap);
+    };
+    player.onerror = () => {
+      continuous_playback_current_index++;
+      play_continuous_step();
+    };
+    player.play().catch(() => {
+      continuous_playback_current_index++;
+      play_continuous_step();
+    });
+  } else {
+    // If line has no synthesized take, simulate reading duration (150 wpm) then advance
+    const words = (seg.text || "").split(/\s+/).filter(Boolean).length;
+    const duration_ms = Math.max(1200, Math.round((words / 150) * 60 * 1000));
+    continuous_playback_timeout_id = setTimeout(() => {
+      continuous_playback_current_index++;
+      play_continuous_step();
+    }, duration_ms);
+  }
+}
+
+// =========================================================================
+// BATCH SPEAKER REASSIGNMENT (FIND & REPLACE SPEAKER)
+// =========================================================================
+
+function open_batch_speaker_reassign_modal(default_source) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const modal = document.getElementById("batch_reassign_modal");
+  const source_select = document.getElementById("select_batch_source_speaker");
+  const target_select = document.getElementById("select_batch_target_speaker");
+  if (!modal || !source_select || !target_select) return;
+
+  const characters_set = new Set(["Narrator"]);
+  active_loaded_project_state_object.scriptSegments.forEach(s => {
+    if (s.speaker) characters_set.add(s.speaker);
+  });
+  if (active_loaded_project_state_object.voiceMapping) {
+    Object.keys(active_loaded_project_state_object.voiceMapping).forEach(c => characters_set.add(c));
+  }
+
+  const char_list = Array.from(characters_set).sort();
+  source_select.innerHTML = char_list.map(c => `<option value="${c}" ${c === default_source ? 'selected' : ''}>${c}</option>`).join("");
+  target_select.innerHTML = char_list.map(c => `<option value="${c}">${c}</option>`).join("");
+
+  update_batch_reassign_affected_count();
+  source_select.onchange = update_batch_reassign_affected_count;
+
+  modal.classList.remove("d-none");
+}
+
+function update_batch_reassign_affected_count() {
+  const source_select = document.getElementById("select_batch_source_speaker");
+  const label = document.getElementById("batch_reassign_affected_count_label");
+  if (!source_select || !label || !active_loaded_project_state_object) return;
+  const src = source_select.value;
+  const count = active_loaded_project_state_object.scriptSegments.filter(s => s.speaker === src).length;
+  label.textContent = `${count} line${count !== 1 ? 's' : ''} will be updated`;
+}
+
+function close_batch_speaker_reassign_modal() {
+  const modal = document.getElementById("batch_reassign_modal");
+  if (modal) modal.classList.add("d-none");
+}
+
+async function execute_batch_speaker_reassignment() {
+  const source_select = document.getElementById("select_batch_source_speaker");
+  const target_select = document.getElementById("select_batch_target_speaker");
+  if (!source_select || !target_select || !active_loaded_project_state_object) return;
+
+  const src = source_select.value;
+  const dst = target_select.value;
+  if (src === dst) {
+    alert("Source and target speaker cannot be the same.");
+    return;
+  }
+
+  push_undo_history_snapshot(`Reassign ${src} -> ${dst}`);
+  let count = 0;
+  active_loaded_project_state_object.scriptSegments.forEach(s => {
+    if (s.speaker === src) {
+      s.speaker = dst;
+      s.is_user_locked = true;
+      count++;
+    }
+  });
+
+  close_batch_speaker_reassign_modal();
+  populate_screenplay_cards_in_editor_view();
+  await trigger_project_state_disk_flush();
+  alert(`Successfully reassigned ${count} lines from "${src}" to "${dst}"!`);
+}
+
+// =========================================================================
+// DIRECTORIAL QUICK-PALETTE CHIPS & AUTO-CASTING
+// =========================================================================
+
+// WHAT: Applies a delivery parenthetical preset to the active segment.
+// WHY: 1-click emotional tagging without repeatedly typing directions.
+function apply_quick_direction_chip(segment_index, direction_text) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const seg = active_loaded_project_state_object.scriptSegments[segment_index];
+  if (!seg) return;
+
+  push_undo_history_snapshot(`Set direction: ${direction_text}`);
+  seg.direction = direction_text;
+  if (!seg.qwen_style) seg.qwen_style = {};
+  seg.qwen_style.rich_emotion = direction_text;
+
+  populate_screenplay_cards_in_editor_view();
+  trigger_project_state_disk_flush();
+}
+
+// WHAT: Auto-assigns baseline voice configurations to all unmapped characters.
+// WHY: Saves the user from manually configuring voice models for dozens of minor characters.
+async function auto_cast_suggested_voices() {
+  if (!active_loaded_project_state_object) return;
+  if (!active_loaded_project_state_object.voiceMapping) active_loaded_project_state_object.voiceMapping = {};
+
+  const mapping = active_loaded_project_state_object.voiceMapping;
+  const characters = new Set();
+  (active_loaded_project_state_object.scriptSegments || []).forEach(s => {
+    if (s.speaker && s.speaker !== "Narrator") characters.add(s.speaker);
+  });
+
+  let assigned_count = 0;
+  for (const char_name of characters) {
+    if (!mapping[char_name] || !mapping[char_name].model) {
+      mapping[char_name] = {
+        model: "F5-TTS_Base",
+        gender: "auto",
+        seed: Math.floor(Math.random() * 999999),
+        speed: 1.0,
+        pitch: 0
+      };
+      assigned_count++;
+    }
+  }
+
+  await trigger_project_state_disk_flush();
+  alert(`Auto-cast complete! Configured voice models for ${assigned_count} unmapped character(s).`);
+}
+
+// WHAT: Prompts the user to split a segment line into two cards.
+function trigger_split_segment_prompt(segment_index) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) return;
+  const seg = active_loaded_project_state_object.scriptSegments[segment_index];
+  if (!seg) return;
+
+  const current_text = seg.text || "";
+  const midpoint = Math.floor(current_text.length / 2);
+  const split_prompt = prompt("Enter split point (or edit both halves separated by '||'):", `${current_text.substring(0, midpoint)} || ${current_text.substring(midpoint)}`);
+  if (!split_prompt || !split_prompt.includes("||")) return;
+
+  const [first_half, second_half] = split_prompt.split("||").map(s => s.trim());
+  if (!first_half || !second_half) return;
+
+  push_undo_history_snapshot("Split Segment");
+  seg.text = first_half;
+
+  const new_seg = JSON.parse(JSON.stringify(seg));
+  new_seg.id = `seg_${Date.now()}`;
+  new_seg.text = second_half;
+  delete new_seg.audioPath;
+  delete new_seg.audioVersions;
+
+  active_loaded_project_state_object.scriptSegments.splice(segment_index + 1, 0, new_seg);
+  populate_screenplay_cards_in_editor_view();
+  trigger_project_state_disk_flush();
+}
+
+// =========================================================================
+// SCREENWRITER-STYLE GLOBAL KEYBOARD SHORTCUTS
+// =========================================================================
+
+if (typeof document !== "undefined") {
+  document.addEventListener("keydown", (event) => {
+    const active_tag = (document.activeElement && document.activeElement.tagName) || "";
+    const is_in_text_field = active_tag === "INPUT" || active_tag === "TEXTAREA" || (document.activeElement && document.activeElement.isContentEditable);
+
+    // Ctrl+Z Undo & Ctrl+Y Redo
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      if (event.shiftKey) {
+        event.preventDefault();
+        redo_last_script_change();
+      } else {
+        event.preventDefault();
+        undo_last_script_change();
+      }
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
+      event.preventDefault();
+      redo_last_script_change();
+      return;
+    }
+
+    // Ctrl+Down / F8 (Jump Next Doubt)
+    if (event.key === "F8" || ((event.ctrlKey || event.metaKey) && event.key === "ArrowDown")) {
+      event.preventDefault();
+      jump_to_next_uncertain_line(event.shiftKey ? -1 : 1);
+      return;
+    }
+
+    // When NOT actively editing inside an input field:
+    if (!is_in_text_field) {
+      // Space: Play / Pause active clip
+      if (event.code === "Space") {
+        event.preventDefault();
+        if (is_continuous_playback_running) {
+          toggle_continuous_audio_playback();
+        } else if (active_inspected_segment_index >= 0) {
+          play_individual_line_clip(active_inspected_segment_index);
+        }
+        return;
+      }
+
+      // F key: Toggle Review Flag
+      if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        if (active_inspected_segment_index >= 0) {
+          toggle_segment_flag(active_inspected_segment_index);
+        }
+        return;
+      }
+
+      // Tab / Shift+Tab: Navigate cards
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const step = event.shiftKey ? -1 : 1;
+        const total = (active_loaded_project_state_object && active_loaded_project_state_object.scriptSegments.length) || 1;
+        const next_idx = ((active_inspected_segment_index >= 0 ? active_inspected_segment_index : 0) + step + total) % total;
+        select_and_inspect_segment(next_idx);
+        const card = document.getElementById(`screenplay_card_node_${next_idx}`);
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
+      // 1, 2, 3: Take selection
+      if (["1", "2", "3"].includes(event.key)) {
+        const take_num = parseInt(event.key, 10);
+        if (active_inspected_segment_index >= 0) {
+          handle_card_take_change_event(active_inspected_segment_index, take_num, false);
+        }
+      }
+    }
+  });
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    is_segment_doubtful,
+    update_triage_doubt_counter,
+    jump_to_next_uncertain_line,
+    toggle_segment_flag,
+    render_screenplay_confidence_minimap,
+    toggle_continuous_audio_playback,
+    start_continuous_audio_playback,
+    stop_continuous_audio_playback,
+    open_batch_speaker_reassign_modal,
+    close_batch_speaker_reassign_modal,
+    execute_batch_speaker_reassignment,
+    apply_quick_direction_chip,
+    auto_cast_suggested_voices,
+    trigger_split_segment_prompt,
+    push_undo_history_snapshot,
+    undo_last_script_change,
+    redo_last_script_change,
+    select_and_inspect_segment,
+    populate_screenplay_cards_in_editor_view,
+    get_active_inspected_segment_index,
+    set_active_inspected_segment_index
+  };
 }

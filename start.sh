@@ -39,21 +39,18 @@ CONFIG_FILE="$PROJECT_ROOT_DIR/config.json"
 COMFYUI_URL="http://127.0.0.1:8188"
 LLAMA_URL="http://127.0.0.1:8081"
 LAYA_URL="http://127.0.0.1:8765"
-CLM_URL="http://127.0.0.1:8700"
 
 if [ -f "$CONFIG_FILE" ]; then
     echo "[INFO] Reading configuration from config.json"
     COMFYUI_URL=$(node -e "try { const c = require('./config.json'); console.log(c.comfyui_url || '$COMFYUI_URL'); } catch { console.log('$COMFYUI_URL'); }")
     LLAMA_URL=$(node -e "try { const c = require('./config.json'); console.log(c.llama_url || '$LLAMA_URL'); } catch { console.log('$LLAMA_URL'); }")
     LAYA_URL=$(node -e "try { const c = require('./config.json'); console.log(c.laya_url || '$LAYA_URL'); } catch { console.log('$LAYA_URL'); }")
-    CLM_URL=$(node -e "try { const c = require('./config.json'); console.log(c.clm_url || '$CLM_URL'); } catch { console.log('$CLM_URL'); }")
 fi
 
 # Override with environment variables if set
 COMFYUI_URL="${COMFYUI_URL:-$COMFYUI_URL}"
 LLAMA_URL="${LLAMA_URL:-$LLAMA_URL}"
 LAYA_URL="${LAYA_URL:-$LAYA_URL}"
-CLM_URL="${CLM_URL:-$CLM_URL}"
 
 # 4. Probe AI Endpoints
 check_endpoint() {
@@ -71,7 +68,6 @@ check_endpoint() {
 check_endpoint "ComfyUI" "${COMFYUI_URL%/}/system_stats" || true
 check_endpoint "llama.cpp" "${LLAMA_URL%/}/v1/models" || true
 check_endpoint "Laya" "${LAYA_URL%/}/health" || true
-check_endpoint "CLM" "${CLM_URL%/}/health" || true
 
 echo ""
 

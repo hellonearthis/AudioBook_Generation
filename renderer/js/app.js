@@ -14,9 +14,8 @@ let active_loaded_project_state_object = (typeof window !== "undefined" && windo
 //      guarantees the TCP handshake always hits the correct network stack.
 let configuration_lm_studio_api_url_address = (typeof window !== "undefined" && window.configuration_lm_studio_api_url_address) || "http://127.0.0.1:8081/v1/chat/completions";
 let configuration_laya_api_url_address = (typeof window !== "undefined" && window.configuration_laya_api_url_address) || "http://127.0.0.1:8765";
-let configuration_clm_api_url_address = (typeof window !== "undefined" && window.configuration_clm_api_url_address) || "http://127.0.0.1:8700";
 let configuration_comfyui_api_url_address = (typeof window !== "undefined" && window.configuration_comfyui_api_url_address) || "http://127.0.0.1:8188";
-let configuration_attribution_engine = (typeof window !== "undefined" && window.configuration_attribution_engine) || "laya"; // "laya" | "clm" | "cascade" | "hybrid" | "llm"
+let configuration_attribution_engine = (typeof window !== "undefined" && window.configuration_attribution_engine) || "laya"; // "laya" | "hybrid" | "llm"
 let configuration_unmarked_dialogue = (typeof window !== "undefined" && typeof window.configuration_unmarked_dialogue === "boolean") ? window.configuration_unmarked_dialogue : false;
 
 if (typeof window !== "undefined") {
@@ -24,7 +23,6 @@ if (typeof window !== "undefined") {
   window.active_loaded_project_state_object = active_loaded_project_state_object;
   window.configuration_lm_studio_api_url_address = configuration_lm_studio_api_url_address;
   window.configuration_laya_api_url_address = configuration_laya_api_url_address;
-  window.configuration_clm_api_url_address = configuration_clm_api_url_address;
   window.configuration_comfyui_api_url_address = configuration_comfyui_api_url_address;
   window.configuration_attribution_engine = configuration_attribution_engine;
   window.configuration_unmarked_dialogue = configuration_unmarked_dialogue;
@@ -116,10 +114,6 @@ window.addEventListener("DOMContentLoaded", () => {
   if (cached_laya_endpoint) {
     cached_laya_endpoint = cached_laya_endpoint.replace(/^(https?:\/\/)localhost/i, "$1127.0.0.1");
   }
-  let cached_clm_endpoint = localStorage.getItem("setting_clm_url");
-  if (cached_clm_endpoint) {
-    cached_clm_endpoint = cached_clm_endpoint.replace(/^(https?:\/\/)localhost/i, "$1127.0.0.1");
-  }
   if (cached_comfyui_endpoint) {
     cached_comfyui_endpoint = cached_comfyui_endpoint.replace(/^(https?:\/\/)localhost/i, "$1127.0.0.1");
   }
@@ -129,9 +123,6 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   if (cached_laya_endpoint && document.getElementById("settings_laya_endpoint_input")) {
     document.getElementById("settings_laya_endpoint_input").value = cached_laya_endpoint;
-  }
-  if (cached_clm_endpoint && document.getElementById("settings_clm_endpoint_input")) {
-    document.getElementById("settings_clm_endpoint_input").value = cached_clm_endpoint;
   }
   if (cached_comfyui_endpoint) {
     document.getElementById("settings_comfyui_endpoint_input").value = cached_comfyui_endpoint;
@@ -194,8 +185,6 @@ function save_global_configurations() {
   const comfyui_raw_address_value = document.getElementById("settings_comfyui_endpoint_input").value.trim();
   const laya_input_el = document.getElementById("settings_laya_endpoint_input");
   const laya_raw_address_value = laya_input_el ? laya_input_el.value.trim() : "http://127.0.0.1:8765";
-  const clm_input_el = document.getElementById("settings_clm_endpoint_input");
-  const clm_raw_address_value = clm_input_el ? clm_input_el.value.trim() : "http://127.0.0.1:8700";
   const engine_selector_el = document.getElementById("attribution_engine_selector");
   const selected_engine = engine_selector_el ? engine_selector_el.value : "laya";
   const unmarked_toggle_el = document.getElementById("unmarked_dialogue_toggle");
@@ -217,17 +206,12 @@ function save_global_configurations() {
     /^(https?:\/\/)localhost/i,
     "$1127.0.0.1"
   );
-  const normalized_clm_address = clm_raw_address_value.replace(
-    /^(https?:\/\/)localhost/i,
-    "$1127.0.0.1"
-  );
 
   // WHAT: Transforming raw inputs to clean endpoints.
   // WHY: Standardizes URL paths for our node HTTP requests.
   configuration_lm_studio_api_url_address = `${normalized_lm_studio_address}/chat/completions`;
   configuration_comfyui_api_url_address = normalized_comfyui_address;
   configuration_laya_api_url_address = normalized_laya_address;
-  configuration_clm_api_url_address = normalized_clm_address;
   configuration_attribution_engine = selected_engine;
   configuration_unmarked_dialogue = is_unmarked_active;
 
@@ -235,7 +219,6 @@ function save_global_configurations() {
     window.configuration_lm_studio_api_url_address = configuration_lm_studio_api_url_address;
     window.configuration_comfyui_api_url_address = configuration_comfyui_api_url_address;
     window.configuration_laya_api_url_address = configuration_laya_api_url_address;
-    window.configuration_clm_api_url_address = configuration_clm_api_url_address;
     window.configuration_attribution_engine = configuration_attribution_engine;
     window.configuration_unmarked_dialogue = configuration_unmarked_dialogue;
   }
@@ -245,7 +228,6 @@ function save_global_configurations() {
   localStorage.setItem("setting_lm_studio_url", normalized_lm_studio_address);
   localStorage.setItem("setting_comfyui_url", normalized_comfyui_address);
   localStorage.setItem("setting_laya_url", normalized_laya_address);
-  localStorage.setItem("setting_clm_url", normalized_clm_address);
   localStorage.setItem("setting_attribution_engine", selected_engine);
   localStorage.setItem("setting_unmarked_dialogue", is_unmarked_active ? "true" : "false");
 }
@@ -259,9 +241,6 @@ function open_service_web_ui(service_name) {
     target_url = raw_val.replace(/\/v1.*$/, "").replace(/\/chat.*$/, "");
   } else if (service_name === "laya") {
     const raw_val = (document.getElementById("settings_laya_endpoint_input")?.value || "http://127.0.0.1:8765").trim();
-    target_url = `${raw_val.replace(/\/+$/, "")}/docs`;
-  } else if (service_name === "clm") {
-    const raw_val = (document.getElementById("settings_clm_endpoint_input")?.value || "http://127.0.0.1:8700").trim();
     target_url = `${raw_val.replace(/\/+$/, "")}/docs`;
   } else if (service_name === "comfyui") {
     const raw_val = (document.getElementById("settings_comfyui_endpoint_input")?.value || "http://127.0.0.1:8188").trim();
@@ -723,8 +702,115 @@ function initialize_universal_custom_tooltip_engine() {
 if (typeof window !== "undefined") {
   window.initialize_universal_custom_tooltip_engine = initialize_universal_custom_tooltip_engine;
 }
+
+// =========================================================================
+// SMART MANUSCRIPT SANITIZER, CHAPTER DETECTOR & DRAG-AND-DROP INGESTION
+// =========================================================================
+
+let detected_manuscript_chapters_cache = [];
+
+// WHAT: Runs smart text sanitization on raw book manuscript.
+// WHY: Normalizes curly quotes, em-dashes, soft line breaks, and strips footnote markers.
+async function trigger_smart_text_sanitize() {
+  const raw_textarea = document.getElementById("raw_source_book_textarea_editor") ||
+                       document.getElementById("input_new_project_text_contents");
+  if (!raw_textarea) return;
+
+  const original_text = raw_textarea.value || "";
+  if (!original_text.trim()) {
+    alert("Please paste or load book text before running sanitization.");
+    return;
+  }
+
+  let sanitized_text = original_text;
+  if (window.audiobook_api && window.audiobook_api.sanitize_manuscript_text) {
+    sanitized_text = window.audiobook_api.sanitize_manuscript_text(original_text);
+  } else {
+    // Client-side fallback if API unavailable
+    sanitized_text = original_text
+      .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
+      .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+      .replace(/--{1,3}/g, "—")
+      .replace(/\[\s*(?:\d+|note\s*\d+)\s*\]/gi, "")
+      .replace(/([^\n.!?":;—…])\n([a-z0-9"'])/gi, "$1 $2");
+  }
+
+  raw_textarea.value = sanitized_text;
+
+  // Detect chapters and populate chapter switcher
+  if (window.audiobook_api && window.audiobook_api.detect_manuscript_chapters) {
+    detected_manuscript_chapters_cache = window.audiobook_api.detect_manuscript_chapters(sanitized_text);
+    const chapter_select = document.getElementById("raw_manuscript_chapter_selector");
+    if (chapter_select && detected_manuscript_chapters_cache.length > 0) {
+      chapter_select.innerHTML = `<option value="all">📖 Full Manuscript (${detected_manuscript_chapters_cache.length} Chapters)</option>` +
+        detected_manuscript_chapters_cache.map((chap, idx) => `<option value="${idx}">${chap.title} (${chap.word_count} words)</option>`).join("");
+    }
+  }
+
+  // Trigger auto-save of cleaned text if project active
+  if (typeof trigger_project_about_details_save === "function") {
+    trigger_project_about_details_save();
+  }
+
+  alert("Smart Sanitization Complete!\n• Curled quotes normalized\n• Em-dashes cleaned\n• Soft line wraps merged\n• Footnotes stripped");
+}
+
+// WHAT: Handles chapter switcher selection change to focus on a single chapter.
+function handle_manuscript_chapter_selection_change() {
+  const chapter_select = document.getElementById("raw_manuscript_chapter_selector");
+  const raw_textarea = document.getElementById("raw_source_book_textarea_editor");
+  if (!chapter_select || !raw_textarea || detected_manuscript_chapters_cache.length === 0) return;
+
+  const selected_value = chapter_select.value;
+  if (selected_value === "all") {
+    raw_textarea.value = detected_manuscript_chapters_cache.map((c) => c.text).join("\n\n");
+  } else {
+    const chapter_idx = parseInt(selected_value, 10);
+    if (detected_manuscript_chapters_cache[chapter_idx]) {
+      raw_textarea.value = detected_manuscript_chapters_cache[chapter_idx].text;
+    }
+  }
+}
+
+// WHAT: Global drag-and-drop file ingestion listener.
+// WHY: Allows dragging .txt, .fountain, .md, .epub files directly into the app window.
+if (typeof document !== "undefined") {
+  document.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  });
+
+  document.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const files = event.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const reader = new FileReader();
+
+    reader.onload = (file_read_event) => {
+      const text_content = file_read_event.target.result;
+      const target_textarea = document.getElementById("raw_source_book_textarea_editor") ||
+                              document.getElementById("input_new_project_text_contents");
+
+      if (target_textarea) {
+        target_textarea.value = text_content;
+        const project_title_field = document.getElementById("input_new_project_title_name");
+        if (project_title_field && !project_title_field.value) {
+          project_title_field.value = file.name.replace(/\.[^/.]+$/, "");
+        }
+        trigger_smart_text_sanitize();
+      }
+    };
+
+    reader.readAsText(file);
+  });
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    initialize_universal_custom_tooltip_engine
+    initialize_universal_custom_tooltip_engine,
+    trigger_smart_text_sanitize,
+    handle_manuscript_chapter_selection_change
   };
 }

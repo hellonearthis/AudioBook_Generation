@@ -1,8 +1,8 @@
 // =========================================================================
-// LAYA & CLM DECISION ENGINES AND QC CALIBRATION SERVICE
+// LAYA DECISION ENGINE AND QC CALIBRATION SERVICE
 // =========================================================================
-// WHAT: Handles sub-25ms ModernBERT dialogue attribution (Laya), contrastive attribution (CLM-8B),
-//       cascade escalation, and empirical QC calibration tracking (Gate 2 & 3).
+// WHAT: Handles sub-25ms ModernBERT dialogue attribution (Laya on Intel AI Boost NPU),
+//       hybrid attribution fallback, and empirical QC calibration tracking (Gate 2 & 3).
 // WHY: Decouples fast non-autoregressive classification and calibration logging from LLM parsing.
 
 const path_library = require("path");
@@ -14,7 +14,6 @@ const {
   normalize_localhost_url_to_ipv4_address,
   release_comfyui_vram,
   ensure_laya_ready,
-  ensure_clm_ready,
   probe_service_health
 } = require("./service_health_service");
 const {
@@ -23,6 +22,7 @@ const {
   UNKNOWN_SPEAKER_IDENTIFIER
 } = require("./speaker_attribution");
 const { map_emotion_to_auk08_palette } = require("./relationship_state_service");
+const { get_resolved_configuration } = require("./config_service");
 
 const laya_qc_pipeline_instance = new LayaQCPipeline();
 
@@ -35,21 +35,8 @@ function resolve_laya_decide_url(base_url) {
   return clean;
 }
 
-// WHAT: Resolves clean /v1/systemone path for CLM server.
-function resolve_clm_systemone_url(base_url) {
-  let clean = (base_url || "http://127.0.0.1:8700").trim().replace(/\/+$/, "");
-  if (!clean.endsWith("/v1/systemone")) {
-    if (clean.endsWith("/v1")) {
-      clean = `${clean}/systemone`;
-    } else {
-      clean = `${clean}/v1/systemone`;
-    }
-  }
-  return clean;
-}
-
-// WHAT: Local helper to dispatch POST requests to Laya or CLM.
-// WHY: Centralizes HTTP communication to local decision engine servers with timeout guards and JSON parsing.
+// WHAT: Local helper to dispatch POST requests to Laya.
+// WHY: Centralizes HTTP communication to local decision engine server with timeout guards and JSON parsing.
 function dispatch_fast_json_post(target_endpoint_url_string, request_payload_object) {
   return new Promise((resolve_json_post, reject_json_post) => {
     try {
@@ -205,6 +192,7 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
                 online: native_response.statusCode === 200,
                 statusCode: native_response.statusCode,
                 device: parsed_body.device || "unknown",
+                npu_attached: Boolean(parsed_body.npu_attached),
                 loaded_models: parsed_body.loaded_models || []
               });
             } catch {
@@ -227,54 +215,11 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
     });
   });
 
-  // WHAT: Checks health status of the local CLM Decision Engine (FastAPI on port 8700).
-  // WHY: Verifies CLM-8B is running and ready for contrastive attribution.
-  ipcMain.handle("ai:clm-status", async (ipc_event_context, request_arguments) => {
-    const clm_endpoint_url = (request_arguments && request_arguments.clm_endpoint_url) || "http://127.0.0.1:8700";
-    return new Promise((resolve_callback_function) => {
-      try {
-        const ipv4_safe_url = normalize_localhost_url_to_ipv4_address(clm_endpoint_url);
-        const parsed_url = new URL(ipv4_safe_url);
-        const health_path = parsed_url.pathname.endsWith("/") ? `${parsed_url.pathname}health` : `${parsed_url.pathname}/health`;
-
-        const health_request = http_client_library.get({
-          hostname: parsed_url.hostname,
-          port: parsed_url.port || 8700,
-          path: health_path,
-          timeout: 2000,
-          headers: { "Accept": "application/json" }
-        }, (native_response) => {
-          let accumulated_health_response_data = "";
-          native_response.on("data", (data_chunk_buffer) => {
-            accumulated_health_response_data += data_chunk_buffer;
-          });
-          native_response.on("end", () => {
-            try {
-              const parsed_body = JSON.parse(accumulated_health_response_data);
-              resolve_callback_function({
-                online: native_response.statusCode === 200,
-                statusCode: native_response.statusCode,
-                embedder: parsed_body.embedder || "unknown",
-                status: parsed_body.status || "ok"
-              });
-            } catch {
-              resolve_callback_function({ online: native_response.statusCode === 200, statusCode: native_response.statusCode });
-            }
-          });
-        });
-
-        health_request.on("error", (request_transmission_error) => {
-          resolve_callback_function({ online: false, error: request_transmission_error.message || "Connection refused" });
-        });
-
-        health_request.on("timeout", () => {
-          health_request.destroy();
-          resolve_callback_function({ online: false, error: "Request timed out" });
-        });
-      } catch (health_check_exception) {
-        resolve_callback_function({ online: false, error: health_check_exception.message });
-      }
-    });
+  // WHAT: Tests if Laya NPU service is running on demand, and launches it if offline.
+  // WHY: Allows the frontend UI to verify readiness or trigger background start on demand.
+  ipcMain.handle("ai:ensure-laya-ready", async () => {
+    const app_configuration = get_resolved_configuration();
+    return await ensure_laya_ready(app_configuration.laya_url, 90);
   });
 
   // WHAT: Returns current calibration log stats (logged decision counts, task breakdown).
@@ -371,9 +316,7 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
     const book_text_segment = raw_text.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
     const attribution_engine = request_arguments.attribution_engine || "laya";
     const laya_endpoint_url = (request_arguments.laya_endpoint_url || "http://127.0.0.1:8765").replace(/\/+$/, "");
-    const clm_endpoint_url = (request_arguments.clm_endpoint_url || "http://127.0.0.1:8700").replace(/\/+$/, "");
     const laya_decide_target_url = resolve_laya_decide_url(laya_endpoint_url);
-    const clm_systemone_target_url = resolve_clm_systemone_url(clm_endpoint_url);
     const confidence_threshold = typeof request_arguments.confidence_threshold === "number" ? request_arguments.confidence_threshold : 0.55;
     const is_unmarked_mode = !!request_arguments.unmarked_dialogue_mode;
     const lm_studio_api_url_address = request_arguments.lm_studio_api_url_address || "http://127.0.0.1:8081/v1/chat/completions";
@@ -384,11 +327,8 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
       await release_comfyui_vram();
     }
 
-    if (attribution_engine === "laya" || attribution_engine === "hybrid" || attribution_engine === "cascade") {
+    if (attribution_engine === "laya" || attribution_engine === "hybrid") {
       await ensure_laya_ready(laya_endpoint_url);
-    }
-    if (attribution_engine === "clm" || attribution_engine === "cascade") {
-      await ensure_clm_ready(clm_endpoint_url);
     }
 
     const candidate_speaker_criteria = {
@@ -725,41 +665,12 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
                 }
               };
 
-              if (attribution_engine === "clm") {
-                const clm_response = await dispatch_fast_json_post(clm_systemone_target_url, decide_payload);
-                return {
-                  quote_text: task_item.quote_text,
-                  unmarked: task_item.unmarked,
-                  answers: clm_response.answers || {},
-                  engine: "clm"
-                };
-              }
-
               const laya_response = await dispatch_fast_json_post(laya_decide_target_url, decide_payload);
-              let active_answers = laya_response.answers || {};
-              let resolved_engine = "laya";
-
-              if (attribution_engine === "cascade") {
-                const speaker_ans = active_answers.speaker || {};
-                const conf = typeof speaker_ans.confidence === "number" ? speaker_ans.confidence : 0.5;
-                if (conf < 0.85) {
-                  try {
-                    const clm_response = await dispatch_fast_json_post(clm_systemone_target_url, decide_payload);
-                    if (clm_response && clm_response.answers && clm_response.answers.speaker) {
-                      active_answers = clm_response.answers;
-                      resolved_engine = "clm_cascade";
-                    }
-                  } catch (clm_cascade_error) {
-                    console.warn("Cascade escalation to CLM failed, keeping Laya prediction:", clm_cascade_error.message);
-                  }
-                }
-              }
-
               return {
                 quote_text: task_item.quote_text,
                 unmarked: task_item.unmarked,
-                answers: active_answers,
-                engine: resolved_engine
+                answers: laya_response.answers || {},
+                engine: "laya"
               };
             })
           );
@@ -866,24 +777,26 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
       console.error("Attribution engine failed, falling back to local rule-based parser.", laya_error);
       const fallback_script_segments = [];
       const paragraphs_list = book_text_segment.split(/\n+/);
-      for (let p_idx = 0; p_idx < paragraphs_list.length; p_idx++) {
-        const p_str = paragraphs_list[p_idx].trim();
-        if (!p_str) continue;
+      for (let paragraph_index_counter = 0; paragraph_index_counter < paragraphs_list.length; paragraph_index_counter++) {
+        const paragraph_text_string = paragraphs_list[paragraph_index_counter].trim();
+        if (!paragraph_text_string) continue;
 
-        const q_regex = /"([^"]+)"/g;
-        let m = null;
-        let last_pos = 0;
-        while ((m = q_regex.exec(p_str)) !== null) {
-          if (m.index > last_pos) {
-            const pre = p_str.substring(last_pos, m.index).trim();
-            if (pre) fallback_script_segments.push({ type: "narrator", speaker: "Narrator", text: pre, direction: "calm, steady narration" });
+        // WHAT: Parsing dialogue inside quotes using standard quotation regex pattern.
+        // WHY: When backend attribution engine is unavailable, rule fallback ensures the screenplay can still be parsed.
+        const quotation_regex_pattern = /"([^"]+)"/g;
+        let matched_quotation_substring = null;
+        let last_processed_position = 0;
+        while ((matched_quotation_substring = quotation_regex_pattern.exec(paragraph_text_string)) !== null) {
+          if (matched_quotation_substring.index > last_processed_position) {
+            const pre_quote_narration_prose = paragraph_text_string.substring(last_processed_position, matched_quotation_substring.index).trim();
+            if (pre_quote_narration_prose) fallback_script_segments.push({ type: "narrator", speaker: "Narrator", text: pre_quote_narration_prose, direction: "calm, steady narration" });
           }
-          fallback_script_segments.push({ type: "dialogue", speaker: "Character", text: m[1], direction: "expressive delivery", confidence: 0.5 });
-          last_pos = q_regex.lastIndex;
+          fallback_script_segments.push({ type: "dialogue", speaker: "Character", text: matched_quotation_substring[1], direction: "expressive delivery", confidence: 0.5 });
+          last_processed_position = quotation_regex_pattern.lastIndex;
         }
-        if (last_pos < p_str.length) {
-          const post = p_str.substring(last_pos).trim();
-          if (post) fallback_script_segments.push({ type: "narrator", speaker: "Narrator", text: post, direction: "calm, steady narration" });
+        if (last_processed_position < paragraph_text_string.length) {
+          const post_quote_narration_prose = paragraph_text_string.substring(last_processed_position).trim();
+          if (post_quote_narration_prose) fallback_script_segments.push({ type: "narrator", speaker: "Narrator", text: post_quote_narration_prose, direction: "calm, steady narration" });
         }
       }
       return { script_segments: fallback_script_segments, fallback_reason: laya_error.message, unmarked_mode: is_unmarked_mode };

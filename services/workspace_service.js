@@ -26,6 +26,27 @@ function register_workspace_handlers(ipcMain, getMainWindow) {
     }
   });
 
+  // WHAT: Native open audio file dialog IPC service.
+  // WHY: Allows the user to select an existing voice recording (.wav, .mp3, .m4a, .flac, .ogg)
+  //      to use as a direct reference voice clone, skipping 100% synthetic voice generation.
+  ipcMain.handle("dialog:select-audio-file", async () => {
+    const parent_window = typeof getMainWindow === "function" ? getMainWindow() : null;
+    const dialog_selection_result = await dialog.showOpenDialog(parent_window, {
+      title: "Select Reference Voice Audio File",
+      properties: ["openFile"],
+      filters: [
+        { name: "Audio Files", extensions: ["wav", "mp3", "m4a", "flac", "ogg"] },
+        { name: "All Files", extensions: ["*"] }
+      ]
+    });
+
+    if (dialog_selection_result.canceled || dialog_selection_result.filePaths.length === 0) {
+      return null;
+    } else {
+      return dialog_selection_result.filePaths[0];
+    }
+  });
+
   // WHAT: Handler to list all audiobook projects in a designated workspace.
   // WHY: Reads folder names representing existing books to display inside the project list view.
   ipcMain.handle("project:list-projects", async (ipc_event_context, workspace_directory_path) => {

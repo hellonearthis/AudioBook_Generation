@@ -47,6 +47,20 @@ For in-depth prompt engineering syntax, parameter guidelines, and CLI examples f
 
 ---
 
+## 3. Performance Directorial Prompts for AuK (`AuK-01` & `AuK-02`)
+
+AuK accepts an explicit **Secondary Prompt** (instruction text) alongside the primary dialogue text and reference audio. To capture theatrical subtext, the app's performance direction compiler automatically synthesizes multi-dimensional acting directives into the secondary prompt:
+
+*   **Subtext Shading**: Formats surface reading shaded by underlying emotion (e.g. `Surface delivery is steady (calm), with underlying suppressed furious subtext (seething, venomous fury)`).
+*   **Acoustic Proximity**: Directs vocal projection based on addressee and distance (`intimate` [close whisper with breathiness], `conversational`, `projected` [across distance / shouting]).
+*   **Word-Level Stress**: Instructs targeted emphasis for 0–2 critical words (`emphasizing the word(s) 'you'`).
+*   **Physical State**: Injects bodily state modifiers (`Physical state: tired, breathless`).
+*   **Human Director Notes**: Directly embeds editorial notes (`[Director: quieter, she is holding back tears]`).
+
+> **Prompt vs. Assembly Boundary**: Never include silence or pause instructions in AuK prompts (e.g. *"pause for 1.2 seconds"*), as neural TTS models will hallucinate trailing static or clip audio. Exact millisecond pauses and interruption cuts are handled deterministically in the downstream Assembly stage (`services/audio_mastering_service.js`).
+
+---
+
 ## How to Test in ComfyUI
 
 1. Start ComfyUI (e.g. `C:\cui\goLow.ps1`).

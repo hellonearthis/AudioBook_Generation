@@ -1,0 +1,75 @@
+version: "1.1.0"
+domain: "AI Audiobook Screenplay Generator & Synthesizer"
+terms:
+  screenplay_segment:
+    definition: "An atomic, sequentially indexed unit of script content categorized as either spoken dialogue or narrator prose."
+    sources: ["services/fountain_service.js", "renderer/js/editor.js"]
+  speaker_attribution:
+    definition: "The automated multi-model classification engine that resolves the explicit character identity for each dialogue span."
+    sources: ["services/speaker_attribution.js", "services/laya_clm_service.js"]
+  unmarked_dialogue:
+    definition: "Dialogue passages lacking standard typographic quotation marks, detected via lexical boundaries and language model classification."
+    sources: ["services/ai_pipeline_service.js", "services/laya_clm_service.js"]
+  laya_npu_engine:
+    definition: "Neural Processing Unit accelerated inference engine executing fast speech decisions and triage routing on port 8765 with zero GPU VRAM consumption."
+    sources: ["services/laya_clm_service.js", "services/service_health_service.js", "start.ps1"]
+  llamacpp_gpu_engine:
+    definition: "High-parameter language model server hosted at I:\\llamaCPP on port 8080 performing deep narrative staging, cast extraction, and relationship delta synthesis."
+    sources: ["services/config_service.js", "services/service_health_service.js", "services/ai_pipeline_service.js"]
+  relationship_state:
+    definition: "The persistent interpersonal dynamic, tone, status, and power balance between a character pair at a given segment index."
+    sources: ["services/relationship_state_service.js", "constants/relationship_taxonomy.js"]
+  directorial_staging:
+    definition: "Synthesized performance cues specifying voice quality, prosody, style, and emotion derived from narrative acoustic tags."
+    sources: ["services/directorial_staging_service.js", "services/ai_pipeline_service.js"]
+  audio_generation_queue:
+    definition: "The sequential single-threaded execution queue arbitrating hardware VRAM allocation and dispatching jobs to ComfyUI."
+    sources: ["services/audio_queue_service.js", "services/service_health_service.js"]
+  whistle_qc_validation:
+    definition: "Sub-20ms speech-to-text audio quality control pipeline validating synthesized takes against expected text with a 90% threshold."
+    sources: ["services/whistle_validator_service.js", "laya_qc_pipeline.js"]
+  fountain_document:
+    definition: "Standardized plain-text screenplay syntax representation containing scene headings, character cues, dialogue, and parentheticals."
+    sources: ["services/fountain_service.js", "services/workspace_service.js"]
+  auk_postprod_pipeline:
+    definition: "Acoustic post-production conditioning model providing 9-emotion morphing palettes, whisper synthesis, and audio denoising."
+    sources: ["services/auk_postprod_service.js", "services/relationship_state_service.js"]
+  brand_safe_contrast:
+    definition: "Color luminance adjustment protocol that strictly modulates lightness while preserving hue and saturation to satisfy WCAG 2.1 AA 4.5:1 contrast standards."
+    sources: ["renderer/css/style.css", "scripts/solve_contrast.js"]
+  audio_content_cache:
+    definition: "Deterministic SHA-256 fingerprinting cache mapping synthesis parameters to existing takes to bypass redundant ComfyUI generation."
+    sources: ["services/audio_cache_service.js", "services/audio_queue_service.js"]
+  pronunciation_lexicon:
+    definition: "Project-level phonetic respelling and expansion dictionary applied to screenplay segments prior to speech synthesis."
+    sources: ["services/pronunciation_lexicon_service.js", "services/audio_queue_service.js"]
+  audio_mastering_assembly:
+    definition: "Final timeline stitching engine that applies calibrated inter-speaker pauses, EBU R128 loudness normalization (-19 LUFS), and chapter markers without room noise."
+    sources: ["services/audio_mastering_service.js", "services/audio_ffmpeg_service.js"]
+  emotional_arc_modeling:
+    definition: "Dynamic state engine tracking emotional intensity progression, exponential decay across lines, 1-5 intensity bands, and dual-axis expression (suppressed vs released)."
+    sources: ["services/emotional_arc_service.js", "services/voice_drift_qc_service.js"]
+  voice_calibration_profiling:
+    definition: "Audition test suite profiling character voice clones across emotion and intensity bands to discover empirical timbre limits, cap requests, and apply acoustic compensations."
+    sources: ["services/voice_calibration_service.js", "services/emotional_arc_service.js"]
+  subtext_performance_direction:
+    definition: "Multi-layered directorial schema tracking surface vs felt emotion (subtext), dramatic timing, acoustic distance, word emphasis, and physical modifiers."
+    sources: ["services/performance_direction_service.js", "services/audio_mastering_service.js"]
+  special_content_treatments:
+    definition: "Specialized acoustic and directorial handling for inner thoughts, filtered voices (phones, radios), epistolary letters, and pooled walk-on minor characters."
+    sources: ["services/special_content_service.js", "services/audio_mastering_service.js"]
+  forced_alignment_timestamps:
+    definition: "Word-level temporal intervals and metadata export (WebVTT, EPUB3 SMIL) enabling synchronized read-alongs and precise boundary trimming."
+    sources: ["services/forced_alignment_service.js"]
+  pipeline_telemetry_metrics:
+    definition: "Operational tracking of human review minutes per hour of finished audio, flagged line rates, false positive QC ratios, and defect root-cause distributions."
+    sources: ["services/pipeline_metrics_service.js"]
+  multi_chapter_manuscript:
+    definition: "A structured novel segmentation model organizing 100,000-word books into discrete chapters while sharing and preserving the root-level character cast, voice anchors, and relationship timelines."
+    sources: ["services/chapter_service.js"]
+  direct_voice_import:
+    definition: "A reference voice provisioning workflow that ingests user-supplied audio recordings (.wav, .mp3, .m4a, .flac, .ogg), normalizes them to master anchors, and skips 100% synthetic VoiceDesign prompt generation."
+    sources: ["services/voice_import_service.js", "services/workspace_service.js"]
+  phonetic_calibration_tuning:
+    definition: "A standardized acoustic tuning protocol synthesizing phonetically rich test phrases (e.g. Rainbow Passage) to verify clone timbre similarity (>= 0.75) and establish baseline calibration profiles before novel synthesis."
+    sources: ["services/voice_import_service.js", "services/voice_calibration_service.js"]

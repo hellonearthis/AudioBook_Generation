@@ -3,10 +3,10 @@
     Easy-start launcher for the AI Audiobook Screenplay Generator & Synthesizer desktop app.
 
 .DESCRIPTION
-    WHAT: Checks dependencies, tests connectivity to local AI endpoints (ComfyUI, llama.cpp, Laya, and CLM),
+    WHAT: Checks dependencies, tests connectivity to local AI endpoints (ComfyUI, llama.cpp, and Laya NPU),
           and launches the Electron application in either production or hot-reloading dev mode.
     WHY: Eliminates the friction of remembering npm commands or diagnosing silent connection
-         failures with ComfyUI and LLM before the Electron window loads.
+         failures with ComfyUI, LLM, and Laya NPU before the Electron window loads.
 
 .PARAMETER Dev
     WHAT: Switch parameter to launch the app using nodemon hot-reload.
@@ -18,7 +18,7 @@
 
 .EXAMPLE
     .\start.ps1
-    Auto-starts missing AI services (ComfyUI & llama-server) and launches the application.
+    Auto-starts missing AI services (llama-server & Laya NPU) and launches the application.
 
 .EXAMPLE
     .\start.ps1 -Dev
@@ -34,14 +34,20 @@ param (
     [switch]$Dev,
     [switch]$NoAutoStart,
     [switch]$StartComfyUI,
-    [switch]$StartLaya,
-    [switch]$StartCLM
+    [switch]$StartLaya
 )
 
 # WHAT: Set strict error handling and resolve the script directory path.
 # WHY: Ensures relative paths resolve correctly regardless of where the terminal was launched from.
 $ErrorActionPreference = "Continue"
 $project_root_directory_path = $PSScriptRoot
+
+# WHAT: Unset ELECTRON_RUN_AS_NODE if present in the caller's environment.
+# WHY: When ELECTRON_RUN_AS_NODE is active, Electron behaves as standard Node.js instead of a desktop GUI runtime,
+#      which breaks require("electron") protocol, BrowserWindow, and app lifecycle bindings.
+if (Test-Path Env:ELECTRON_RUN_AS_NODE) {
+    Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+}
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -186,6 +192,7 @@ if (-not $llama_is_running) {
     $llama_candidates = @(
         $(if ($user_config) { $user_config.llama_path }),
         $env:LLAMA_PATH,
+        "I:\llamaCPP",
         "C:\llamaCPP",
         (Join-Path $user_home_dir "llama.cpp"),
         (Join-Path $user_home_dir "Desktop\llamaCPP"),
@@ -253,9 +260,16 @@ $laya_endpoint_address = "$($laya_base_url.TrimEnd('/'))/health"
 $laya_is_running = $false
 
 try {
-    $laya_connection_probe = Invoke-WebRequest -Uri $laya_endpoint_address -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+    $laya_connection_probe = Invoke-WebRequest -Uri $laya_endpoint_address -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
     if ($laya_connection_probe.StatusCode -eq 200) {
-        Write-Host "[OK] Laya decision engine is reachable at $laya_base_url" -ForegroundColor Green
+        $laya_device_label = "CPU"
+        try {
+            $probe_json = $laya_connection_probe.Content | ConvertFrom-Json
+            if ($probe_json.device -eq "NPU" -or $probe_json.npu_attached) {
+                $laya_device_label = "Intel AI Boost NPU"
+            }
+        } catch {}
+        Write-Host "[OK] Laya NPU Classifier Service is reachable at $laya_base_url ($laya_device_label)" -ForegroundColor Green
         $laya_is_running = $true
     }
 }
@@ -265,6 +279,8 @@ if (-not $laya_is_running) {
     $laya_candidates = @(
         $(if ($user_config) { $user_config.laya_path }),
         $env:LAYA_PATH,
+        (Join-Path $user_home_dir "Desktop\Laya_npu"),
+        (Join-Path $user_home_dir "AI_Models\Laya_npu"),
         (Join-Path $user_home_dir "Desktop\Laya"),
         (Join-Path $user_home_dir "AI_Models\Laya"),
         (Join-Path $user_home_dir "Laya")
@@ -278,76 +294,39 @@ if (-not $laya_is_running) {
         )
     } else { $null }
 
-    if ($StartLaya -and $laya_script_path) {
-        Write-Host "[NOTICE] Auto-launching Laya ($laya_script_path) in a new window..." -ForegroundColor Yellow
+    if (-not $NoAutoStart -and $laya_script_path) {
+        Write-Host "[NOTICE] Laya NPU Classifier Service is offline. Auto-launching $laya_script_path in a new window..." -ForegroundColor Yellow
         Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass -File `"$laya_script_path`"" -WorkingDirectory $laya_dir
-        Start-Sleep -Seconds 3
-        try {
-            $probe_after_laya = Invoke-WebRequest -Uri $laya_endpoint_address -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
-            if ($probe_after_laya.StatusCode -eq 200) {
-                Write-Host "[OK] Laya decision engine initialized at $laya_base_url" -ForegroundColor Green
-                $laya_is_running = $true
+        Write-Host "[INFO] Initializing OpenVINO Intel AI Boost NPU runtime (warmup takes ~15-25 seconds on cold boot)..." -ForegroundColor Yellow
+
+        $laya_wait_seconds = 0
+        $laya_max_wait = 35
+        while (-not $laya_is_running -and ($laya_wait_seconds -lt $laya_max_wait)) {
+            Start-Sleep -Seconds 2
+            $laya_wait_seconds += 2
+            try {
+                $probe_after_laya = Invoke-WebRequest -Uri $laya_endpoint_address -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+                if ($probe_after_laya.StatusCode -eq 200) {
+                    $laya_device_label = "CPU"
+                    try {
+                        $probe_json = $probe_after_laya.Content | ConvertFrom-Json
+                        if ($probe_json.device -eq "NPU" -or $probe_json.npu_attached) {
+                            $laya_device_label = "Intel AI Boost NPU"
+                        }
+                    } catch {}
+                    Write-Host "[OK] Laya NPU Classifier Service initialized at $laya_base_url ($laya_device_label in ${laya_wait_seconds}s)" -ForegroundColor Green
+                    $laya_is_running = $true
+                    break
+                }
             }
+            catch {}
         }
-        catch {
-            Write-Host "[INFO] Laya launched in a separate window; warming up model..." -ForegroundColor Yellow
+        if (-not $laya_is_running) {
+            Write-Host "[INFO] Laya NPU Classifier Service is still initializing in the background; will be ready shortly." -ForegroundColor Yellow
         }
     }
     else {
-        Write-Host "[INFO] Laya is offline ($laya_base_url). Preserving resources; will load on-demand when fast attribution is selected." -ForegroundColor DarkGray
-    }
-}
-
-# -------------------------------------------------------------------------
-# 4. CLM Decision Engine (Contrastive Language Model - Port 8700)
-# -------------------------------------------------------------------------
-$clm_base_url = if ($user_config -and $user_config.clm_url) { $user_config.clm_url } elseif ($env:CLM_URL) { $env:CLM_URL } else { "http://127.0.0.1:8700" }
-$clm_endpoint_address = "$($clm_base_url.TrimEnd('/'))/health"
-$clm_is_running = $false
-
-try {
-    $clm_connection_probe = Invoke-WebRequest -Uri $clm_endpoint_address -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
-    if ($clm_connection_probe.StatusCode -eq 200) {
-        Write-Host "[OK] CLM decision engine is reachable at $clm_base_url" -ForegroundColor Green
-        $clm_is_running = $true
-    }
-}
-catch {}
-
-if (-not $clm_is_running) {
-    $clm_candidates = @(
-        $(if ($user_config) { $user_config.clm_path }),
-        $env:CLM_PATH,
-        (Join-Path $user_home_dir "Desktop\CLM"),
-        (Join-Path $user_home_dir "AI_Models\CLM"),
-        (Join-Path $user_home_dir "CLM")
-    )
-    $clm_dir = Resolve-CandidatePath $clm_candidates
-    $clm_script_path = if ($clm_dir) {
-        Resolve-CandidatePath @(
-            (Join-Path $clm_dir "run_clm_server.ps1"),
-            (Join-Path $clm_dir "run_clm_server.sh"),
-            (Join-Path $clm_dir "server.py")
-        )
-    } else { $null }
-
-    if ($StartCLM -and $clm_script_path) {
-        Write-Host "[NOTICE] Auto-launching CLM ($clm_script_path) in a new window..." -ForegroundColor Yellow
-        Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy Bypass -File `"$clm_script_path`"" -WorkingDirectory $clm_dir
-        Start-Sleep -Seconds 3
-        try {
-            $probe_after_clm = Invoke-WebRequest -Uri $clm_endpoint_address -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
-            if ($probe_after_clm.StatusCode -eq 200) {
-                Write-Host "[OK] CLM decision engine initialized at $clm_base_url" -ForegroundColor Green
-                $clm_is_running = $true
-            }
-        }
-        catch {
-            Write-Host "[INFO] CLM server launched in a separate window..." -ForegroundColor Yellow
-        }
-    }
-    else {
-        Write-Host "[INFO] CLM is offline ($clm_base_url). Preserving resources; will load on-demand when contrastive attribution is selected." -ForegroundColor DarkGray
+        Write-Host "[INFO] Laya NPU is offline ($laya_base_url). Preserving resources; will load on-demand when fast attribution is selected." -ForegroundColor DarkGray
     }
 }
 
@@ -355,6 +334,7 @@ Write-Host ""
 
 # WHAT: Launching the Electron application.
 # WHY: Spawns the desktop GUI via npm scripts. If -Dev is passed, nodemon hot-reloads on file changes.
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 Push-Location $project_root_directory_path
 if ($Dev) {
     Write-Host ">>> Launching application in DEV MODE (hot-reloading enabled)..." -ForegroundColor Cyan

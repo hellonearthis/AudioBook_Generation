@@ -161,24 +161,49 @@ function detect_active_scene_cast_members(paragraphs_list, scene_boundary_object
   return present_cast_members_list.length >= 2 ? present_cast_members_list : global_characters_list;
 }
 
+// WHAT: Creates a plain data object tracking conversational state within an active scene.
+// WHY: Adheres to Pure Functional Architecture by representing domain models as plain records.
+function create_active_scene_conversational_state(scene_cast_members_list) {
+  return {
+    cast: Array.isArray(scene_cast_members_list) ? [...scene_cast_members_list] : [],
+    recent_speaker_history_list: [],
+    last_attributed_speaker_record: null
+  };
+}
+
+// WHAT: Pure state transition returning an updated conversational state record after a speaker turn.
+// WHY: Enforces immutability by returning a fresh state object rather than mutating arrays with .push/.shift.
+function record_attributed_speaker_turn_transition(current_conversational_state, attribution_result_object, dialogue_span_object) {
+  const current_history = current_conversational_state && Array.isArray(current_conversational_state.recent_speaker_history_list)
+    ? current_conversational_state.recent_speaker_history_list
+    : [];
+
+  const updated_speaker_history_list = [...current_history, attribution_result_object.speaker].slice(-6);
+
+  return {
+    ...current_conversational_state,
+    recent_speaker_history_list: updated_speaker_history_list,
+    last_attributed_speaker_record: {
+      speaker: attribution_result_object.speaker,
+      paraIndex: dialogue_span_object.paraIndex
+    }
+  };
+}
+
 // WHAT: Tracking conversational state, recent turns, and last speakers within an active scene.
-// WHY: Enables two-person alternation hints, monologue continuation, and listener attribution.
+// WHY: Thin adapter class preserving backward compatibility while delegating all state transitions to pure functions.
 class ActiveSceneConversationalState {
   constructor(scene_cast_members_list) {
-    this.cast = scene_cast_members_list;
-    this.recent_speaker_history_list = [];
-    this.last_attributed_speaker_record = null;
+    const initial_state = create_active_scene_conversational_state(scene_cast_members_list);
+    this.cast = initial_state.cast;
+    this.recent_speaker_history_list = initial_state.recent_speaker_history_list;
+    this.last_attributed_speaker_record = initial_state.last_attributed_speaker_record;
   }
 
   record_attributed_speaker_turn(attribution_result_object, dialogue_span_object) {
-    this.recent_speaker_history_list.push(attribution_result_object.speaker);
-    if (this.recent_speaker_history_list.length > 6) {
-      this.recent_speaker_history_list.shift();
-    }
-    this.last_attributed_speaker_record = {
-      speaker: attribution_result_object.speaker,
-      paraIndex: dialogue_span_object.paraIndex
-    };
+    const next_state = record_attributed_speaker_turn_transition(this, attribution_result_object, dialogue_span_object);
+    this.recent_speaker_history_list = next_state.recent_speaker_history_list;
+    this.last_attributed_speaker_record = next_state.last_attributed_speaker_record;
   }
 }
 
@@ -807,5 +832,8 @@ module.exports = {
   evaluate_multi_paragraph_monologue_continuation,
   identify_vocative_listener_character_ids,
   calculate_conversational_alternation_hint,
+  create_active_scene_conversational_state,
+  record_attributed_speaker_turn_transition,
+  ActiveSceneConversationalState,
   UNKNOWN_SPEAKER_IDENTIFIER
 };

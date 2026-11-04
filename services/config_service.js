@@ -83,24 +83,16 @@ function get_resolved_configuration() {
     file_config.laya_path,
     process.env.LAYA_PATH,
     dot_env.LAYA_PATH,
+    path_library.join(user_home, "Desktop", "Laya_npu"),
     path_library.join(user_home, "Desktop", "Laya"),
+    path_library.join(user_home, "AI_Models", "Laya_npu"),
     path_library.join(user_home, "AI_Models", "Laya"),
+    path_library.join(user_home, "Laya_npu"),
     path_library.join(user_home, "Laya")
   ];
-  const resolved_laya_path = find_first_existing_directory(laya_candidates) || file_config.laya_path || (is_windows ? path_library.join(user_home, "Desktop", "Laya") : path_library.join(user_home, "Laya"));
+  const resolved_laya_path = find_first_existing_directory(laya_candidates) || file_config.laya_path || (is_windows ? path_library.join(user_home, "Desktop", "Laya_npu") : path_library.join(user_home, "Laya_npu"));
 
-  // 2. Resolve CLM Directory
-  const clm_candidates = [
-    file_config.clm_path,
-    process.env.CLM_PATH,
-    dot_env.CLM_PATH,
-    path_library.join(user_home, "Desktop", "CLM"),
-    path_library.join(user_home, "AI_Models", "CLM"),
-    path_library.join(user_home, "CLM")
-  ];
-  const resolved_clm_path = find_first_existing_directory(clm_candidates) || file_config.clm_path || (is_windows ? path_library.join(user_home, "Desktop", "CLM") : path_library.join(user_home, "CLM"));
-
-  // 3. Resolve ComfyUI Directory
+  // 2. Resolve ComfyUI Directory
   const comfyui_candidates = [
     file_config.comfyui_path,
     process.env.COMFYUI_PATH,
@@ -112,30 +104,29 @@ function get_resolved_configuration() {
   ];
   const resolved_comfyui_path = find_first_existing_directory(comfyui_candidates) || file_config.comfyui_path || (is_windows ? "C:\\cui" : path_library.join(user_home, "ComfyUI"));
 
-  // 4. Resolve llama.cpp Directory
+  // 3. Resolve llama.cpp Directory
   const llama_candidates = [
     file_config.llama_path,
     process.env.LLAMA_PATH,
     dot_env.LLAMA_PATH,
+    is_windows ? "I:\\llamaCPP" : null,
     is_windows ? "C:\\llamaCPP" : null,
     path_library.join(user_home, "llama.cpp"),
     path_library.join(user_home, "Desktop", "llamaCPP"),
     path_library.join(user_home, "AI_Models", "llama.cpp")
   ];
-  const resolved_llama_path = find_first_existing_directory(llama_candidates) || file_config.llama_path || (is_windows ? "C:\\llamaCPP" : path_library.join(user_home, "llama.cpp"));
+  const resolved_llama_path = find_first_existing_directory(llama_candidates) || file_config.llama_path || (is_windows ? "I:\\llamaCPP" : path_library.join(user_home, "llama.cpp"));
 
   return {
     // Service URLs
     comfyui_url: file_config.comfyui_url || process.env.COMFYUI_URL || dot_env.COMFYUI_URL || "http://127.0.0.1:8188",
     llama_url: file_config.llama_url || process.env.LLAMA_URL || dot_env.LLAMA_URL || "http://127.0.0.1:8081",
     laya_url: file_config.laya_url || process.env.LAYA_URL || dot_env.LAYA_URL || "http://127.0.0.1:8765",
-    clm_url: file_config.clm_url || process.env.CLM_URL || dot_env.CLM_URL || "http://127.0.0.1:8700",
 
     // Discovered Local Paths
     comfyui_path: resolved_comfyui_path,
     llama_path: resolved_llama_path,
     laya_path: resolved_laya_path,
-    clm_path: resolved_clm_path,
 
     // Platform Metadata
     is_windows,

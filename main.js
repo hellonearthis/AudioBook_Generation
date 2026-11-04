@@ -42,6 +42,13 @@ const { register_laya_clm_handlers } = require("./services/laya_clm_service");
 const { register_ai_pipeline_handlers, detect_unmarked_spans, detect_unmarked_spans_joint } = require("./services/ai_pipeline_service");
 const { register_audio_queue_handlers } = require("./services/audio_queue_service");
 const { register_auk_postprod_handlers } = require("./services/auk_postprod_service");
+const { register_fountain_handlers } = require("./services/fountain_service");
+const { register_whistle_validator_handlers } = require("./services/whistle_validator_service");
+const { register_pronunciation_lexicon_handlers } = require("./services/pronunciation_lexicon_service");
+const { register_audio_mastering_handlers } = require("./services/audio_mastering_service");
+const { register_voice_calibration_handlers } = require("./services/voice_calibration_service");
+const { register_chapter_handlers } = require("./services/chapter_service");
+const { register_voice_import_handlers } = require("./services/voice_import_service");
 
 // WHAT: Primary desktop window reference.
 let primary_application_window = null;
@@ -121,8 +128,24 @@ app.whenReady().then(() => {
   register_ai_pipeline_handlers(ipcMain, get_primary_window);
   register_audio_queue_handlers(ipcMain, get_primary_window);
   register_auk_postprod_handlers(ipcMain);
+  register_fountain_handlers(ipcMain, get_primary_window);
+  register_whistle_validator_handlers(ipcMain);
+  register_pronunciation_lexicon_handlers(ipcMain);
+  register_audio_mastering_handlers(ipcMain);
+  register_voice_calibration_handlers(ipcMain);
+  register_chapter_handlers(ipcMain);
+  register_voice_import_handlers(ipcMain);
 
   create_primary_desktop_window();
+
+  // WHAT: Testing if Laya NPU service is running on startup, and automatically launching it if offline.
+  // WHY: Ensures zero-friction fast dialogue attribution and QC verification powered by Intel AI Boost NPU.
+  const { ensure_laya_ready } = require("./services/service_health_service");
+  const { get_resolved_configuration } = require("./services/config_service");
+  const resolved_app_configuration = get_resolved_configuration();
+  ensure_laya_ready(resolved_app_configuration.laya_url, 90, get_primary_window).catch((startup_laya_error) => {
+    console.error("[Startup] Laya NPU service verification/startup error:", startup_laya_error.message);
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
