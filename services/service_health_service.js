@@ -93,9 +93,20 @@ function dispatch_quick_post_request(target_url_string, payload_object) {
   });
 }
 
-// WHAT: Unloads models and clears CUDA VRAM cache in ComfyUI.
-// WHY: Releases ComfyUI GPU memory so the LLM has complete VRAM headroom during inference.
-async function release_comfyui_vram(comfyui_base_endpoint_url) {
+// WHAT: Timestamp tracking for ComfyUI VRAM release throttling.
+// WHY: Avoids redundant /free network dispatches in high-frequency loops (e.g. paragraph-by-paragraph LLM processing).
+let last_comfyui_vram_release_timestamp = 0;
+const COMFYUI_VRAM_RELEASE_COOLDOWN_MS = 15000;
+
+// WHAT: Unloads models and clears CUDA VRAM cache in ComfyUI with cooldown throttling.
+// WHY: Releases ComfyUI GPU memory so the LLM has complete VRAM headroom during inference,
+//      without spamming ComfyUI with redundant /free calls within a 15-second window.
+async function release_comfyui_vram(comfyui_base_endpoint_url, force_immediate_release = false) {
+  const current_epoch_milliseconds = Date.now();
+  if (!force_immediate_release && (current_epoch_milliseconds - last_comfyui_vram_release_timestamp < COMFYUI_VRAM_RELEASE_COOLDOWN_MS)) {
+    return;
+  }
+
   try {
     const target_endpoint_url = comfyui_base_endpoint_url || last_known_comfyui_endpoint_url || "http://127.0.0.1:8188";
     const ipv4_endpoint_url = normalize_localhost_url_to_ipv4_address(target_endpoint_url).replace(/\/+$/, "");
@@ -107,6 +118,7 @@ async function release_comfyui_vram(comfyui_base_endpoint_url) {
       unload_models: true,
       free_memory: true
     });
+    last_comfyui_vram_release_timestamp = Date.now();
     console.log("[VRAM Manager] Dispatched /free to ComfyUI; GPU cache and models released.");
   } catch {
     // Non-fatal if ComfyUI is offline or unreachable

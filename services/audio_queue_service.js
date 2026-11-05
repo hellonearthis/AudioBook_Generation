@@ -37,6 +37,7 @@ const {
 
 const {
   apply_pronunciation_lexicon,
+  compile_lexicon_rules,
   load_project_lexicon_from_disk
 } = require("./pronunciation_lexicon_service");
 
@@ -49,6 +50,46 @@ let audio_generation_task_queue = [];
 let audio_generation_queue_is_processing = false;
 let cached_comfyui_base_directory_path = null;
 let last_known_comfyui_endpoint_url = "http://127.0.0.1:8188";
+
+// WHAT: In-memory cache for parsed ComfyUI workflow JSON structures.
+// WHY: Eliminates synchronous disk reads (fs.readFileSync) and JSON.parse overhead
+//      on every single take rendered in the background queue.
+const WORKFLOW_JSON_CACHE = new Map();
+
+/**
+ * WHAT: Loads and caches a ComfyUI workflow template JSON from disk.
+ * WHY: Returns a fresh deep clone via structuredClone with zero filesystem I/O.
+ * 
+ * @param {string} workflow_template_absolute_path 
+ * @returns {Record<string, any>} Cloned workflow payload object.
+ */
+function get_cloned_workflow_template(workflow_template_absolute_path) {
+  if (!WORKFLOW_JSON_CACHE.has(workflow_template_absolute_path)) {
+    if (!filesystem_library.existsSync(workflow_template_absolute_path)) {
+      throw new Error(`ComfyUI workflow API template not found at: ${workflow_template_absolute_path}`);
+    }
+    const raw_file_content = filesystem_library.readFileSync(workflow_template_absolute_path, "utf-8");
+    const parsed_payload = JSON.parse(raw_file_content);
+    WORKFLOW_JSON_CACHE.set(workflow_template_absolute_path, parsed_payload);
+  }
+  return structuredClone(WORKFLOW_JSON_CACHE.get(workflow_template_absolute_path));
+}
+
+// WHAT: In-memory cache for compiled project pronunciation lexicon rules.
+// WHY: Prevents reading and compiling lexicon.json on every single line in a queue batch.
+let cached_project_lexicon_path = null;
+let cached_compiled_lexicon_rules = null;
+
+function get_compiled_project_lexicon(project_root_directory_path) {
+  const lexicon_file_path = path_library.join(project_root_directory_path, "lexicon.json");
+  if (cached_project_lexicon_path === lexicon_file_path && cached_compiled_lexicon_rules !== null) {
+    return cached_compiled_lexicon_rules;
+  }
+  const loaded_entries = load_project_lexicon_from_disk(project_root_directory_path);
+  cached_compiled_lexicon_rules = compile_lexicon_rules(loaded_entries);
+  cached_project_lexicon_path = lexicon_file_path;
+  return cached_compiled_lexicon_rules;
+}
 
 // WHAT: Persists pending audio queue tasks to `<project>/audio/queue_state.json`.
 // WHY: Ensures crash-safe, resumable background generation across system restarts.
@@ -376,11 +417,7 @@ async function execute_sequential_generation_queue(getMainWindow) {
     }
     const workflow_template_absolute_path = path_library.join(__dirname, "..", "comfyui_workflows", workflow_filename);
 
-    if (!filesystem_library.existsSync(workflow_template_absolute_path)) {
-      throw new Error(`ComfyUI workflow API template not found at: ${workflow_template_absolute_path}`);
-    }
-
-    const comfyui_workflow_nodes_payload = JSON.parse(filesystem_library.readFileSync(workflow_template_absolute_path, "utf-8"));
+    const comfyui_workflow_nodes_payload = get_cloned_workflow_template(workflow_template_absolute_path);
 
     let generated_qwen3_style_prompt_string = "";
     
@@ -532,11 +569,11 @@ async function execute_sequential_generation_queue(getMainWindow) {
     }
 
     // WHAT: Apply project pronunciation lexicon overrides before synthesis.
-    // WHY: Replaces fantasy words and acronyms with phonetic respellings for the TTS model.
-    const project_lexicon_entries = load_project_lexicon_from_disk(project_root_directory_path);
+    // WHY: Replaces fantasy words and acronyms with phonetic respellings using pre-compiled, cached rules.
+    const project_lexicon_rules = get_compiled_project_lexicon(project_root_directory_path);
     const { transformed_text: phonetically_conditioned_dialogue_text } = apply_pronunciation_lexicon(
       target_dialogue_text,
-      project_lexicon_entries
+      project_lexicon_rules
     );
 
     let save_node_id_string = "43";
@@ -1167,12 +1204,7 @@ function register_audio_queue_handlers(ipcMain, getMainWindow) {
       }
 
       const voice_design_workflow_template_path = path_library.join(__dirname, "..", "comfyui_workflows", "Qwen3-tts-DesignVoice_API.json");
-      if (!filesystem_library.existsSync(voice_design_workflow_template_path)) {
-        throw new Error(`VoiceDesign workflow template not found at: ${voice_design_workflow_template_path}`);
-      }
-      const anchor_bake_workflow_nodes_payload = JSON.parse(
-        filesystem_library.readFileSync(voice_design_workflow_template_path, "utf-8")
-      );
+      const anchor_bake_workflow_nodes_payload = get_cloned_workflow_template(voice_design_workflow_template_path);
 
       if (anchor_bake_workflow_nodes_payload["42"]) {
         anchor_bake_workflow_nodes_payload["42"].inputs.value = anchor_phrase;
@@ -1340,11 +1372,7 @@ function register_audio_queue_handlers(ipcMain, getMainWindow) {
     try {
       const workflow_template_absolute_path = path_library.join(__dirname, "..", "comfyui_workflows", "QWEN3-TTS-saveCustomVoice_api.json");
       
-      if (!filesystem_library.existsSync(workflow_template_absolute_path)) {
-        throw new Error(`ComfyUI workflow not found: ${workflow_template_absolute_path}`);
-      }
-
-      const comfyui_workflow_nodes_payload = JSON.parse(filesystem_library.readFileSync(workflow_template_absolute_path, "utf-8"));
+      const comfyui_workflow_nodes_payload = get_cloned_workflow_template(workflow_template_absolute_path);
       const uuid_string = crypto.randomUUID().substring(0, 8);
       const standardized_character_name_string = character_name.toLowerCase().replace(/\s+/g, "_");
       const standardized_project_name_string = project_name.toLowerCase().replace(/\s+/g, "_");

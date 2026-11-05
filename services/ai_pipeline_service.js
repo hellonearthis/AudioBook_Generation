@@ -49,6 +49,30 @@ const RELATIONSHIP_TAXONOMY_PROMPT_PLACEHOLDERS = {
   "{{POWER_DYNAMIC_ENUM_PIPE}}": format_enum_as_pipe_list(POWER_DYNAMICS)
 };
 
+// WHAT: In-memory static cache for loaded prompt template strings.
+// WHY: Eliminates synchronous disk I/O (fs.readFileSync) on repeated LLM inference calls across novel chapters.
+const PROMPT_TEMPLATE_CACHE = new Map();
+
+/**
+ * WHAT: Loads and caches prompt template text from the prompts directory.
+ * WHY: Returns cached template string from memory on subsequent calls with zero disk I/O overhead.
+ * 
+ * @param {string} prompt_file_name 
+ * @returns {string} Prompt template text content.
+ */
+function get_cached_prompt_template(prompt_file_name) {
+  if (PROMPT_TEMPLATE_CACHE.has(prompt_file_name)) {
+    return PROMPT_TEMPLATE_CACHE.get(prompt_file_name);
+  }
+  const prompt_file_path = path_library.join(__dirname, "..", "prompts", prompt_file_name);
+  if (!filesystem_library.existsSync(prompt_file_path)) {
+    return "";
+  }
+  const loaded_prompt_content = filesystem_library.readFileSync(prompt_file_path, "utf8");
+  PROMPT_TEMPLATE_CACHE.set(prompt_file_name, loaded_prompt_content);
+  return loaded_prompt_content;
+}
+
 // WHAT: Substitutes every {{RELATIONSHIP_TAXONOMY_*}}-style placeholder in a loaded prompt template.
 // WHY: Centralizes the substitution so a prompt can freely use any subset of the eight
 //      placeholders above without each call site needing its own replace() chain.
@@ -381,9 +405,8 @@ async function detect_unmarked_spans(paragraph_string, lm_studio_api_url) {
   if (lm_studio_api_url) {
     try {
       await release_comfyui_vram();
-      const span_prompt_path = path_library.join(__dirname, "..", "prompts", "unmarked_span_detection.txt");
-      if (filesystem_library.existsSync(span_prompt_path)) {
-        const span_instruction_prompt = filesystem_library.readFileSync(span_prompt_path, "utf8");
+      const span_instruction_prompt = get_cached_prompt_template("unmarked_span_detection.txt");
+      if (span_instruction_prompt) {
         const active_model_tag = await retrieve_currently_loaded_model_tag(lm_studio_api_url);
         const response_payload = await dispatch_http_post_request(lm_studio_api_url, {
           model: active_model_tag,
@@ -429,9 +452,8 @@ async function detect_unmarked_spans_joint(paragraph_string, lm_studio_api_url, 
   if (lm_studio_api_url) {
     try {
       await release_comfyui_vram();
-      const joint_prompt_path = path_library.join(__dirname, "..", "prompts", "unmarked_joint_attribution.txt");
-      if (filesystem_library.existsSync(joint_prompt_path)) {
-        const base_system_instructional_prompt = filesystem_library.readFileSync(joint_prompt_path, "utf8");
+      const base_system_instructional_prompt = get_cached_prompt_template("unmarked_joint_attribution.txt");
+      if (base_system_instructional_prompt) {
         const formatted_candidate_characters_list = character_names_list.length > 0
           ? [...character_names_list]
           : ["Narrator", "Character"];
@@ -696,9 +718,8 @@ function register_ai_pipeline_handlers(ipcMain, getMainWindow) {
     const { book_text_segment, lm_studio_api_url_address, workspace_directory_path, project_name } = request_arguments;
     await release_comfyui_vram();
 
-    const prompt_path = path_library.join(__dirname, "..", "prompts", "cast_discovery.txt");
     const system_instructional_prompt = apply_relationship_taxonomy_placeholders(
-      filesystem_library.readFileSync(prompt_path, "utf8")
+      get_cached_prompt_template("cast_discovery.txt")
     );
     const user_input_content = `Extract characters from this book segment:\n\n${book_text_segment}`;
 
@@ -829,8 +850,7 @@ function register_ai_pipeline_handlers(ipcMain, getMainWindow) {
     const book_text_segment = raw_text.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
     const lm_studio_api_url_address = request_arguments.lm_studio_api_url_address;
 
-    const prompt_path = path_library.join(__dirname, "..", "prompts", "script_formatting.txt");
-    const system_instructional_prompt = filesystem_library.readFileSync(prompt_path, "utf8");
+    const system_instructional_prompt = get_cached_prompt_template("script_formatting.txt");
 
     const active_loaded_model_id_tag = await retrieve_currently_loaded_model_tag(lm_studio_api_url_address);
 
@@ -1086,9 +1106,8 @@ EXAMPLE OUTPUT:
       0
     );
 
-    const prompt_path = path_library.join(__dirname, "..", "prompts", "directorial_orchestration.txt");
     const directorial_system_prompt_instructions = apply_relationship_taxonomy_placeholders(
-      filesystem_library.readFileSync(prompt_path, "utf8")
+      get_cached_prompt_template("directorial_orchestration.txt")
     )
       .replace("{{CAST_GUIDE_CONTEXT}}", compiled_cast_guide_context)
       .replace("{{RELATIONSHIP_TIMELINE_CONTEXT}}", formatted_relationships_summary);
@@ -1206,13 +1225,11 @@ EXAMPLE OUTPUT:
     await release_comfyui_vram();
     const { scene_segments, current_relationships, active_scene_cast, lm_studio_api_url_address } = request_arguments;
 
-    const prompt_path = path_library.join(__dirname, "..", "prompts", "relationship_delta.txt");
-    if (!filesystem_library.existsSync(prompt_path)) {
+    const raw_delta_prompt = get_cached_prompt_template("relationship_delta.txt");
+    if (!raw_delta_prompt) {
       return { updated_relationships: current_relationships || [], changes: [] };
     }
-    const delta_prompt_template = apply_relationship_taxonomy_placeholders(
-      filesystem_library.readFileSync(prompt_path, "utf8")
-    );
+    const delta_prompt_template = apply_relationship_taxonomy_placeholders(raw_delta_prompt);
 
     const formatted_active_relationships = format_active_relationships_summary_for_prompt(
       active_scene_cast || [],
@@ -1271,8 +1288,7 @@ EXAMPLE OUTPUT:
     await release_comfyui_vram();
     const { preceding_context_lines, target_sentence_text, succeeding_context_lines, lm_studio_api_url_address } = request_arguments;
 
-    const prompt_path = path_library.join(__dirname, "..", "prompts", "emotional_staging.txt");
-    const system_instructional_prompt = filesystem_library.readFileSync(prompt_path, "utf8");
+    const system_instructional_prompt = get_cached_prompt_template("emotional_staging.txt");
 
     const user_input_content = `Preceding context: ${preceding_context_lines.join(" | ")}
 Target line: "${target_sentence_text}"
@@ -1319,8 +1335,7 @@ Succeeding context: ${succeeding_context_lines.join(" | ")}`;
     await release_comfyui_vram();
     const { cell1_text, cell1_style, cell2_text, cell2_style, transition_instructions, lm_studio_api_url_address } = request_arguments;
 
-    const prompt_path = path_library.join(__dirname, "..", "prompts", "style_merger.txt");
-    const system_instructional_prompt = filesystem_library.readFileSync(prompt_path, "utf8");
+    const system_instructional_prompt = get_cached_prompt_template("style_merger.txt");
 
     const user_input_content = `Cell 1 Text: "${cell1_text}"
 Cell 1 Style: ${JSON.stringify(cell1_style)}

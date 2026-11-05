@@ -20,6 +20,22 @@ const {
   dispatch_http_post_request
 } = require("./ai_pipeline_service");
 
+// WHAT: In-memory cache for parsed AuK ComfyUI workflow JSON structures.
+// WHY: Eliminates repetitive synchronous fs.readFileSync calls during post-production audio tasks.
+const AUK_WORKFLOW_JSON_CACHE = new Map();
+
+function get_cloned_auk_workflow_template(workflow_template_absolute_path) {
+  if (!AUK_WORKFLOW_JSON_CACHE.has(workflow_template_absolute_path)) {
+    if (!filesystem_library.existsSync(workflow_template_absolute_path)) {
+      return null;
+    }
+    const raw_file_content = filesystem_library.readFileSync(workflow_template_absolute_path, "utf-8");
+    const parsed_payload = JSON.parse(raw_file_content);
+    AUK_WORKFLOW_JSON_CACHE.set(workflow_template_absolute_path, parsed_payload);
+  }
+  return structuredClone(AUK_WORKFLOW_JSON_CACHE.get(workflow_template_absolute_path));
+}
+
 function register_auk_postprod_handlers(ipcMain) {
   // WHAT: Applies an AuK editing workflow to an existing take audio clip.
   ipcMain.handle("audio:apply-auk-edit", async (ipc_event_context, request_arguments) => {
@@ -104,11 +120,10 @@ function register_auk_postprod_handlers(ipcMain) {
       }
 
       const workflow_template_absolute_path = path_library.join(__dirname, "..", "comfyui_workflows", workflow_template_filename);
-      if (!filesystem_library.existsSync(workflow_template_absolute_path)) {
+      const comfyui_workflow_nodes_payload = get_cloned_auk_workflow_template(workflow_template_absolute_path);
+      if (!comfyui_workflow_nodes_payload) {
         return { success: false, error: `AuK workflow template ${workflow_template_filename} not found on disk.` };
       }
-
-      const comfyui_workflow_nodes_payload = JSON.parse(filesystem_library.readFileSync(workflow_template_absolute_path, "utf-8"));
 
       const source_audio_file_extension = path_library.extname(source_take_file_path) || ".wav";
       const staging_audio_filename = `auk_edit_input_${Date.now()}${source_audio_file_extension}`;

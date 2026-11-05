@@ -35,6 +35,42 @@ function get_known_character_names_list() {
   return list_of_known_character_names;
 }
 
+// WHAT: In-memory cache for character dropdown select options HTML.
+// WHY: In chapters with 1,500 lines and 40 characters, building options from scratch performs 60,000 string concatenations.
+//      Caching the rendered options per speaker reduces allocations from 60,000+ down to ~40.
+const SPEAKER_OPTIONS_CACHE = new Map();
+let last_speaker_cache_character_signature = "";
+
+/**
+ * WHAT: Retrieves or generates cached HTML <option> string for character dropdowns.
+ * 
+ * @param {ReadonlyArray<string>} list_of_known_character_names 
+ * @param {string} selected_speaker_name 
+ * @returns {string} Rendered <option> HTML tags string.
+ */
+function get_cached_speaker_select_options_html(list_of_known_character_names, selected_speaker_name) {
+  const current_signature = list_of_known_character_names.join("::");
+  if (last_speaker_cache_character_signature !== current_signature) {
+    SPEAKER_OPTIONS_CACHE.clear();
+    last_speaker_cache_character_signature = current_signature;
+  }
+
+  const lookup_key = selected_speaker_name || "";
+  if (SPEAKER_OPTIONS_CACHE.has(lookup_key)) {
+    return SPEAKER_OPTIONS_CACHE.get(lookup_key);
+  }
+
+  let options_html = "";
+  for (let char_index = 0; char_index < list_of_known_character_names.length; char_index++) {
+    const character_name_option = list_of_known_character_names[char_index];
+    const selected_attribute_flag = (selected_speaker_name === character_name_option) ? "selected" : "";
+    options_html += `<option value="${character_name_option}" ${selected_attribute_flag}>${character_name_option}</option>`;
+  }
+
+  SPEAKER_OPTIONS_CACHE.set(lookup_key, options_html);
+  return options_html;
+}
+
 /**
  * WHAT: Builds an individual screenplay card DOM element.
  * WHY: Enables both batch DocumentFragment rendering and surgical in-place DOM card updates.
@@ -80,12 +116,10 @@ function build_single_screenplay_card_element(segment_index_counter, active_scri
     ? "btn-override-active"
     : "btn-override-default";
 
-  let character_select_options_html = "";
-  for (let char_index = 0; char_index < list_of_known_character_names.length; char_index++) {
-    const character_name_option = list_of_known_character_names[char_index];
-    const selected_attribute_flag = (active_script_segment_item.speaker === character_name_option) ? "selected" : "";
-    character_select_options_html += `<option value="${character_name_option}" ${selected_attribute_flag}>${character_name_option}</option>`;
-  }
+  const character_select_options_html = get_cached_speaker_select_options_html(
+    list_of_known_character_names,
+    active_script_segment_item.speaker
+  );
 
   let take_select_options_html = "";
   if (active_script_segment_item.audioVersions && active_script_segment_item.audioVersions.length > 0) {
@@ -2924,14 +2958,12 @@ function populate_directorial_cards_in_editor_view() {
     individual_directorial_card_element.className = "directorial_item_card";
     individual_directorial_card_element.id = `directorial_card_node_${segment_index_counter}`;
 
-    // WHAT: Constructing character select options dynamically.
-    // WHY: Populates speaker pills so directors can reassign speaking roles.
-    let character_select_options_html = "";
-    for (let char_index = 0; char_index < list_of_known_character_names.length; char_index++) {
-      const character_name_option = list_of_known_character_names[char_index];
-      const selected_attribute_flag = (active_script_segment_item.speaker === character_name_option) ? "selected" : "";
-      character_select_options_html += `<option value="${character_name_option}" ${selected_attribute_flag}>${character_name_option}</option>`;
-    }
+    // WHAT: Constructing character select options using cached HTML generator.
+    // WHY: Populates speaker pills using cached templates, eliminating thousands of string allocations.
+    const character_select_options_html = get_cached_speaker_select_options_html(
+      list_of_known_character_names,
+      active_script_segment_item.speaker
+    );
 
     const delivery_parameters = active_script_segment_item.delivery || { pitch: "medium", pacing: "normal", volume: "normal", style_label: "neutral" };
 

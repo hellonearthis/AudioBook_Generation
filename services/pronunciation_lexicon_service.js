@@ -53,20 +53,15 @@ function escape_regular_expression_characters(text_string) {
 }
 
 /**
- * WHAT: Pure functional text transformation applying a lexicon dictionary to a text passage.
- * WHY: Scans the target text, finds all whole-word and phrase occurrences of lexicon keys,
- *      and replaces them with phonetic respellings or expansions.
+ * WHAT: Pre-compiles and sorts a lexicon collection into reusable regex rules.
+ * WHY: Avoids sorting arrays and re-instantiating RegExp instances on every single line of dialogue.
  * 
- * @param {string} original_text_passage - The raw script segment text.
- * @param {ReadonlyArray<Object>|Readonly<Record<string, any>>} lexicon_collection - Array of entries or key-value map.
- * @returns {{ readonly transformed_text: string, readonly applied_replacements_list: ReadonlyArray<Object> }}
+ * @param {ReadonlyArray<Object>|Readonly<Record<string, any>>} lexicon_collection
+ * @returns {ReadonlyArray<{ target_word: string, replacement: string, type: string, regex: RegExp }>}
  */
-function apply_pronunciation_lexicon(original_text_passage, lexicon_collection) {
-  if (!original_text_passage || typeof original_text_passage !== "string") {
-    return {
-      transformed_text: "",
-      applied_replacements_list: []
-    };
+function compile_lexicon_rules(lexicon_collection) {
+  if (Array.isArray(lexicon_collection) && lexicon_collection.length > 0 && lexicon_collection[0].regex instanceof RegExp) {
+    return lexicon_collection;
   }
 
   let normalized_entries_list = [];
@@ -86,6 +81,58 @@ function apply_pronunciation_lexicon(original_text_passage, lexicon_collection) 
   }
 
   if (normalized_entries_list.length === 0) {
+    return Object.freeze([]);
+  }
+
+  const sorted_entries_list = [...normalized_entries_list].sort(
+    (entry_alpha, entry_beta) => entry_beta.target_word.length - entry_alpha.target_word.length
+  );
+
+  const compiled_rules = sorted_entries_list.map((current_entry) => {
+    const escaped_target_pattern = escape_regular_expression_characters(current_entry.target_word);
+    const regex_flags_string = current_entry.case_sensitive ? "g" : "gi";
+
+    const starts_with_word_char = /^\w/.test(current_entry.target_word);
+    const ends_with_word_char = /\w$/.test(current_entry.target_word);
+    const boundary_prefix = starts_with_word_char ? "\\b" : "";
+    const boundary_suffix = ends_with_word_char ? "\\b" : "";
+
+    const compiled_regex = new RegExp(
+      `${boundary_prefix}${escaped_target_pattern}${boundary_suffix}`,
+      regex_flags_string
+    );
+
+    return Object.freeze({
+      target_word: current_entry.target_word,
+      replacement: current_entry.replacement,
+      type: current_entry.type,
+      regex: compiled_regex
+    });
+  });
+
+  return Object.freeze(compiled_rules);
+}
+
+/**
+ * WHAT: Pure functional text transformation applying a lexicon dictionary to a text passage.
+ * WHY: Scans the target text, finds all whole-word and phrase occurrences of lexicon keys,
+ *      and replaces them with phonetic respellings or expansions.
+ * 
+ * @param {string} original_text_passage - The raw script segment text.
+ * @param {ReadonlyArray<Object>|Readonly<Record<string, any>>} lexicon_collection - Array of entries, pre-compiled rules, or key-value map.
+ * @returns {{ readonly transformed_text: string, readonly applied_replacements_list: ReadonlyArray<Object> }}
+ */
+function apply_pronunciation_lexicon(original_text_passage, lexicon_collection) {
+  if (!original_text_passage || typeof original_text_passage !== "string") {
+    return {
+      transformed_text: "",
+      applied_replacements_list: []
+    };
+  }
+
+  const compiled_rules_list = compile_lexicon_rules(lexicon_collection);
+
+  if (compiled_rules_list.length === 0) {
     return {
       transformed_text: original_text_passage,
       applied_replacements_list: []
@@ -95,40 +142,22 @@ function apply_pronunciation_lexicon(original_text_passage, lexicon_collection) 
   let working_transformed_text = original_text_passage;
   const applied_replacements_list = [];
 
-  // WHAT: Processing replacements in order of descending target word length.
-  // WHY: Longer compound phrases (e.g., "Doctor John") must take precedence over single words ("Doctor").
-  const sorted_entries_list = [...normalized_entries_list].sort(
-    (entry_alpha, entry_beta) => entry_beta.target_word.length - entry_alpha.target_word.length
-  );
-
-  for (let entry_index = 0; entry_index < sorted_entries_list.length; entry_index++) {
-    const current_entry = sorted_entries_list[entry_index];
-    const escaped_target_pattern = escape_regular_expression_characters(current_entry.target_word);
-    const regex_flags_string = current_entry.case_sensitive ? "g" : "gi";
-
-    // WHAT: Using word boundaries if the target starts and ends with alphanumeric characters.
-    // WHY: Prevents partial-word accidental replacements (e.g., replacing "the" inside "brother").
-    const starts_with_word_char = /^\w/.test(current_entry.target_word);
-    const ends_with_word_char = /\w$/.test(current_entry.target_word);
-    const boundary_prefix = starts_with_word_char ? "\\b" : "";
-    const boundary_suffix = ends_with_word_char ? "\\b" : "";
-
-    const search_regular_expression = new RegExp(
-      `${boundary_prefix}${escaped_target_pattern}${boundary_suffix}`,
-      regex_flags_string
-    );
+  for (let rule_index = 0; rule_index < compiled_rules_list.length; rule_index++) {
+    const current_rule = compiled_rules_list[rule_index];
+    // Reset lastIndex for global regexes before replacement
+    current_rule.regex.lastIndex = 0;
 
     let match_count = 0;
-    working_transformed_text = working_transformed_text.replace(search_regular_expression, (matched_substring) => {
+    working_transformed_text = working_transformed_text.replace(current_rule.regex, (matched_substring) => {
       match_count += 1;
-      return current_entry.replacement;
+      return current_rule.replacement;
     });
 
     if (match_count > 0) {
       applied_replacements_list.push({
-        target_word: current_entry.target_word,
-        replacement: current_entry.replacement,
-        type: current_entry.type,
+        target_word: current_rule.target_word,
+        replacement: current_rule.replacement,
+        type: current_rule.type,
         occurrences_replaced_count: match_count
       });
     }
@@ -321,6 +350,7 @@ function register_pronunciation_lexicon_handlers(ipcMain) {
 module.exports = {
   normalize_lexicon_entry,
   escape_regular_expression_characters,
+  compile_lexicon_rules,
   apply_pronunciation_lexicon,
   load_project_lexicon_from_disk,
   save_project_lexicon_to_disk,

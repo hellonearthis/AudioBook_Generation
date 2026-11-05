@@ -4,6 +4,14 @@
 //      and synthesizes them with character profiles to enrich dialogue cards with [Voice Quality], [Prosody],
 //      [Style], and [Emotion] without destroying or truncating narrative prose.
 
+// WHAT: Pre-compiled module-level regular expressions for narrative acoustic cues.
+// WHY: Hoisting regexes to module scope avoids repeatedly recompiling complex regex state machines across thousands of lines.
+const EXPLICIT_VOICE_REGEX = /(?:her|his|their|[a-zA-Z]+'s)\s+voice\s+(?:was|sounded|became|grew)\s+([^.]+)/i;
+const PARTICIPLE_VOICE_REGEX = /(?:her|his|their|[a-zA-Z]+'s)?\s*voice\s+(softening|cracking|breaking|dropping|rising|tightening|wavering|trembling|quivering|faltering|thickening)(?:[^,.]+)/i;
+const PREP_TONE_REGEX = /(?:in|with)\s+an?\s+([^.]+?)\s+(?:voice|tone|cadence|rasp|murmur|whisper|growl|inflection|diction)/i;
+const SPEECH_VERB_REGEX = /(?:,\s*)?(?:(?:she|he|they|[A-Z][a-zA-Z]+)\s+)?(whispered|murmured|muttered|breathed|hissed|shouted|yelled|bellowed|screamed|gasped|choked|sobbed|snapped|barked|growled|spat|stammered|faltered|sighed|laughed|chuckled|replied|answered|said|asked|called|warned|commanded)(?:\s+(softly|quietly|gently|faintly|flatly|coldly|monotonously|harshly|bitterly|sharply|wearily|tiredly|heavily|urgently|desperately|breathlessly|huskily|dryly|slowly|firmly|smoothly))?/i;
+const VOICE_PREFIX_CLEANUP_REGEX = /^(?:her|his|their)\s+voice\s+(?:was|sounded|became|grew)\s+/i;
+
 /**
  * Extracts acoustic, prosody, and emotional cues from narrative context surrounding dialogue.
  *
@@ -35,9 +43,7 @@ function extract_acoustic_cues_from_narrative_context(text) {
 
   // 1. Explicit voice/delivery clauses:
   // e.g. "Her voice was flat, clipped by the environmental seal of her collar."
-  // e.g. "His voice sounded dry and cracked."
-  // e.g. "Their voices grew tight with panic."
-  const explicit_voice_match = /(?:her|his|their|[a-zA-Z]+'s)\s+voice\s+(?:was|sounded|became|grew)\s+([^.]+)/i.exec(clean_text);
+  const explicit_voice_match = EXPLICIT_VOICE_REGEX.exec(clean_text);
   if (explicit_voice_match && explicit_voice_match[1]) {
     cues.vocal_clause = explicit_voice_match[1].trim();
     cues.raw_acoustic_phrase = cues.vocal_clause;
@@ -45,9 +51,7 @@ function extract_acoustic_cues_from_narrative_context(text) {
 
   // 2. Dynamic voice participle clauses:
   // e.g. "her voice softening slightly against the warm cedar"
-  // e.g. "his voice cracking with emotion"
-  // e.g. "voice dropping to an urgent whisper"
-  const participle_voice_match = /(?:her|his|their|[a-zA-Z]+'s)?\s*voice\s+(softening|cracking|breaking|dropping|rising|tightening|wavering|trembling|quivering|faltering|thickening)(?:[^,.]+)/i.exec(clean_text);
+  const participle_voice_match = PARTICIPLE_VOICE_REGEX.exec(clean_text);
   if (participle_voice_match && participle_voice_match[0]) {
     cues.vocal_clause = participle_voice_match[0].trim();
     if (!cues.raw_acoustic_phrase) cues.raw_acoustic_phrase = cues.vocal_clause;
@@ -55,7 +59,7 @@ function extract_acoustic_cues_from_narrative_context(text) {
 
   // 3. Prepositional tone phrases:
   // e.g. "in a low, gravelly rasp", "with a quiet resolve", "in a clipped administrative tone"
-  const prep_tone_match = /(?:in|with)\s+an?\s+([^.]+?)\s+(?:voice|tone|cadence|rasp|murmur|whisper|growl|inflection|diction)/i.exec(clean_text);
+  const prep_tone_match = PREP_TONE_REGEX.exec(clean_text);
   if (prep_tone_match && prep_tone_match[1]) {
     cues.in_tone_phrase = `${prep_tone_match[1].trim()} tone`;
     if (!cues.raw_acoustic_phrase) cues.raw_acoustic_phrase = cues.in_tone_phrase;
@@ -63,8 +67,7 @@ function extract_acoustic_cues_from_narrative_context(text) {
 
   // 4. Speech tag verbs & adverbs:
   // e.g. "she said", "he whispered softly", "Mara answered softly", "she snapped bitterly"
-  const speech_verb_regex = /(?:,\s*)?(?:(?:she|he|they|[A-Z][a-zA-Z]+)\s+)?(whispered|murmured|muttered|breathed|hissed|shouted|yelled|bellowed|screamed|gasped|choked|sobbed|snapped|barked|growled|spat|stammered|faltered|sighed|laughed|chuckled|replied|answered|said|asked|called|warned|commanded)(?:\s+(softly|quietly|gently|faintly|flatly|coldly|monotonously|harshly|bitterly|sharply|wearily|tiredly|heavily|urgently|desperately|breathlessly|huskily|dryly|slowly|firmly|smoothly))?/i;
-  const verb_match = speech_verb_regex.exec(clean_text);
+  const verb_match = SPEECH_VERB_REGEX.exec(clean_text);
   if (verb_match) {
     cues.speech_verb = verb_match[1] ? verb_match[1].toLowerCase() : null;
     cues.speech_adverb = verb_match[2] ? verb_match[2].toLowerCase() : null;
@@ -226,7 +229,7 @@ function build_directorial_style_for_dialogue(dialogue_text, speaker_name, speak
   let direction = "";
   if (cues.raw_acoustic_phrase) {
     // Clean up phrase for direct parenthetical direction
-    let clean_phrase = cues.raw_acoustic_phrase.replace(/^(her|his|their)\s+voice\s+(was|sounded|became|grew)\s+/i, '');
+    let clean_phrase = cues.raw_acoustic_phrase.replace(VOICE_PREFIX_CLEANUP_REGEX, '');
     clean_phrase = clean_phrase.charAt(0).toUpperCase() + clean_phrase.slice(1);
     direction = clean_phrase.endsWith('.') ? clean_phrase : `${clean_phrase}.`;
   } else if (cues.is_whisper) {
