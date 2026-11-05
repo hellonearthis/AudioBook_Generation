@@ -162,6 +162,25 @@ function fetch_comfyui_queue_history(comfyui_server_endpoint, target_prompt_id) 
   });
 }
 
+/**
+ * WHAT: Computes progressive, adaptive polling sleep intervals for ComfyUI generation checks.
+ * WHY: Short lines or warm models finish in ~300ms-800ms. Checking at 200ms catches completed takes
+ *      immediately, shaving up to 800ms of dead sleep off every take, while backing off gracefully
+ *      for longer takes to avoid hammering the local HTTP server.
+ * 
+ * @param {number} iteration_count - The current polling loop iteration index.
+ * @returns {number} Milliseconds to delay before next history check.
+ */
+function compute_adaptive_poll_interval_ms(iteration_count) {
+  if (iteration_count < 5) {
+    return 200; // First second: 5 fast checks (200ms, 400ms, 600ms, 800ms, 1000ms)
+  }
+  if (iteration_count < 15) {
+    return 400; // Seconds 2-6: checks every 400ms
+  }
+  return 800; // Long renders: check every 800ms
+}
+
 // WHAT: Programmatic Refresh of ComfyUI model directories and object definitions.
 // WHY: Ensures new saved voices are immediately recognized by ComfyUI without a manual restart.
 async function refresh_comfyui_models(comfyui_api_url) {
@@ -862,7 +881,8 @@ async function execute_sequential_generation_queue(getMainWindow) {
     let check_iterations_limit = 0;
 
     while (rendering_is_active && check_iterations_limit < 600) {
-      await new Promise((resolve_delay) => setTimeout(resolve_delay, 1000));
+      const adaptive_poll_delay_ms = compute_adaptive_poll_interval_ms(check_iterations_limit);
+      await new Promise((resolve_delay) => setTimeout(resolve_delay, adaptive_poll_delay_ms));
       
       const queue_status_payload = await fetch_comfyui_queue_history(current_active_task.comfyui_api_url_address, prompt_execution_id);
       if (queue_status_payload && queue_status_payload[prompt_execution_id]) {
@@ -1183,7 +1203,8 @@ function register_audio_queue_handlers(ipcMain, getMainWindow) {
       let anchor_bake_poll_iterations = 0;
 
       while (anchor_bake_rendering_is_active && anchor_bake_poll_iterations < 600) {
-        await new Promise((resolve_delay) => setTimeout(resolve_delay, 1000));
+        const adaptive_bake_delay_ms = compute_adaptive_poll_interval_ms(anchor_bake_poll_iterations);
+        await new Promise((resolve_delay) => setTimeout(resolve_delay, adaptive_bake_delay_ms));
 
         const anchor_bake_history_payload = await fetch_comfyui_queue_history(
           comfyui_api_url_address, anchor_bake_prompt_execution_id
@@ -1425,6 +1446,7 @@ module.exports = {
   register_audio_queue_handlers,
   resolve_comfyui_base_directory,
   fetch_comfyui_queue_history,
+  compute_adaptive_poll_interval_ms,
   persist_queue_state_to_disk,
   load_persisted_queue_state
 };

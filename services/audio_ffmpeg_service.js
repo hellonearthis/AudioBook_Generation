@@ -12,6 +12,100 @@ const ffmpeg = require("fluent-ffmpeg");
 const ffmpegStatic = require("ffmpeg-static");
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
+/**
+ * WHAT: Chunks an array into smaller sub-arrays of specified maximum size.
+ * WHY: Prevents exhausting OS open file descriptors (512 limit on Windows) when stitching large audio timelines.
+ * 
+ * @param {ReadonlyArray<any>} items_list 
+ * @param {number} batch_size 
+ * @returns {Array<Array<any>>}
+ */
+function chunk_timeline_into_safe_batches(items_list, batch_size = 45) {
+  const batches = [];
+  for (let index = 0; index < items_list.length; index += batch_size) {
+    batches.push(items_list.slice(index, index + batch_size));
+  }
+  return batches;
+}
+
+/**
+ * WHAT: Stitches a single batch of audio clips into a temporary WAV file using FFmpeg filter_complex.
+ * 
+ * @param {ReadonlyArray<Object>} batch_clips 
+ * @param {string} destination_output_path 
+ * @returns {Promise<string>} Output file path.
+ */
+function stitch_single_batch_to_wav(batch_clips, destination_output_path) {
+  return new Promise((resolve_batch, reject_batch) => {
+    const ffmpeg_command = ffmpeg();
+    let complex_filter_chain = "";
+    let concatenated_inputs = "";
+
+    batch_clips.forEach((clip, clip_index) => {
+      ffmpeg_command.input(clip.filePath);
+      const silence_gap = clip.gap_before || 0;
+      if (silence_gap > 0 && clip_index < batch_clips.length - 1) {
+        complex_filter_chain += `[${clip_index}:a]apad=pad_dur=${silence_gap}[aud${clip_index}];`;
+        concatenated_inputs += `[aud${clip_index}]`;
+      } else {
+        concatenated_inputs += `[${clip_index}:a]`;
+      }
+    });
+
+    complex_filter_chain += `${concatenated_inputs}concat=n=${batch_clips.length}:v=0:a=1[aout]`;
+
+    ffmpeg_command
+      .complexFilter(complex_filter_chain, ["aout"])
+      .output(destination_output_path)
+      .on("end", () => resolve_batch(destination_output_path))
+      .on("error", (error) => reject_batch(error))
+      .run();
+  });
+}
+
+/**
+ * WHAT: Concatenates pre-stitched chunk WAV files using FFmpeg's concat demuxer in stream-copy mode.
+ * WHY: Zero-reencoding concat takes <0.2 seconds and opens only 1 file at a time, completely immune to file descriptor limits.
+ * 
+ * @param {ReadonlyArray<string>} chunk_file_paths 
+ * @param {string} final_output_master_path 
+ * @param {string} temporary_directory_path 
+ * @returns {Promise<string>}
+ */
+function concat_chunk_wav_files_via_demuxer(chunk_file_paths, final_output_master_path, temporary_directory_path) {
+  return new Promise((resolve_concat, reject_concat) => {
+    const manifest_path = path_library.join(temporary_directory_path, `concat_manifest_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.txt`);
+    const manifest_content = chunk_file_paths
+      .map(p => `file '${p.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`)
+      .join("\n");
+
+    filesystem_library.writeFileSync(manifest_path, manifest_content, "utf-8");
+
+    ffmpeg()
+      .input(manifest_path)
+      .inputOptions(["-f concat", "-safe 0"])
+      .outputOptions(["-c copy"])
+      .output(final_output_master_path)
+      .on("end", () => {
+        try {
+          if (filesystem_library.existsSync(manifest_path)) {
+            filesystem_library.unlinkSync(manifest_path);
+          }
+        } catch (_) {}
+        resolve_concat(final_output_master_path);
+      })
+      .on("error", (error) => {
+        try {
+          if (filesystem_library.existsSync(manifest_path)) {
+            filesystem_library.unlinkSync(manifest_path);
+          }
+        } catch (_) {}
+        reject_concat(error);
+      })
+      .run();
+  });
+}
+
 function register_audio_ffmpeg_handlers(ipcMain) {
   // WHAT: Get precise duration of an audio file using music-metadata.
   // WHY: Avoids loading the full audio buffer into memory just to check its length.
@@ -28,75 +122,81 @@ function register_audio_ffmpeg_handlers(ipcMain) {
   });
 
   // WHAT: Stitch multiple audio segments together based on absolute timeline positions.
-  // WHY: Bypasses browser memory limitations by using native FFmpeg to assemble the final master audio.
+  // WHY: Bypasses browser memory limitations and OS file descriptor limits via hierarchical batching and concat demuxer.
   ipcMain.handle("audio:stitch-timeline", async (ipc_event_context, request_arguments) => {
     const { workspace_directory_path, project_name, timeline_data, is_directorial } = request_arguments;
     
-    return new Promise((resolve_promise_callback, reject_promise_callback) => {
-      try {
-        const project_root_directory_path = path_library.join(workspace_directory_path, project_name);
-        const output_audio_directory_path = path_library.join(project_root_directory_path, "audio", "master");
-        
-        if (!filesystem_library.existsSync(output_audio_directory_path)) {
-          filesystem_library.mkdirSync(output_audio_directory_path, { recursive: true });
-        }
-
-        const formatted_project_name = project_name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        const output_filename = is_directorial ? `${formatted_project_name}_directorial_mixdown.wav` : `${formatted_project_name}_classic_mixdown.wav`;
-        const compiled_master_output_path = path_library.join(output_audio_directory_path, output_filename);
-
-        if (!timeline_data || timeline_data.length === 0) {
-          return resolve_promise_callback({ success: false, error: "No timeline data provided." });
-        }
-
-        // WHAT: Verifying that each audio file on the timeline physically exists on disk.
-        // WHY: Prevents FFmpeg from crashing halfway through stitching if a line was not synthesized yet.
-        for (const timeline_audio_clip of timeline_data) {
-          if (!filesystem_library.existsSync(timeline_audio_clip.filePath)) {
-            return resolve_promise_callback({ 
-              success: false, 
-              error: `Missing required audio file: ${timeline_audio_clip.filePath}. Please ensure all segments are generated before stitching.` 
-            });
-          }
-        }
-
-        const ffmpeg_command_instance = ffmpeg();
-        let complex_filter_chain_string = "";
-        let concatenated_audio_inputs_string = "";
-
-        // WHAT: Adding audio inputs to FFmpeg and building silence padding filters.
-        // WHY: Inter-line pauses (gap_before) must be preserved in the stitched master file.
-        timeline_data.forEach((timeline_audio_clip, clip_index_position) => {
-          ffmpeg_command_instance.input(timeline_audio_clip.filePath);
-          
-          const silence_gap_duration_seconds = timeline_audio_clip.gap_before || 0;
-          if (silence_gap_duration_seconds > 0 && clip_index_position < timeline_data.length - 1) {
-            complex_filter_chain_string += `[${clip_index_position}:a]apad=pad_dur=${silence_gap_duration_seconds}[aud${clip_index_position}];`;
-            concatenated_audio_inputs_string += `[aud${clip_index_position}]`;
-          } else {
-            concatenated_audio_inputs_string += `[${clip_index_position}:a]`;
-          }
-        });
-
-        complex_filter_chain_string += `${concatenated_audio_inputs_string}concat=n=${timeline_data.length}:v=0:a=1[aout]`;
-
-        ffmpeg_command_instance
-          .complexFilter(complex_filter_chain_string, ["aout"])
-          .output(compiled_master_output_path)
-          .on("end", () => {
-            resolve_promise_callback({ success: true, mixdownAudioPath: compiled_master_output_path });
-          })
-          .on("error", (ffmpeg_execution_error) => {
-            console.error("FFmpeg stitching error:", ffmpeg_execution_error);
-            reject_promise_callback(ffmpeg_execution_error);
-          })
-          .run();
-
-      } catch (timeline_stitching_error) {
-        console.error("Failed to stitch timeline:", timeline_stitching_error);
-        reject_promise_callback(timeline_stitching_error);
+    try {
+      const project_root_directory_path = path_library.join(workspace_directory_path, project_name);
+      const output_audio_directory_path = path_library.join(project_root_directory_path, "audio", "master");
+      
+      if (!filesystem_library.existsSync(output_audio_directory_path)) {
+        filesystem_library.mkdirSync(output_audio_directory_path, { recursive: true });
       }
-    });
+
+      const formatted_project_name = project_name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const output_filename = is_directorial ? `${formatted_project_name}_directorial_mixdown.wav` : `${formatted_project_name}_classic_mixdown.wav`;
+      const compiled_master_output_path = path_library.join(output_audio_directory_path, output_filename);
+
+      if (!timeline_data || timeline_data.length === 0) {
+        return { success: false, error: "No timeline data provided." };
+      }
+
+      // WHAT: Verifying that each audio file on the timeline physically exists on disk.
+      // WHY: Prevents FFmpeg from crashing halfway through stitching if a line was not synthesized yet.
+      for (const timeline_audio_clip of timeline_data) {
+        if (!filesystem_library.existsSync(timeline_audio_clip.filePath)) {
+          return { 
+            success: false, 
+            error: `Missing required audio file: ${timeline_audio_clip.filePath}. Please ensure all segments are generated before stitching.` 
+          };
+        }
+      }
+
+      const timeline_batches = chunk_timeline_into_safe_batches(timeline_data, 45);
+
+      if (timeline_batches.length === 1) {
+        // WHAT: Fast path for small timelines (<= 45 clips): stitch directly to master output.
+        await stitch_single_batch_to_wav(timeline_batches[0], compiled_master_output_path);
+        return { success: true, mixdownAudioPath: compiled_master_output_path };
+      }
+
+      // WHAT: Large timelines (> 45 clips): hierarchical batching + stream-copy concat demuxer.
+      // WHY: Prevents exhausting OS open file descriptors (512 limit on Windows) and eliminates giant filter graphs.
+      const temporary_chunk_paths = [];
+      const temp_timestamp = Date.now();
+
+      try {
+        for (let batch_index = 0; batch_index < timeline_batches.length; batch_index++) {
+          const chunk_target_path = path_library.join(
+            output_audio_directory_path,
+            `temp_stitch_chunk_${temp_timestamp}_${batch_index}.wav`
+          );
+          await stitch_single_batch_to_wav(timeline_batches[batch_index], chunk_target_path);
+          temporary_chunk_paths.push(chunk_target_path);
+        }
+
+        await concat_chunk_wav_files_via_demuxer(
+          temporary_chunk_paths,
+          compiled_master_output_path,
+          output_audio_directory_path
+        );
+
+        return { success: true, mixdownAudioPath: compiled_master_output_path };
+      } finally {
+        // Clean up temporary batch files
+        for (const temp_chunk_file of temporary_chunk_paths) {
+          try {
+            if (filesystem_library.existsSync(temp_chunk_file)) {
+              filesystem_library.unlinkSync(temp_chunk_file);
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (timeline_stitching_error) {
+      console.error("Failed to stitch timeline:", timeline_stitching_error);
+      return { success: false, error: timeline_stitching_error.message };
+    }
   });
 
   // WHAT: Reads an audio file directly into memory and returns an ArrayBuffer.
@@ -171,5 +271,8 @@ function register_audio_ffmpeg_handlers(ipcMain) {
 }
 
 module.exports = {
-  register_audio_ffmpeg_handlers
+  register_audio_ffmpeg_handlers,
+  chunk_timeline_into_safe_batches,
+  stitch_single_batch_to_wav,
+  concat_chunk_wav_files_via_demuxer
 };

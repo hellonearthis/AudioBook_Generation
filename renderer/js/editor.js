@@ -16,6 +16,249 @@ let renderer_directorial_card_queue_status_registry = {};
 // SCREENPLAY RENDERER - DOM CARD BUILDER
 // =========================================================================
 
+/**
+ * WHAT: Retrieves the current list of known character names from the active project state.
+ * 
+ * @returns {Array<string>} Character names list.
+ */
+function get_known_character_names_list() {
+  const list_of_known_character_names = ["Narrator"];
+  if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping) {
+    const keys_of_mapped_voices = Object.keys(active_loaded_project_state_object.voiceMapping);
+    for (let index_counter = 0; index_counter < keys_of_mapped_voices.length; index_counter++) {
+      const voice_key_name = keys_of_mapped_voices[index_counter];
+      if (voice_key_name !== "Narrator") {
+        list_of_known_character_names.push(voice_key_name);
+      }
+    }
+  }
+  return list_of_known_character_names;
+}
+
+/**
+ * WHAT: Builds an individual screenplay card DOM element.
+ * WHY: Enables both batch DocumentFragment rendering and surgical in-place DOM card updates.
+ * 
+ * @param {number} segment_index_counter 
+ * @param {Object} active_script_segment_item 
+ * @param {Array<string>} list_of_known_character_names 
+ * @returns {HTMLElement} The constructed screenplay card DOM node.
+ */
+function build_single_screenplay_card_element(segment_index_counter, active_script_segment_item, list_of_known_character_names) {
+  active_script_segment_item.index_position = segment_index_counter;
+
+  const individual_script_segment_card_element = document.createElement("div");
+  
+  if (active_script_segment_item.type === "dialogue") {
+    individual_script_segment_card_element.className = "screenplay_item_card dialogue_type_card";
+  } else {
+    individual_script_segment_card_element.className = "screenplay_item_card narrator_type_card";
+  }
+
+  if (active_script_segment_item.is_flagged) {
+    individual_script_segment_card_element.classList.add("card_flagged_for_review");
+  }
+
+  individual_script_segment_card_element.id = `screenplay_card_node_${segment_index_counter}`;
+
+  if (segment_index_counter === active_inspected_segment_index) {
+    individual_script_segment_card_element.classList.add("active_inspected_card");
+  }
+
+  individual_script_segment_card_element.addEventListener("click", (click_evt) => {
+    if (!click_evt.target.closest("button, select, textarea, span.inline_qwen_input")) {
+      select_and_inspect_segment(segment_index_counter);
+    }
+  });
+
+  const is_custom_override_enabled_on_card = active_script_segment_item.workflowOverride && 
+    active_script_segment_item.workflowOverride.workflowType && 
+    active_script_segment_item.workflowOverride.workflowType !== "inherit";
+
+  const override_button_text = is_custom_override_enabled_on_card ? "⚙️ Override Active" : "⚙️ Override";
+  const override_button_class = is_custom_override_enabled_on_card
+    ? "btn-override-active"
+    : "btn-override-default";
+
+  let character_select_options_html = "";
+  for (let char_index = 0; char_index < list_of_known_character_names.length; char_index++) {
+    const character_name_option = list_of_known_character_names[char_index];
+    const selected_attribute_flag = (active_script_segment_item.speaker === character_name_option) ? "selected" : "";
+    character_select_options_html += `<option value="${character_name_option}" ${selected_attribute_flag}>${character_name_option}</option>`;
+  }
+
+  let take_select_options_html = "";
+  if (active_script_segment_item.audioVersions && active_script_segment_item.audioVersions.length > 0) {
+    take_select_options_html += `<select class="take_select_pill" onchange="handle_card_take_change_event(${segment_index_counter}, this.value, false)" title="Switch active audio take">`;
+    for (let version_counter = 0; version_counter < active_script_segment_item.audioVersions.length; version_counter++) {
+      const take_version_item = active_script_segment_item.audioVersions[version_counter];
+      const selected_attribute_flag = take_version_item.isActive ? "selected" : "";
+      take_select_options_html += `<option value="${take_version_item.take}" ${selected_attribute_flag}>Take ${take_version_item.take}</option>`;
+    }
+    take_select_options_html += `</select>`;
+  }
+
+  const character_mapping_details_for_active_speaker = (active_loaded_project_state_object.voiceMapping && active_loaded_project_state_object.voiceMapping[active_script_segment_item.speaker]) || {};
+
+  const active_qwen_style_configuration_object = active_script_segment_item.qwen_style || {
+    age_range: character_mapping_details_for_active_speaker.age || "Adult",
+    gender: character_mapping_details_for_active_speaker.gender || "Unknown",
+    pitch: "medium",
+    vocal_texture: character_mapping_details_for_active_speaker.traits || "smooth and authoritative",
+    pacing: "normal",
+    cadence: "steady cadence",
+    acting_persona: "natural narrator",
+    vocal_technique: "steady rhythm",
+    rich_emotion: active_script_segment_item.direction || "calm delivery"
+  };
+
+  const create_qwen_input = (value, placeholder, property_key) => {
+    const safe_value = (value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<span class="inline_qwen_input" contenteditable="true" data-placeholder="${placeholder}" title="Edit ${placeholder}" oninput="handle_card_qwen_style_modification_event(${segment_index_counter}, '${property_key}', this.textContent)" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${safe_value}</span>`;
+  };
+
+  const is_tech_book = active_loaded_project_state_object.voiceMapping && Object.keys(active_loaded_project_state_object.voiceMapping).length === 1 && active_loaded_project_state_object.voiceMapping["Narrator"];
+
+  individual_script_segment_card_element.innerHTML = `
+    <div class="screenplay_card_meta_header">
+      <div class="d-flex align-items-center gap-8">
+        <span class="text-11 text-muted font-mono" title="Line Number">Line ${segment_index_counter}</span>
+        <select class="speaker_select_pill" onchange="handle_card_speaker_modification_event(${segment_index_counter}, this.value)" title="Assign character voice to this line">
+          ${character_select_options_html}
+        </select>
+        <button class="focus_anchor_btn" title="Focus and sync raw text & columns" onclick="highlight_synchronize_active_segment(${segment_index_counter}, false)">
+          <svg viewBox="0 0 24 24" width="10" height="10"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+          Focus
+        </button>
+        <button class="focus_anchor_btn ${override_button_class}" title="Configure Qwen workflow overrides" onclick="open_cell_workflow_config_modal(${segment_index_counter}, false)">
+          ${override_button_text}
+        </button>
+      </div>
+      <div class="d-flex align-items-center gap-6">
+        ${active_script_segment_item.is_user_locked ? `
+          <span class="user_locked_badge" title="Speaker assignment locked by user (Protected Ground Truth)">🔒 Locked</span>
+        ` : ''}
+        ${active_script_segment_item.unmarked ? `
+          <span class="unmarked_span_badge" title="Extracted via Stage 2A Literary Boundary Detection (Unmarked Dialogue)">📖 Unmarked</span>
+        ` : ''}
+        ${(active_script_segment_item.engine === 'laya') && active_script_segment_item.confidence ? `
+          <span class="laya_confidence_badge ${active_script_segment_item.is_ambiguous ? 'low_confidence' : ''}" title="Laya Decision Confidence: ${(active_script_segment_item.confidence * 100).toFixed(0)}%">
+            ⚡ ${(active_script_segment_item.confidence * 100).toFixed(0)}%
+          </span>
+        ` : ''}
+        ${active_script_segment_item.is_flagged ? `
+          <span class="badge radius-3 p-1-4 text-10 cursor-pointer" onclick="toggle_segment_flag(${segment_index_counter})" title="Flagged for director review (Press F to toggle)" style="background: rgba(214,121,62,0.25); color: #ff9d66; border: 1px solid rgba(214,121,62,0.45);">🚩 Flagged</span>
+        ` : ''}
+        <span class="card_type_badge ${is_tech_book ? 'd-none' : ''}" title="Segment category: dialogue, narrative exposition, or parenthetical direction">${active_script_segment_item.type}</span>
+      </div>
+    </div>
+
+    ${active_script_segment_item.proposed_diff ? `
+      <div class="attribution_diff_pill" id="attribution_diff_pill_${segment_index_counter}">
+        <span class="diff_pill_label">⚡ Diff: <span class="diff_speaker_old">${active_script_segment_item.proposed_diff.previous_speaker}</span> ➔ <span class="diff_speaker_new">${active_script_segment_item.proposed_diff.proposed_speaker}</span> <span class="diff_confidence_pct">(${Math.round((active_script_segment_item.proposed_diff.confidence || 0.85) * 100)}%)</span></span>
+        <div class="diff_pill_buttons_group">
+          <button class="diff_pill_btn diff_accept_btn" onclick="accept_attribution_diff(${segment_index_counter})" title="Accept proposed speaker (${active_script_segment_item.proposed_diff.proposed_speaker})">✓ Accept</button>
+          <button class="diff_pill_btn diff_dismiss_btn" onclick="dismiss_attribution_diff(${segment_index_counter})" title="Keep current speaker (${active_script_segment_item.proposed_diff.previous_speaker})">✕ Keep ${active_script_segment_item.proposed_diff.previous_speaker}</button>
+        </div>
+      </div>
+    ` : ''}
+
+    <textarea class="screenplay_text_input" onchange="handle_card_text_modification_event(${segment_index_counter}, this.value)" rows="2">${active_script_segment_item.text}</textarea>
+
+    <div class="performance_direction_row">
+      <div class="qwen_section_row">
+        <span class="qwen_label_prefix">[Voice Quality]:</span>
+        <span>${create_qwen_input(active_qwen_style_configuration_object.age_range, 'Age Range', 'age_range')} ${create_qwen_input(active_qwen_style_configuration_object.gender, 'Gender', 'gender')} with a ${create_qwen_input(active_qwen_style_configuration_object.pitch, 'Pitch', 'pitch')} pitch and a ${create_qwen_input(active_qwen_style_configuration_object.vocal_texture, 'Texture', 'vocal_texture')} texture.</span>
+      </div>
+      <div class="qwen_section_row">
+        <span class="qwen_label_prefix">[Prosody]:</span>
+        <span>${create_qwen_input(active_qwen_style_configuration_object.pacing, 'Pacing', 'pacing')} delivery, featuring ${create_qwen_input(active_qwen_style_configuration_object.cadence, 'Cadence', 'cadence')} speech.</span>
+      </div>
+      <div class="qwen_section_row">
+        <span class="qwen_label_prefix">[Style]:</span>
+        <span>${create_qwen_input(active_qwen_style_configuration_object.acting_persona, 'Persona', 'acting_persona')}. Emphasize ${create_qwen_input(active_qwen_style_configuration_object.vocal_technique, 'Specific technique', 'vocal_technique')}.</span>
+      </div>
+      <div class="qwen_section_row">
+        <span class="qwen_label_prefix">[Emotion]:</span>
+        <span>${create_qwen_input(active_qwen_style_configuration_object.rich_emotion, 'Primary emotional state', 'rich_emotion')}.</span>
+      </div>
+    </div>
+
+    <div class="screenplay_card_actions_bar">
+      <div class="synthesis_status_indicator">
+        <div class="status_dot" id="synthesis_light_dot_${segment_index_counter}"></div>
+        <span id="synthesis_status_label_text_${segment_index_counter}" class="text-green font-semibold">Idle</span>
+      </div>
+      
+      <div class="card_operational_buttons">
+        ${take_select_options_html}
+        ${active_script_segment_item.audioVersions && active_script_segment_item.audioVersions.length > 0 ? `
+          <button class="card_operation_btn btn_edit_take text-purple border-purple-glow" title="AuK Audio Editing Suite (Whisper, Denoise, Pitch, Speed, Emotion)" onclick="open_auk_edit_tools_modal(${segment_index_counter}, false)">
+            <span class="text-12">🪄</span>
+          </button>
+          <button class="card_operation_btn btn_delete_take text-coral border-coral-glow" title="Delete active take" onclick="trigger_delete_active_take(${segment_index_counter}, false)">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+          </button>
+        ` : ''}
+        <button class="card_operation_btn ${active_script_segment_item.is_flagged ? 'text-coral' : 'text-muted'}" title="Flag line for review (Press F)" onclick="toggle_segment_flag(${segment_index_counter})">
+          <span>🚩</span>
+        </button>
+        <button class="card_operation_btn text-muted" title="Split line into two segments" onclick="trigger_split_segment_prompt(${segment_index_counter})">
+          <span>✂️</span>
+        </button>
+        <button class="card_operation_btn btn_regenerate" title="Synthesize this line" onclick="trigger_single_line_speech_synthesis(${segment_index_counter})">
+          <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+        <button class="card_operation_btn btn_play_audio" title="Play synthesized audio clip" id="btn_play_clip_element_${segment_index_counter}" onclick="play_individual_line_clip(${segment_index_counter})">
+          <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </button>
+      </div>
+    </div>
+  `;
+
+  return individual_script_segment_card_element;
+}
+
+/**
+ * WHAT: Surgically updates a single screenplay card in the DOM without rebuilding the entire list.
+ * WHY: Eliminates layout reflow of hundreds of cards when changing takes, speakers, or text on a single line.
+ * 
+ * @param {number} segment_index_counter 
+ * @param {boolean} is_directorial 
+ */
+function update_single_screenplay_card_in_view(segment_index_counter, is_directorial = false) {
+  if (is_directorial) {
+    populate_directorial_cards_in_editor_view();
+    return;
+  }
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.scriptSegments) {
+    return;
+  }
+  const active_script_segment_item = active_loaded_project_state_object.scriptSegments[segment_index_counter];
+  if (!active_script_segment_item) return;
+
+  const existing_card_node = document.getElementById(`screenplay_card_node_${segment_index_counter}`);
+  if (!existing_card_node) {
+    populate_screenplay_cards_in_editor_view();
+    return;
+  }
+
+  const known_chars = get_known_character_names_list();
+  const updated_card_node = build_single_screenplay_card_element(segment_index_counter, active_script_segment_item, known_chars);
+  existing_card_node.replaceWith(updated_card_node);
+
+  const registry_entry = renderer_card_queue_status_registry[segment_index_counter];
+  if (registry_entry && registry_entry.status) {
+    update_individual_card_synthesis_status_lights(segment_index_counter, registry_entry.status, registry_entry.message);
+  } else {
+    update_individual_card_synthesis_status_lights(segment_index_counter, active_script_segment_item.audioPath ? "completed" : "idle");
+  }
+
+  if (segment_index_counter === active_inspected_segment_index) {
+    render_line_inspector_view(segment_index_counter);
+  }
+}
+
 // WHAT: Populates the right script editor panel with interactive blocks representing each line.
 // WHY: Renders a screenplay script containing speakers, editable texts, acting directions, and audio playback nodes.
 function populate_screenplay_cards_in_editor_view() {
@@ -45,19 +288,12 @@ function populate_screenplay_cards_in_editor_view() {
 
   // WHAT: Compiling list of discovered characters from voice mappings database.
   // WHY: We populate dropdown options so the editor can reassign speakers cleanly.
-  const list_of_known_character_names = ["Narrator"];
-  if (active_loaded_project_state_object.voiceMapping) {
-    const keys_of_mapped_voices = Object.keys(active_loaded_project_state_object.voiceMapping);
-    for (let index_counter = 0; index_counter < keys_of_mapped_voices.length; index_counter++) {
-      const voice_key_name = keys_of_mapped_voices[index_counter];
-      if (voice_key_name !== "Narrator") {
-        list_of_known_character_names.push(voice_key_name);
-      }
-    }
-  }
+  const list_of_known_character_names = get_known_character_names_list();
 
-  // WHAT: Looping through segments.
-  // WHY: Renders individual screenplay elements sequentially.
+  // WHAT: Using a DocumentFragment to batch DOM insertions in a single reflow.
+  // WHY: Eliminates layout thrashing when rendering hundreds of screenplay cards.
+  const screenplay_cards_fragment = document.createDocumentFragment();
+
   // WHAT: Inspecting active script segments for unreviewed classifier proposed diffs.
   // WHY: Displays a bulk action bar at the top of Column 2 allowing 1-click batch acceptance or dismissal.
   const active_attribution_diffs_list = active_loaded_project_state_object.scriptSegments.filter(
@@ -78,218 +314,30 @@ function populate_screenplay_cards_in_editor_view() {
         <button class="diff_banner_btn diff_banner_btn_dismiss" onclick="bulk_dismiss_all_attribution_diffs()" title="Keep current speaker assignments for all diffs">✕ Dismiss All</button>
       </div>
     `;
-    screenplay_cards_wrapper_element.appendChild(bulk_diff_banner_element);
+    screenplay_cards_fragment.appendChild(bulk_diff_banner_element);
   }
 
   for (let segment_index_counter = 0; segment_index_counter < active_loaded_project_state_object.scriptSegments.length; segment_index_counter++) {
     const active_script_segment_item = active_loaded_project_state_object.scriptSegments[segment_index_counter];
-    active_script_segment_item.index_position = segment_index_counter; // ensure strict mapping indexes
+    const individual_script_segment_card_element = build_single_screenplay_card_element(
+      segment_index_counter,
+      active_script_segment_item,
+      list_of_known_character_names
+    );
+    screenplay_cards_fragment.appendChild(individual_script_segment_card_element);
+  }
 
-    const individual_script_segment_card_element = document.createElement("div");
-    
-    // WHAT: Binding visual style classes.
-    // WHY: Colors dialogue segments separately from standard narrator prose.
-    if (active_script_segment_item.type === "dialogue") {
-      individual_script_segment_card_element.className = "screenplay_item_card dialogue_type_card";
+  // WHAT: Single atomic DOM insertion for all cards.
+  screenplay_cards_wrapper_element.appendChild(screenplay_cards_fragment);
+
+  // WHAT: Applying queue status lights across all rendered cards.
+  for (let idx = 0; idx < active_loaded_project_state_object.scriptSegments.length; idx++) {
+    const active_item = active_loaded_project_state_object.scriptSegments[idx];
+    const registry_entry = renderer_card_queue_status_registry[idx];
+    if (registry_entry && registry_entry.status) {
+      update_individual_card_synthesis_status_lights(idx, registry_entry.status, registry_entry.message);
     } else {
-      individual_script_segment_card_element.className = "screenplay_item_card narrator_type_card";
-    }
-
-    if (active_script_segment_item.is_flagged) {
-      individual_script_segment_card_element.classList.add("card_flagged_for_review");
-    }
-
-    individual_script_segment_card_element.id = `screenplay_card_node_${segment_index_counter}`;
-
-    if (segment_index_counter === active_inspected_segment_index) {
-      individual_script_segment_card_element.classList.add("active_inspected_card");
-    }
-
-    individual_script_segment_card_element.addEventListener("click", (click_evt) => {
-      if (!click_evt.target.closest("button, select, textarea, span.inline_qwen_input")) {
-        select_and_inspect_segment(segment_index_counter);
-      }
-    });
-
-    // WHAT: Checking if this specific screenplay segment has custom workflow override properties active.
-    // WHY: Provides instant visual cues to the user about which cards deviate from global cast configurations.
-    //      We only check workflowType here so that auto-generated seeds during regeneration don't trigger the "Override Active" badge.
-    const is_custom_override_enabled_on_card = active_script_segment_item.workflowOverride && 
-      active_script_segment_item.workflowOverride.workflowType && 
-      active_script_segment_item.workflowOverride.workflowType !== "inherit";
-
-    const override_button_text = is_custom_override_enabled_on_card ? "⚙️ Override Active" : "⚙️ Override";
-    const override_button_class = is_custom_override_enabled_on_card
-      ? "btn-override-active"
-      : "btn-override-default";
-
-    // WHAT: Constructing character dropdown options dynamically.
-    // WHY: Populates the speaker selector pill with list of all cast profiles.
-    let character_select_options_html = "";
-    for (let char_index = 0; char_index < list_of_known_character_names.length; char_index++) {
-      const character_name_option = list_of_known_character_names[char_index];
-      const selected_attribute_flag = (active_script_segment_item.speaker === character_name_option) ? "selected" : "";
-      character_select_options_html += `<option value="${character_name_option}" ${selected_attribute_flag}>${character_name_option}</option>`;
-    }
-
-    // WHAT: Creating the pill-styled dropdown selector listing all synthesized takes.
-    // WHY: Enables version control for each cell so users can preview and active-select different takes.
-    let take_select_options_html = "";
-    if (active_script_segment_item.audioVersions && active_script_segment_item.audioVersions.length > 0) {
-      take_select_options_html += `<select class="take_select_pill" onchange="handle_card_take_change_event(${segment_index_counter}, this.value, false)" title="Switch active audio take">`;
-      for (let version_counter = 0; version_counter < active_script_segment_item.audioVersions.length; version_counter++) {
-        const take_version_item = active_script_segment_item.audioVersions[version_counter];
-        const selected_attribute_flag = take_version_item.isActive ? "selected" : "";
-        take_select_options_html += `<option value="${take_version_item.take}" ${selected_attribute_flag}>Take ${take_version_item.take}</option>`;
-      }
-      take_select_options_html += `</select>`;
-    }
-
-    // WHAT: Loading character profile mappings for default value fallbacks.
-    // WHY: Provides age, gender, and voice texture attributes if local card properties are missing.
-    const character_mapping_details_for_active_speaker = (active_loaded_project_state_object.voiceMapping && active_loaded_project_state_object.voiceMapping[active_script_segment_item.speaker]) || {};
-
-    // WHAT: Instantiating the Qwen voice performance details structure.
-    // WHY: Populates the text input fields with the active state or appropriate defaults so fields are never blank.
-    const active_qwen_style_configuration_object = active_script_segment_item.qwen_style || {
-      age_range: character_mapping_details_for_active_speaker.age || "Adult",
-      gender: character_mapping_details_for_active_speaker.gender || "Unknown",
-      pitch: "medium",
-      vocal_texture: character_mapping_details_for_active_speaker.traits || "smooth and authoritative",
-      pacing: "normal",
-      cadence: "steady cadence",
-      acting_persona: "natural narrator",
-      vocal_technique: "steady rhythm",
-      rich_emotion: active_script_segment_item.direction || "calm delivery"
-    };
-
-    // WHAT: Helper function to generate auto-sizing editable inputs
-    // WHY: Provides a seamless Mad Libs style interface that accurately grows with content.
-    const create_qwen_input = (value, placeholder, property_key) => {
-      const safe_value = (value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return `<span class="inline_qwen_input" contenteditable="true" data-placeholder="${placeholder}" title="Edit ${placeholder}" oninput="handle_card_qwen_style_modification_event(${segment_index_counter}, '${property_key}', this.textContent)" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${safe_value}</span>`;
-    };
-
-    // WHAT: Hide the type badge for Tech Books (Narrator only)
-    const is_tech_book = active_loaded_project_state_object.voiceMapping && Object.keys(active_loaded_project_state_object.voiceMapping).length === 1 && active_loaded_project_state_object.voiceMapping["Narrator"];
-
-    // WHAT: Injecting card layout structures.
-    // WHY: Houses fields, indicators, and buttons for controlling each sentence.
-    individual_script_segment_card_element.innerHTML = `
-      <div class="screenplay_card_meta_header">
-        <div class="d-flex align-items-center gap-8">
-          <span class="text-11 text-muted font-mono" title="Line Number">Line ${segment_index_counter}</span>
-          <select class="speaker_select_pill" onchange="handle_card_speaker_modification_event(${segment_index_counter}, this.value)" title="Assign character voice to this line">
-            ${character_select_options_html}
-          </select>
-          <button class="focus_anchor_btn" title="Focus and sync raw text & columns" onclick="highlight_synchronize_active_segment(${segment_index_counter}, false)">
-            <svg viewBox="0 0 24 24" width="10" height="10"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-            Focus
-          </button>
-          <button class="focus_anchor_btn ${override_button_class}" title="Configure Qwen workflow overrides" onclick="open_cell_workflow_config_modal(${segment_index_counter}, false)">
-            ${override_button_text}
-          </button>
-        </div>
-        <div class="d-flex align-items-center gap-6">
-          ${active_script_segment_item.is_user_locked ? `
-            <span class="user_locked_badge" title="Speaker assignment locked by user (Protected Ground Truth)">🔒 Locked</span>
-          ` : ''}
-          ${active_script_segment_item.unmarked ? `
-            <span class="unmarked_span_badge" title="Extracted via Stage 2A Literary Boundary Detection (Unmarked Dialogue)">📖 Unmarked</span>
-          ` : ''}
-          ${(active_script_segment_item.engine === 'laya') && active_script_segment_item.confidence ? `
-            <span class="laya_confidence_badge ${active_script_segment_item.is_ambiguous ? 'low_confidence' : ''}" title="Laya Decision Confidence: ${(active_script_segment_item.confidence * 100).toFixed(0)}%">
-              ⚡ ${(active_script_segment_item.confidence * 100).toFixed(0)}%
-            </span>
-          ` : ''}
-          ${active_script_segment_item.is_flagged ? `
-            <span class="badge radius-3 p-1-4 text-10 cursor-pointer" onclick="toggle_segment_flag(${segment_index_counter})" title="Flagged for director review (Press F to toggle)" style="background: rgba(214,121,62,0.25); color: #ff9d66; border: 1px solid rgba(214,121,62,0.45);">🚩 Flagged</span>
-          ` : ''}
-          <span class="card_type_badge ${is_tech_book ? 'd-none' : ''}" title="Segment category: dialogue, narrative exposition, or parenthetical direction">${active_script_segment_item.type}</span>
-        </div>
-      </div>
-
-      ${active_script_segment_item.proposed_diff ? `
-        <div class="attribution_diff_pill" id="attribution_diff_pill_${segment_index_counter}">
-          <span class="diff_pill_label">⚡ Diff: <span class="diff_speaker_old">${active_script_segment_item.proposed_diff.previous_speaker}</span> ➔ <span class="diff_speaker_new">${active_script_segment_item.proposed_diff.proposed_speaker}</span> <span class="diff_confidence_pct">(${Math.round((active_script_segment_item.proposed_diff.confidence || 0.85) * 100)}%)</span></span>
-          <div class="diff_pill_buttons_group">
-            <button class="diff_pill_btn diff_accept_btn" onclick="accept_attribution_diff(${segment_index_counter})" title="Accept proposed speaker (${active_script_segment_item.proposed_diff.proposed_speaker})">✓ Accept</button>
-            <button class="diff_pill_btn diff_dismiss_btn" onclick="dismiss_attribution_diff(${segment_index_counter})" title="Keep current speaker (${active_script_segment_item.proposed_diff.previous_speaker})">✕ Keep ${active_script_segment_item.proposed_diff.previous_speaker}</button>
-          </div>
-        </div>
-      ` : ''}
-
-      <textarea class="screenplay_text_input" onchange="handle_card_text_modification_event(${segment_index_counter}, this.value)" rows="2">${active_script_segment_item.text}</textarea>
-
-      <div class="performance_direction_row">
-        <div class="qwen_section_row">
-          <span class="qwen_label_prefix">[Voice Quality]:</span>
-          <span>${create_qwen_input(active_qwen_style_configuration_object.age_range, 'Age Range', 'age_range')} ${create_qwen_input(active_qwen_style_configuration_object.gender, 'Gender', 'gender')} with a ${create_qwen_input(active_qwen_style_configuration_object.pitch, 'Pitch', 'pitch')} pitch and a ${create_qwen_input(active_qwen_style_configuration_object.vocal_texture, 'Texture', 'vocal_texture')} texture.</span>
-        </div>
-        <div class="qwen_section_row">
-          <span class="qwen_label_prefix">[Prosody]:</span>
-          <span>${create_qwen_input(active_qwen_style_configuration_object.pacing, 'Pacing', 'pacing')} delivery, featuring ${create_qwen_input(active_qwen_style_configuration_object.cadence, 'Cadence', 'cadence')} speech.</span>
-        </div>
-        <div class="qwen_section_row">
-          <span class="qwen_label_prefix">[Style]:</span>
-          <span>${create_qwen_input(active_qwen_style_configuration_object.acting_persona, 'Persona', 'acting_persona')}. Emphasize ${create_qwen_input(active_qwen_style_configuration_object.vocal_technique, 'Specific technique', 'vocal_technique')}.</span>
-        </div>
-        <div class="qwen_section_row">
-          <span class="qwen_label_prefix">[Emotion]:</span>
-          <span>${create_qwen_input(active_qwen_style_configuration_object.rich_emotion, 'Primary emotional state', 'rich_emotion')}.</span>
-        </div>
-      </div>
-
-      <div class="screenplay_card_actions_bar">
-        <div class="synthesis_status_indicator">
-          <div class="status_dot" id="synthesis_light_dot_${segment_index_counter}"></div>
-          <span id="synthesis_status_label_text_${segment_index_counter}" class="text-green font-semibold">Idle</span>
-        </div>
-        
-        <div class="card_operational_buttons">
-          ${take_select_options_html}
-          ${active_script_segment_item.audioVersions && active_script_segment_item.audioVersions.length > 0 ? `
-            <button class="card_operation_btn btn_edit_take text-purple border-purple-glow" title="AuK Audio Editing Suite (Whisper, Denoise, Pitch, Speed, Emotion)" onclick="open_auk_edit_tools_modal(${segment_index_counter}, false)">
-              <span class="text-12">🪄</span>
-            </button>
-            <button class="card_operation_btn btn_delete_take text-coral border-coral-glow" title="Delete active take" onclick="trigger_delete_active_take(${segment_index_counter}, false)">
-              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-            </button>
-          ` : ''}
-          <button class="card_operation_btn ${active_script_segment_item.is_flagged ? 'text-coral' : 'text-muted'}" title="Flag line for review (Press F)" onclick="toggle_segment_flag(${segment_index_counter})">
-            <span>🚩</span>
-          </button>
-          <button class="card_operation_btn text-muted" title="Split line into two segments" onclick="trigger_split_segment_prompt(${segment_index_counter})">
-            <span>✂️</span>
-          </button>
-          <button class="card_operation_btn btn_regenerate" title="Synthesize this line" onclick="trigger_single_line_speech_synthesis(${segment_index_counter})">
-            <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-          </button>
-          <button class="card_operation_btn btn_play_audio" title="Play synthesized audio clip" id="btn_play_clip_element_${segment_index_counter}" onclick="play_individual_line_clip(${segment_index_counter})">
-            <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          </button>
-        </div>
-      </div>
-    `;
-
-    screenplay_cards_wrapper_element.appendChild(individual_script_segment_card_element);
-    
-    // WHAT: Checking the queue status registry for any surviving status from before this DOM rebuild.
-    // WHY: If a card was set to "queued" or "processing" before another card triggered a full
-    //      re-render, the registry preserves that status. Without this, cards revert to idle/completed.
-    const registry_entry_for_current_card = renderer_card_queue_status_registry[segment_index_counter];
-    if (registry_entry_for_current_card && registry_entry_for_current_card.status) {
-      // WHAT: Applying the registry's cached status instead of the simple audioPath check.
-      // WHY: The registry holds the authoritative real-time state for in-flight queue items.
-      update_individual_card_synthesis_status_lights(
-        segment_index_counter,
-        registry_entry_for_current_card.status,
-        registry_entry_for_current_card.message
-      );
-    } else {
-      // WHAT: Falling back to the standard audioPath-based status check.
-      // WHY: If no registry entry exists, the card hasn't been queued in this session.
-      update_individual_card_synthesis_status_lights(segment_index_counter, active_script_segment_item.audioPath ? "completed" : "idle");
+      update_individual_card_synthesis_status_lights(idx, active_item.audioPath ? "completed" : "idle");
     }
   }
 
@@ -340,10 +388,11 @@ function handle_card_take_change_event(index_position_of_card, selected_take_num
       trigger_project_state_disk_flush();
 
       // Refresh the specific view to show the new active selection.
+      // WHY: For screenplay cards, update only the target card in-place to avoid full DOM re-render thrashing.
       if (is_directorial_segment_flag) {
         populate_directorial_cards_in_editor_view();
       } else {
-        populate_screenplay_cards_in_editor_view();
+        update_single_screenplay_card_in_view(index_position_of_card, false);
       }
     }
   }
@@ -424,12 +473,12 @@ async function trigger_delete_active_take(index_position_of_card, is_directorial
         // WHY: Serializes changes to project_state.json instantly.
         await trigger_project_state_disk_flush();
 
-        // WHAT: Redrawing the view cards.
-        // WHY: Animates status lights and updates the takes selector pills instantly.
+        // WHAT: Updating the targeted view card in-place.
+        // WHY: Replaces only the altered card to prevent layout reflow thrashing across large chapters.
         if (is_directorial_segment_flag) {
           populate_directorial_cards_in_editor_view();
         } else {
-          populate_screenplay_cards_in_editor_view();
+          update_single_screenplay_card_in_view(index_position_of_card, false);
         }
       } else {
         alert(`Failed to delete take file: ${filesystem_deletion_result ? filesystem_deletion_result.error : "Unknown error"}`);
@@ -492,12 +541,12 @@ async function trigger_delete_all_takes(index_position_of_card, is_directorial_s
       // WHY: Serializes changes to project_state.json instantly.
       await trigger_project_state_disk_flush();
 
-      // WHAT: Redrawing the view cards.
-      // WHY: Animates status lights to idle and clears takes selector pills instantly.
+      // WHAT: Updating the targeted view card in-place.
+      // WHY: Clears takes selector pills and animates status lights to idle without triggering a full page redraw.
       if (is_directorial_segment_flag) {
         populate_directorial_cards_in_editor_view();
       } else {
-        populate_screenplay_cards_in_editor_view();
+        update_single_screenplay_card_in_view(index_position_of_card, false);
       }
 
     } catch (synthesis_deletion_exception) {
@@ -544,9 +593,15 @@ function handle_card_speaker_modification_event(index_position_of_card, newly_se
       populate_directorial_cards_in_editor_view();
     }
 
-    // WHAT: Rerendering current cards structure.
-    // WHY: Reflects color switches (purple for dialogue, blue for narrator) immediately.
-    populate_screenplay_cards_in_editor_view();
+    // WHAT: Rerendering current card in-place and refreshing overview telemetry.
+    // WHY: Reflects color switches (purple for dialogue, blue for narrator) immediately without rebuilding the whole DOM tree.
+    update_single_screenplay_card_in_view(index_position_of_card, false);
+    if (typeof render_screenplay_confidence_minimap === "function") {
+      render_screenplay_confidence_minimap();
+    }
+    if (typeof update_triage_doubt_counter === "function") {
+      update_triage_doubt_counter();
+    }
     trigger_project_state_disk_flush();
   }
 }
@@ -595,7 +650,19 @@ function accept_attribution_diff(index_position_of_card) {
   delete target_screenplay_segment.proposed_diff;
 
   trigger_project_state_disk_flush();
-  populate_screenplay_cards_in_editor_view();
+  
+  // WHAT: Optimizing DOM update by only refreshing the target card if other diffs remain.
+  // WHY: Avoids recreating the entire card list unless the bulk banner state needs full recreation.
+  const remaining_diffs_after_accept = active_loaded_project_state_object.scriptSegments.filter(s => s && s.proposed_diff);
+  if (remaining_diffs_after_accept.length === 0) {
+    populate_screenplay_cards_in_editor_view();
+  } else {
+    update_single_screenplay_card_in_view(index_position_of_card, false);
+    const banner_badge_element = document.querySelector(".diff_banner_badge");
+    if (banner_badge_element) {
+      banner_badge_element.textContent = `⚡ ${remaining_diffs_after_accept.length} Diffs Found`;
+    }
+  }
 }
 
 // WHAT: Dismissing an AI proposed speaker diff, keeping the current speaker baseline.
@@ -612,7 +679,19 @@ function dismiss_attribution_diff(index_position_of_card) {
   delete target_screenplay_segment.proposed_diff;
 
   trigger_project_state_disk_flush();
-  populate_screenplay_cards_in_editor_view();
+  
+  // WHAT: Optimizing DOM update by only refreshing the target card if other diffs remain.
+  // WHY: Avoids recreating the entire card list unless the bulk banner state needs full recreation.
+  const remaining_diffs_after_dismiss = active_loaded_project_state_object.scriptSegments.filter(s => s && s.proposed_diff);
+  if (remaining_diffs_after_dismiss.length === 0) {
+    populate_screenplay_cards_in_editor_view();
+  } else {
+    update_single_screenplay_card_in_view(index_position_of_card, false);
+    const banner_badge_element = document.querySelector(".diff_banner_badge");
+    if (banner_badge_element) {
+      banner_badge_element.textContent = `⚡ ${remaining_diffs_after_dismiss.length} Diffs Found`;
+    }
+  }
 }
 
 // WHAT: Bulk accepting all outstanding proposed speaker diffs in one operation.

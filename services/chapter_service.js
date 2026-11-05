@@ -16,6 +16,26 @@
 const CHAPTER_HEADING_REGEX = /(?:^|\n)(?:#{1,3}\s*)?(?:CHAPTER|Chapter|ACT|Act|PART|Part)\s+([0-9IVXLCDM]+|[A-Za-z]+)(?::?\s*([^\n\r]*))?/g;
 
 /**
+ * WHAT: High-performance, non-allocating word counter for large manuscripts.
+ * WHY: Avoids creating hundreds of thousands of ephemeral string objects via split(/\s+/),
+ *      drastically reducing V8 heap churn and GC pauses when parsing 100k-word novels.
+ * 
+ * @param {string} text_content 
+ * @returns {number} Word count.
+ */
+function count_words_in_text(text_content) {
+  if (!text_content || typeof text_content !== "string") {
+    return 0;
+  }
+  const non_whitespace_regex = /\S+/g;
+  let word_counter = 0;
+  while (non_whitespace_regex.exec(text_content) !== null) {
+    word_counter++;
+  }
+  return word_counter;
+}
+
+/**
  * WHAT: Splits a continuous novel manuscript into discrete chapter records.
  * WHY: Breaks a 100,000-word book into manageable chapters for sequential processing.
  * 
@@ -32,15 +52,16 @@ function split_manuscript_into_chapters(raw_manuscript_text) {
 
   // WHAT: If no explicit chapter headings found, treat entire text as Chapter 1.
   if (matches.length === 0) {
+    const single_chapter_word_count = count_words_in_text(clean_text);
     return Object.freeze([
       {
         chapter_id: "chapter_01",
         chapter_number: 1,
         chapter_title: "Chapter 1",
         raw_text: clean_text,
-        word_count: clean_text.split(/\s+/).filter(Boolean).length,
+        word_count: single_chapter_word_count,
         character_count: clean_text.length,
-        estimated_minutes: Number((clean_text.split(/\s+/).filter(Boolean).length / 150.0).toFixed(1))
+        estimated_minutes: Number((single_chapter_word_count / 150.0).toFixed(1))
       }
     ]);
   }
@@ -51,14 +72,15 @@ function split_manuscript_into_chapters(raw_manuscript_text) {
   if (matches[0].index > 0) {
     const prologue_text = clean_text.substring(0, matches[0].index).trim();
     if (prologue_text.length > 50) {
+      const prologue_word_count = count_words_in_text(prologue_text);
       chapters_list.push({
         chapter_id: "chapter_00",
         chapter_number: 0,
         chapter_title: "Prologue",
         raw_text: prologue_text,
-        word_count: prologue_text.split(/\s+/).filter(Boolean).length,
+        word_count: prologue_word_count,
         character_count: prologue_text.length,
-        estimated_minutes: Number((prologue_text.split(/\s+/).filter(Boolean).length / 150.0).toFixed(1))
+        estimated_minutes: Number((prologue_word_count / 150.0).toFixed(1))
       });
     }
   }
@@ -79,15 +101,16 @@ function split_manuscript_into_chapters(raw_manuscript_text) {
 
     const chapter_number = parseInt(chapter_number_string, 10) || (idx + 1);
     const pad_num = String(chapter_number).padStart(2, "0");
+    const chapter_word_count = count_words_in_text(chapter_body_text);
 
     chapters_list.push({
       chapter_id: `chapter_${pad_num}`,
       chapter_number,
       chapter_title: display_title,
       raw_text: chapter_body_text,
-      word_count: chapter_body_text.split(/\s+/).filter(Boolean).length,
+      word_count: chapter_word_count,
       character_count: chapter_body_text.length,
-      estimated_minutes: Number((chapter_body_text.split(/\s+/).filter(Boolean).length / 150.0).toFixed(1))
+      estimated_minutes: Number((chapter_word_count / 150.0).toFixed(1))
     });
   }
 
@@ -126,7 +149,7 @@ function upgrade_project_state_to_multichapter(current_project_state, raw_text_o
         raw_text: current_project_state.rawBookText || "",
         scriptSegments: current_project_state.scriptSegments || [],
         directorialSegments: current_project_state.directorialSegments || [],
-        word_count: (current_project_state.rawBookText || "").split(/\s+/).filter(Boolean).length
+        word_count: count_words_in_text(current_project_state.rawBookText || "")
       }
     ];
   }
@@ -203,7 +226,7 @@ function save_chapter_segments_to_project(
         ...chapter,
         scriptSegments: updated_script_segments,
         raw_text: updated_raw_text !== null ? updated_raw_text : chapter.raw_text,
-        word_count: updated_raw_text !== null ? updated_raw_text.split(/\s+/).filter(Boolean).length : chapter.word_count
+        word_count: updated_raw_text !== null ? count_words_in_text(updated_raw_text) : chapter.word_count
       };
     }
     return chapter;
@@ -251,6 +274,7 @@ function compile_master_book_timeline_segments(project_state) {
 
 module.exports = {
   CHAPTER_HEADING_REGEX,
+  count_words_in_text,
   split_manuscript_into_chapters,
   upgrade_project_state_to_multichapter,
   switch_active_chapter,
