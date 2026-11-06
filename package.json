@@ -6,7 +6,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "nodemon --watch main.js --watch preload.js --watch renderer --exec electron .",
-    "test": "jest"
+    "test": "jest",
+    "mcp": "node mcp/audiobook_mcp_server.mjs"
   },
   "keywords": [
     "electron",
@@ -26,6 +27,7 @@
     "puppeteer": "^25.1.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "ffmpeg-static": "^5.3.0",
     "fluent-ffmpeg": "^2.1.3",
     "interactjs": "^1.10.27",
