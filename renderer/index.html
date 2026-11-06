@@ -167,11 +167,40 @@
         </div>
 
         <!-- DUAL-PANE LAYOUT -->
-        <div id="editor_view_toggles" class="d-none flex-row gap-10 mb-15 justify-content-end align-items-center">
-          <span class="text-11 text-muted">Toggle Columns:</span>
-          <button id="toggle_col_raw" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(1)" title="Toggle visibility of raw source text column">Raw Source</button>
-          <button id="toggle_col_screenplay" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(2)" title="Toggle visibility of screenplay script editor column">Screenplay</button>
-          <button id="toggle_col_directorial" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(3)" title="Toggle visibility of directorial orchestration column">Directorial</button>
+        <!-- SCENE / CHAPTER NAVIGATOR BAR -->
+        <div id="editor_scene_navigator_bar" class="d-none scene_navigator_bar mb-15">
+          <div class="d-flex align-items-center gap-10 flex-grow-1">
+            <span class="text-12 font-weight-700 text-gold d-flex align-items-center gap-4">
+              <span>🎬</span> <span>Scene:</span>
+            </span>
+            <button id="btn_prev_scene" class="cyber_btn btn_secondary p-4-10 text-11 radius-6" onclick="jump_to_relative_scene(-1)" title="Go to previous scene (Ctrl+PageUp)">
+              ◀ Prev
+            </button>
+            <select id="editor_scene_selector" class="scene_selector_dropdown flex-grow-1" style="max-width: 520px;" onchange="handle_editor_scene_selection_change()" title="Switch active scene to edit, view screenplay script, or synthesize takes">
+              <option value="">No scenes loaded</option>
+            </select>
+            <button id="btn_next_scene" class="cyber_btn btn_secondary p-4-10 text-11 radius-6" onclick="jump_to_relative_scene(1)" title="Go to next scene (Ctrl+PageDown)">
+              Next ▶
+            </button>
+            <span id="scene_nav_stats" class="badge p-4-8 text-11 text-muted radius-4" style="background: rgba(3, 39, 91, 0.4);">
+              0 Scenes
+            </span>
+            <span id="scene_attribution_status_badge" class="badge p-4-8 text-11 radius-4" style="background: rgba(3, 39, 91, 0.4); color: var(--text-muted-cyan);">
+              Ready
+            </span>
+          </div>
+
+          <div class="d-flex align-items-center gap-10">
+            <button id="btn_process_all_scenes" class="cyber_btn btn_secondary p-6-12 text-11 radius-6 text-purple font-weight-600" onclick="trigger_process_all_scenes_dialogue()" title="Process dialogue attribution across all 115 scenes to discover who says what across the entire novel">
+              ⚡ Process All Scenes
+            </button>
+            <div id="editor_view_toggles" class="d-flex flex-row gap-6 align-items-center pl-10" style="border-left: 1px solid var(--border-glass-subtle);">
+              <span class="text-10 text-muted">Columns:</span>
+              <button id="toggle_col_raw" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(1)" title="Toggle visibility of raw source text column">Raw</button>
+              <button id="toggle_col_screenplay" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(2)" title="Toggle visibility of screenplay script editor column">Screenplay</button>
+              <button id="toggle_col_directorial" class="cyber_btn btn_secondary p-4-8 text-10" style="opacity: 1;" onclick="toggle_editor_column(3)" title="Toggle visibility of directorial orchestration column">Directorial</button>
+            </div>
+          </div>
         </div>
         <div id="editor_main_layout_split" class="editor_layout_split_view d-none">
           

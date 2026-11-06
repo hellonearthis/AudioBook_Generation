@@ -57,7 +57,35 @@ function sanitize_book_manuscript_text(raw_text = "", options = {}) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
+  // 8. Optional British dialogue quote normalization
+  if (options.normalize_british_quotes === true) {
+    cleaned = normalize_british_dialogue_quotes(cleaned);
+  }
+
   return cleaned;
+}
+
+/**
+ * Normalizes British literary dialogue convention (single quotes '...') to standard double quotes ("..."),
+ * while preserving internal contractions (don't, it's, Gurgeh's) and possessives.
+ *
+ * @param {string} text Raw manuscript text
+ * @returns {string} Text with normalized dialogue quotes
+ */
+function normalize_british_dialogue_quotes(text = "") {
+  if (!text || typeof text !== "string") {
+    return "";
+  }
+  const APOSTROPHE_PLACEHOLDER = "___APOSTROPHE___";
+  // Protect intra-word apostrophes (e.g. don't, it's, Yay's)
+  let protected_text = text.replace(/([a-zA-Z])'([a-zA-Z])/g, `$1${APOSTROPHE_PLACEHOLDER}$2`);
+  // Protect common leading colloquial apostrophes ('em, 'cause, 'til)
+  protected_text = protected_text.replace(/'(em|cause|til|round|bout)\b/gi, `${APOSTROPHE_PLACEHOLDER}$1`);
+  // Convert dialogue quotes: preceded by line start, whitespace, em-dash, bracket/paren
+  // and ending with line end, whitespace, em-dash, bracket/paren or punctuation
+  protected_text = protected_text.replace(/(^|[\s—(\[{])'([^'\n]+)'(?=[\s—)\]}.,;:!?]|$)/g, '$1"$2"');
+  // Restore protected intra-word apostrophes
+  return protected_text.replace(new RegExp(APOSTROPHE_PLACEHOLDER, "g"), "'");
 }
 
 /**
@@ -131,5 +159,6 @@ function detect_manuscript_chapters(text = "") {
 
 module.exports = {
   sanitize_book_manuscript_text,
-  detect_manuscript_chapters
+  detect_manuscript_chapters,
+  normalize_british_dialogue_quotes
 };

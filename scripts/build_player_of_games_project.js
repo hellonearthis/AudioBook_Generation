@@ -688,3 +688,4 @@ build_project().catch((err) => {
   console.error("Fatal project build error:", err);
   process.exit(1);
 });
+

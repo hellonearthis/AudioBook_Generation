@@ -23,6 +23,7 @@ const {
 } = require("./speaker_attribution");
 const { map_emotion_to_auk08_palette } = require("./relationship_state_service");
 const { get_resolved_configuration } = require("./config_service");
+const { normalize_british_dialogue_quotes } = require("./text_sanitizer_service");
 
 const laya_qc_pipeline_instance = new LayaQCPipeline();
 
@@ -313,7 +314,13 @@ function register_laya_clm_handlers(ipcMain, getDetectUnmarkedSpans, getDetectUn
   // WHAT: Ultra-fast Dialogue Attribution & Emotional Staging via Laya.
   ipcMain.handle("ai:laya-attribute", async (ipc_event_context, request_arguments) => {
     const raw_text = request_arguments.book_text_segment || "";
-    const book_text_segment = raw_text.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+    let book_text_segment = raw_text.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+    // WHAT: Auto-detect and normalize British literary dialogue (single-quotes '...') to double-quotes ("...").
+    // WHY: Enables quotation-mark parsing on UK fiction like Iain M. Banks without breaking contractions.
+    const double_quote_count = (book_text_segment.match(/"/g) || []).length;
+    if (double_quote_count < 2 && typeof normalize_british_dialogue_quotes === "function") {
+      book_text_segment = normalize_british_dialogue_quotes(book_text_segment);
+    }
     const attribution_engine = request_arguments.attribution_engine || "laya";
     const laya_endpoint_url = (request_arguments.laya_endpoint_url || "http://127.0.0.1:8765").replace(/\/+$/, "");
     const laya_decide_target_url = resolve_laya_decide_url(laya_endpoint_url);

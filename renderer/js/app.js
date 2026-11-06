@@ -455,6 +455,12 @@ async function load_audiobook_project_by_name(project_name_string) {
     document.getElementById("editor_view_toggles").classList.remove("d-none");
     document.getElementById("editor_view_toggles").style.display = "flex";
 
+    // WHAT: Initializing multi-chapter / multi-scene selector navigation bar.
+    // WHY: Gives the user instant dropdown navigation across all 115 scenes in the novel.
+    if (typeof initialize_scene_navigator_ui === "function") {
+      initialize_scene_navigator_ui();
+    }
+
     // WHAT: Loading original text blocks into editor textareas.
     // WHY: Gives visual access to raw source book paragraphs in the left panel.
     document.getElementById("raw_source_book_textarea_editor").value = loaded_project_json_payload.rawBookText || "";

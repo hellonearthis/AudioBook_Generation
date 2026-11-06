@@ -3245,4 +3245,45 @@ select option {
   box-shadow: 0 0 10px rgba(228, 184, 64, 0.6) !important;
 }
 
+/* =========================================================================
+   SCENE / CHAPTER NAVIGATOR BAR
+   ========================================================================= */
+.scene_navigator_bar {
+  background: var(--bg-panel-glass);
+  border: 1px solid var(--border-glass-subtle);
+  border-radius: var(--border-radius-large);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  backdrop-filter: blur(8px);
+}
+.scene_selector_dropdown {
+  background: rgba(3, 39, 91, 0.4);
+  color: var(--text-high-contrast);
+  border: 1px solid var(--border-glass-subtle);
+  border-radius: var(--border-radius-medium);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-speed-fast);
+}
+.scene_selector_dropdown:focus {
+  border-color: var(--accent-cyber-purple);
+}
+.scene_selector_dropdown optgroup {
+  background: #03275B;
+  color: var(--accent-gold);
+  font-weight: 700;
+}
+.scene_selector_dropdown option {
+  background: #0B1E38;
+  color: var(--text-high-contrast);
+  padding: 4px 8px;
+}
+
+
 

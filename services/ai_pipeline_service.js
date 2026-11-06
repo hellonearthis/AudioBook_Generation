@@ -25,6 +25,7 @@ const {
 const {
   enrich_script_segments_with_directorial_staging
 } = require("./directorial_staging_service");
+const { normalize_british_dialogue_quotes } = require("./text_sanitizer_service");
 const {
   RELATION_TYPES,
   RELATION_TONES,
@@ -847,7 +848,11 @@ function register_ai_pipeline_handlers(ipcMain, getMainWindow) {
     }
 
     const raw_text = request_arguments.book_text_segment || "";
-    const book_text_segment = raw_text.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+    let book_text_segment = raw_text.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+    const double_quote_count = (book_text_segment.match(/"/g) || []).length;
+    if (double_quote_count < 2 && typeof normalize_british_dialogue_quotes === "function") {
+      book_text_segment = normalize_british_dialogue_quotes(book_text_segment);
+    }
     const lm_studio_api_url_address = request_arguments.lm_studio_api_url_address;
 
     const system_instructional_prompt = get_cached_prompt_template("script_formatting.txt");

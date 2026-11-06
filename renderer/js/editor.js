@@ -4988,6 +4988,195 @@ if (typeof document !== "undefined") {
   });
 }
 
+// =========================================================================
+// MULTI-CHAPTER / MULTI-SCENE NAVIGATOR SYSTEM
+// =========================================================================
+
+// WHAT: Initializes and populates the scene/chapter selector dropdown and stats.
+// WHY: Gives the user immediate access to view and edit scripts for all scenes in the novel.
+function initialize_scene_navigator_ui() {
+  const scene_nav_bar = document.getElementById("editor_scene_navigator_bar");
+  const scene_selector = document.getElementById("editor_scene_selector");
+  const scene_stats = document.getElementById("scene_nav_stats");
+  if (!scene_nav_bar || !scene_selector) return;
+
+  if (!active_loaded_project_state_object || !Array.isArray(active_loaded_project_state_object.chapters) || active_loaded_project_state_object.chapters.length <= 1) {
+    scene_nav_bar.classList.add("d-none");
+    scene_nav_bar.style.display = "none";
+    return;
+  }
+
+  scene_nav_bar.classList.remove("d-none");
+  scene_nav_bar.style.display = "flex";
+
+  const chapters = active_loaded_project_state_object.chapters;
+  let total_words = 0;
+
+  // Group chapters by part
+  const parts_map = new Map();
+  for (const chap of chapters) {
+    total_words += (chap.word_count || 0);
+
+    const part_label = chap.part_title || (chap.part_number ? `Part ${chap.part_number}` : "Scenes");
+    if (!parts_map.has(part_label)) {
+      parts_map.set(part_label, []);
+    }
+    parts_map.get(part_label).push(chap);
+  }
+
+  let options_html = "";
+  for (const [part_title, part_chapters] of parts_map.entries()) {
+    options_html += `<optgroup label="${part_title} (${part_chapters.length} scenes)">`;
+    for (const chap of part_chapters) {
+      const segs = chap.scriptSegments || [];
+      const dia_count = segs.filter(s => s.type === "dialogue").length;
+      const status_tag = segs.length > 0 ? `${dia_count} spoken • ${segs.length} lines` : "raw";
+      options_html += `<option value="${chap.chapter_id}">${chap.chapter_title} (${chap.word_count || 0}w • ${status_tag})</option>`;
+    }
+    options_html += `</optgroup>`;
+  }
+
+  scene_selector.innerHTML = options_html;
+
+  const active_id = active_loaded_project_state_object.active_chapter_id || chapters[0].chapter_id;
+  scene_selector.value = active_id;
+
+  if (scene_stats) {
+    scene_stats.textContent = `${chapters.length} Scenes (${total_words.toLocaleString()} words)`;
+  }
+
+  update_scene_navigator_buttons_and_badge();
+}
+
+// WHAT: Updates Previous/Next button states and attribution status badge.
+function update_scene_navigator_buttons_and_badge() {
+  const scene_selector = document.getElementById("editor_scene_selector");
+  const prev_btn = document.getElementById("btn_prev_scene");
+  const next_btn = document.getElementById("btn_next_scene");
+  const status_badge = document.getElementById("scene_attribution_status_badge");
+  if (!active_loaded_project_state_object || !Array.isArray(active_loaded_project_state_object.chapters)) return;
+
+  const chapters = active_loaded_project_state_object.chapters;
+  const current_id = active_loaded_project_state_object.active_chapter_id || (chapters[0] ? chapters[0].chapter_id : null);
+  const current_idx = chapters.findIndex(c => c.chapter_id === current_id);
+
+  if (prev_btn) prev_btn.disabled = current_idx <= 0;
+  if (next_btn) next_btn.disabled = current_idx >= chapters.length - 1;
+
+  if (status_badge && current_idx >= 0) {
+    const current_chapter = chapters[current_idx];
+    const segs = current_chapter.scriptSegments || active_loaded_project_state_object.scriptSegments || [];
+    const dia_count = segs.filter(s => s.type === "dialogue").length;
+
+    if (segs.length > 0) {
+      status_badge.textContent = `🎬 ${dia_count} dialogue lines (${segs.length} total)`;
+      status_badge.style.color = "var(--accent-cyber-emerald)";
+    } else {
+      status_badge.textContent = `📄 Unparsed Raw Text (${current_chapter.word_count || 0} words)`;
+      status_badge.style.color = "var(--accent-cyber-gold)";
+    }
+  }
+}
+
+// WHAT: Switches active scene when user selects from dropdown.
+async function handle_editor_scene_selection_change(target_id) {
+  if (!active_loaded_project_state_object || !Array.isArray(active_loaded_project_state_object.chapters)) return;
+
+  const scene_selector = document.getElementById("editor_scene_selector");
+  const target_chapter_id = target_id || (scene_selector ? scene_selector.value : null);
+  if (!target_chapter_id) return;
+
+  // 1. Flush/save current active chapter segments into the chapters array
+  const current_active_id = active_loaded_project_state_object.active_chapter_id;
+  if (current_active_id) {
+    const current_raw_text = document.getElementById("raw_source_book_textarea_editor")?.value;
+    const current_script_segments = active_loaded_project_state_object.scriptSegments || [];
+    const current_directorial_segments = active_loaded_project_state_object.directorialSegments || [];
+
+    active_loaded_project_state_object.chapters = active_loaded_project_state_object.chapters.map(chap => {
+      if (chap.chapter_id === current_active_id) {
+        return {
+          ...chap,
+          raw_text: current_raw_text !== undefined ? current_raw_text : chap.raw_text,
+          scriptSegments: current_script_segments,
+          directorialSegments: current_directorial_segments
+        };
+      }
+      return chap;
+    });
+  }
+
+  // 2. Find target chapter
+  const target_chapter = active_loaded_project_state_object.chapters.find(c => c.chapter_id === target_chapter_id);
+  if (!target_chapter) return;
+
+  // 3. Update active project state variables
+  active_loaded_project_state_object.active_chapter_id = target_chapter_id;
+  active_loaded_project_state_object.rawBookText = target_chapter.raw_text || "";
+  active_loaded_project_state_object.scriptSegments = target_chapter.scriptSegments || [];
+  active_loaded_project_state_object.directorialSegments = target_chapter.directorialSegments || [];
+
+  // 4. Update UI controls
+  if (scene_selector) scene_selector.value = target_chapter_id;
+  const raw_textarea = document.getElementById("raw_source_book_textarea_editor");
+  if (raw_textarea) raw_textarea.value = target_chapter.raw_text || "";
+
+  // 5. Re-render screenplay & directorial cards
+  populate_screenplay_cards_in_editor_view();
+  populate_directorial_cards_in_editor_view();
+  if (typeof refresh_synthesis_progress_tracking_meters === "function") {
+    refresh_synthesis_progress_tracking_meters();
+  }
+
+  // 6. Update prev/next buttons and status badge
+  update_scene_navigator_buttons_and_badge();
+
+  // 7. Flush state to disk
+  await trigger_project_state_disk_flush();
+}
+
+// WHAT: Jumps to previous or next scene.
+function jump_to_relative_scene(direction_offset) {
+  if (!active_loaded_project_state_object || !Array.isArray(active_loaded_project_state_object.chapters)) return;
+  const chapters = active_loaded_project_state_object.chapters;
+  const current_idx = chapters.findIndex(c => c.chapter_id === active_loaded_project_state_object.active_chapter_id);
+  const next_idx = current_idx + direction_offset;
+  if (next_idx >= 0 && next_idx < chapters.length) {
+    handle_editor_scene_selection_change(chapters[next_idx].chapter_id);
+  }
+}
+
+// WHAT: Triggers full-book batch dialogue processing.
+async function trigger_process_all_scenes_dialogue() {
+  if (!active_loaded_project_state_object || !Array.isArray(active_loaded_project_state_object.chapters)) {
+    alert("No multi-scene project is currently loaded.");
+    return;
+  }
+  const confirmed = confirm(`Run dialogue attribution across all ${active_loaded_project_state_object.chapters.length} scenes?\n\nThis will parse dialogue, determine who says what, and generate screenplay cards for each scene.`);
+  if (!confirmed) return;
+
+  const btn = document.getElementById("btn_process_all_scenes");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="status_dot state_processing d-inline-block mr-4"></span> Processing...`;
+  }
+
+  try {
+    for (let i = 0; i < active_loaded_project_state_object.chapters.length; i++) {
+      await handle_editor_scene_selection_change(active_loaded_project_state_object.chapters[i].chapter_id);
+      await run_main_pipeline_pass_one_and_two();
+    }
+    alert("Full book dialogue processing complete!");
+  } catch (err) {
+    alert(`Batch processing error: ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `⚡ Process All Scenes`;
+    }
+  }
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     is_segment_doubtful,
@@ -5010,6 +5199,10 @@ if (typeof module !== "undefined" && module.exports) {
     select_and_inspect_segment,
     populate_screenplay_cards_in_editor_view,
     get_active_inspected_segment_index,
-    set_active_inspected_segment_index
+    set_active_inspected_segment_index,
+    initialize_scene_navigator_ui,
+    handle_editor_scene_selection_change,
+    jump_to_relative_scene,
+    update_scene_navigator_buttons_and_badge
   };
 }
