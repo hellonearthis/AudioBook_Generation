@@ -27,3 +27,16 @@ config.json
 .env
 json_parse_error_log.txt
 
+# Book conversion source files, EPUBs, PDFs, scenes, and extracted manuscripts
+the culture*/
+The Player of Games*/
+scenes/
+extracted_chapters/
+books/
+manuscripts/
+*.epub
+*.epub/
+*.epub.zip
+*.pdf
+
+
