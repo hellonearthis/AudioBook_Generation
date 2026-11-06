@@ -225,3 +225,4 @@ describe("AudioBooks MCP Server Protocol Specification", () => {
     expect(callResult.content[0].text).toContain("Unknown MCP tool: non_existent_tool");
   });
 });
+
