@@ -272,6 +272,59 @@ function compile_master_book_timeline_segments(project_state) {
   return Object.freeze(aggregated_master_segments);
 }
 
+/**
+ * WHAT: Registers multi-chapter manuscript IPC handlers on the Electron main process.
+ * WHY: Bridges front-end renderer requests across the context isolation barrier to manipulate
+ *      chapter structures, active chapter transitions, and timeline compilation.
+ * 
+ * @param {Object} ipcMain - Electron IPC main dispatcher.
+ */
+function register_chapter_handlers(ipcMain) {
+  if (!ipcMain || typeof ipcMain.handle !== "function") {
+    return;
+  }
+
+  // WHAT: Splits raw book manuscript into discrete chapter records while preserving global cast.
+  ipcMain.handle("chapter:split-manuscript", async (ipc_event_context, request_arguments) => {
+    const raw_manuscript_text = (request_arguments && request_arguments.raw_manuscript_text) || "";
+    const extracted_chapters_list = split_manuscript_into_chapters(raw_manuscript_text);
+    return { success: true, chapters: extracted_chapters_list };
+  });
+
+  // WHAT: Upgrades existing single-chapter project state to multi-chapter while preserving global cast.
+  ipcMain.handle("chapter:upgrade-project-state", async (ipc_event_context, request_arguments) => {
+    const { current_project_state, raw_text_or_chapters } = request_arguments || {};
+    const upgraded_project_state = upgrade_project_state_to_multichapter(current_project_state, raw_text_or_chapters);
+    return { success: true, project_state: upgraded_project_state };
+  });
+
+  // WHAT: Switches active editor chapter while retaining global cast.
+  ipcMain.handle("chapter:switch-active-chapter", async (ipc_event_context, request_arguments) => {
+    const { project_state, target_chapter_id } = request_arguments || {};
+    const updated_project_state = switch_active_chapter(project_state, target_chapter_id);
+    return { success: true, project_state: updated_project_state };
+  });
+
+  // WHAT: Saves segments and text for a specific chapter back into project state.
+  ipcMain.handle("chapter:save-chapter-segments", async (ipc_event_context, request_arguments) => {
+    const { project_state, chapter_id, updated_script_segments, updated_raw_text } = request_arguments || {};
+    const updated_project_state = save_chapter_segments_to_project(
+      project_state,
+      chapter_id,
+      updated_script_segments,
+      updated_raw_text
+    );
+    return { success: true, project_state: updated_project_state };
+  });
+
+  // WHAT: Compiles continuous master timeline segments across all chapters for full-book export.
+  ipcMain.handle("chapter:compile-master-timeline", async (ipc_event_context, request_arguments) => {
+    const { project_state } = request_arguments || {};
+    const master_timeline_segments_list = compile_master_book_timeline_segments(project_state);
+    return { success: true, master_segments: master_timeline_segments_list };
+  });
+}
+
 module.exports = {
   CHAPTER_HEADING_REGEX,
   count_words_in_text,
@@ -279,6 +332,7 @@ module.exports = {
   upgrade_project_state_to_multichapter,
   switch_active_chapter,
   save_chapter_segments_to_project,
-  compile_master_book_timeline_segments
+  compile_master_book_timeline_segments,
+  register_chapter_handlers
 };
 
