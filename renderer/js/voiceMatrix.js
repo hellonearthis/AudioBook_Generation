@@ -322,6 +322,12 @@ function populate_voice_matrix_configuration_cards() {
         if (character_timbre_details.testTakes[emotion]) {
           const raw_path = character_timbre_details.testTakes[emotion];
           const src_url = format_safe_audio_playback_url(raw_path);
+          const is_take_locked = Boolean(
+            character_timbre_details.anchorFilePath &&
+            (character_timbre_details.lockedTakePath 
+              ? character_timbre_details.lockedTakePath === raw_path 
+              : (character_timbre_details.lockedTake === emotion || !character_timbre_details.lockedTake))
+          );
           test_audio_players_html += `
             <div class="d-flex flex-column p-8 border-radius-4 gap-6 mb-8" style="background: rgba(0,0,0,0.2);">
               <div class="d-flex align-items-center justify-content-between w-100">
@@ -329,7 +335,9 @@ function populate_voice_matrix_configuration_cards() {
                 <span id="test_status_${emotion}_${character_name_string}" class="d-none text-10 text-gold"></span>
               </div>
               <audio id="test_player_${emotion}_${character_name_string}" src="${src_url}" controls class="w-100 d-block" style="height: 24px;"></audio>
-              <button class="cyber_btn btn_secondary text-10 p-4-8 mt-2 w-100" onclick="promote_test_take_to_anchor('${character_name_string.replace(/'/g, "\\'")}', '${emotion}')" title="Saves this take as the Character Anchor and exports it directly to ComfyUI for future generations.">⭐ Lock in character</button>
+              <button id="test_lock_btn_${emotion}_${character_name_string}" class="cyber_btn ${is_take_locked ? 'btn_secondary border-gold-glow text-gold font-semibold' : 'btn_secondary'} text-10 p-4-8 mt-2 w-100" onclick="promote_test_take_to_anchor('${character_name_string.replace(/'/g, "\\'")}', '${emotion}')" title="${is_take_locked ? "This voice take is currently locked in as the character's active master anchor. Click to re-lock or re-export." : "Saves this take as the Character Anchor and exports it directly to ComfyUI for future generations."}">
+                ${is_take_locked ? '🔒 Voice Locked In (Active Anchor)' : '⭐ Lock in character'}
+              </button>
             </div>
           `;
         }
@@ -354,6 +362,7 @@ function populate_voice_matrix_configuration_cards() {
         <span class="character_meta_badge">${character_timbre_details.age || 'Adult'}</span>
         ${is_auk_clone_mode && has_reference_audio ? `<span class="character_meta_badge text-neon-blue border-cyan-glow">AuK Voice Clone</span>` : ""}
         ${character_timbre_details.savedVoiceFilename ? `<span class="character_meta_badge text-gold border-gold-glow" style="word-break: break-all;">${character_timbre_details.savedVoiceFilename}</span>` : ""}
+        ${character_timbre_details.anchorFilePath ? `<span class="character_meta_badge text-gold border-gold-glow" title="Master voice anchor locked in">🔒 Anchor Locked</span>` : ""}
       </div>
 
       <!-- Voice Design Character Card properties -->
@@ -951,6 +960,15 @@ if (window.audiobook_api && window.audiobook_api.subscribe_to_generation_status_
             const lock_btn = document.getElementById(`test_lock_btn_${emotion}_${resolved_character_name}`) || document.getElementById(`test_lock_btn_${emotion}_${character_name}`);
             if (lock_btn) {
               lock_btn.classList.remove('d-none');
+              const char_state = active_loaded_project_state_object?.voiceMapping?.[resolved_character_name];
+              const is_new_take_locked = Boolean(
+                char_state?.anchorFilePath &&
+                (char_state?.lockedTakePath ? char_state.lockedTakePath === status_payload.filePath : (char_state?.lockedTake === emotion))
+              );
+              lock_btn.className = `cyber_btn ${is_new_take_locked ? 'btn_secondary border-gold-glow text-gold font-semibold' : 'btn_secondary'} text-10 p-4-8 mt-2 w-100`;
+              lock_btn.innerHTML = is_new_take_locked ? "🔒 Voice Locked In (Active Anchor)" : "⭐ Lock in character";
+              lock_btn.title = is_new_take_locked ? "This voice take is currently locked in as the character's active master anchor. Click to re-lock or re-export." : "Saves this take as the Character Anchor and exports it directly to ComfyUI for future generations.";
+              lock_btn.disabled = false;
             }
           } else {
             // WHAT: Re-populate cards if player was not in DOM when async completion arrived.
@@ -1922,6 +1940,15 @@ async function promote_test_take_to_anchor(character_name_string, emotion) {
 
   const test_take_file_path = character_timbre_details.testTakes[emotion];
   
+  // WHAT: Providing immediate visual feedback on the button before the async IPC calls begin.
+  // WHY: Tells the user the voice anchor is being locked and exported, preventing accidental repeat clicks.
+  const lock_btn = document.getElementById(`test_lock_btn_${emotion}_${character_name_string}`);
+  if (lock_btn) {
+    lock_btn.disabled = true;
+    lock_btn.className = "cyber_btn btn_secondary border-gold-glow text-gold text-10 p-4-8 mt-2 w-100 font-semibold";
+    lock_btn.innerHTML = "⏳ Locking in voice...";
+  }
+
   // WHAT: Calling the backend IPC promote function to duplicate the audio take.
   // WHY: We copy the audio take WAV file physically into the persistent anchors directory.
   const response = await window.audiobook_api.promote_test_to_anchor(
@@ -1938,6 +1965,8 @@ async function promote_test_take_to_anchor(character_name_string, emotion) {
     // WHY: Updates the UI representation so the newly promoted anchor WAV is loaded in the player.
     character_timbre_details.anchorFilePath = response.anchor_file_path;
     character_timbre_details.anchorBakedAt = new Date().toISOString();
+    character_timbre_details.lockedTake = emotion;
+    character_timbre_details.lockedTakePath = test_take_file_path;
     
     // WHAT: Copying the test phrase text over to become the official anchor phrase.
     // WHY: The text used to generate the test take is now the transcript for the master anchor voice.
@@ -1960,6 +1989,11 @@ async function promote_test_take_to_anchor(character_name_string, emotion) {
     
     alert("Test take successfully saved as Character Anchor and exported to ComfyUI!");
   } else {
+    if (lock_btn) {
+      lock_btn.disabled = false;
+      lock_btn.className = "cyber_btn btn_secondary text-10 p-4-8 mt-2 w-100";
+      lock_btn.innerHTML = "⭐ Lock in character";
+    }
     // WHAT: Alerting the user of the promotion failure.
     // WHY: Keeps the user informed if there was a backend error during the copy operation.
     alert("Error promoting test take: " + (response ? response.error : "Unknown IPC error"));

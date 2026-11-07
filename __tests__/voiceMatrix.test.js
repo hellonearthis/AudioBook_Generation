@@ -44,6 +44,7 @@ describe('Voice Anchor Pipeline', () => {
     // This allows functions like promote_test_take_to_anchor to be attached globally
     window.eval(scriptContent);
     
+    window.original_populate_cards = window.populate_voice_matrix_configuration_cards;
     // Assign mocks that might be defined inside the script we just eval'd
     window.populate_voice_matrix_configuration_cards = jest.fn();
   });
@@ -87,6 +88,8 @@ describe('Voice Anchor Pipeline', () => {
       expect(characterData.anchorFilePath).toBe("/mock/anchors/new_master_anchor.wav");
       expect(characterData.anchorPhrase).toBe("This is a test phrase.");
       expect(characterData.anchorBakedAt).toBeDefined();
+      expect(characterData.lockedTake).toBe("happy");
+      expect(characterData.lockedTakePath).toBe("/mock/test_takes/happy_take.wav");
 
       // Verify UI/State refreshes occurred
       expect(window.trigger_project_state_disk_flush).toHaveBeenCalled();
@@ -457,6 +460,24 @@ describe('Voice Anchor Pipeline', () => {
 
       const lockBtn = document.getElementById("test_lock_btn_normal_Character 1");
       expect(lockBtn.classList.contains("d-none")).toBe(false);
+      expect(lockBtn.textContent).toContain("Lock in character");
+    });
+
+    it('renders locked button styling and text when voice take is already locked as anchor', () => {
+      document.body.innerHTML = `<div id="voice_matrix_cards_grid"></div>`;
+      
+      const char1 = window.active_loaded_project_state_object.voiceMapping["Character 1"];
+      char1.anchorFilePath = "/mock/anchors/master_anchor.wav";
+      char1.lockedTakePath = "/mock/test_takes/happy_take.wav";
+      char1.testTakes = { normal: "/mock/test_takes/happy_take.wav" };
+
+      window.original_populate_cards();
+
+      const lockBtn = document.getElementById("test_lock_btn_normal_Character 1");
+      expect(lockBtn).not.toBeNull();
+      expect(lockBtn.textContent).toContain("Voice Locked In (Active Anchor)");
+      expect(lockBtn.classList.contains("border-gold-glow")).toBe(true);
+      expect(lockBtn.classList.contains("text-gold")).toBe(true);
     });
   });
 });
