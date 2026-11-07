@@ -69,7 +69,7 @@
   },
   "11": {
     "inputs": {
-      "filename": "SavedVoice.wav"
+      "filename": "when_the_yogurt_took_over_narrator_b4433aa5.wav"
     },
     "class_type": "FB_Qwen3TTSLoadSpeaker",
     "_meta": {

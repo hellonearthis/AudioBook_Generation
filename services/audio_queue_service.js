@@ -608,7 +608,8 @@ async function execute_sequential_generation_queue(getMainWindow) {
     } else if (active_workflow_type === "design") {
       save_node_id_string = "41";
       if (comfyui_workflow_nodes_payload["42"]) {
-        comfyui_workflow_nodes_payload["42"].inputs.value = phonetically_conditioned_dialogue_text;
+        comfyui_workflow_nodes_payload["42"].inputs.value = (phonetically_conditioned_dialogue_text && phonetically_conditioned_dialogue_text.trim()) 
+          || "The direct path through the valley was covered in thick, dark moss.";
       }
       if (comfyui_workflow_nodes_payload["43"]) {
         const precompiled_design_prompt_string = cell_override_mapping.designPrompt || 
@@ -640,7 +641,8 @@ async function execute_sequential_generation_queue(getMainWindow) {
             `Delivery: ${active_emotional_state}, ${active_pacing_level}, ${active_pitch_level} pitch, ${active_volume_level} volume`;
         }
 
-        comfyui_workflow_nodes_payload["43"].inputs.value = structured_custom_voice_style_prompt_string;
+        comfyui_workflow_nodes_payload["43"].inputs.value = (structured_custom_voice_style_prompt_string && structured_custom_voice_style_prompt_string.trim())
+          || `Character Name: ${active_speaker_name}\nVoice Profile: A clean, clear, and natural speaking voice.`;
       }
       if (comfyui_workflow_nodes_payload["38"]) {
         comfyui_workflow_nodes_payload["38"].inputs.seed = active_seed_value;
