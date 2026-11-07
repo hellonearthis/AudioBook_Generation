@@ -437,3 +437,4 @@ process_all_scenes().catch((err) => {
   console.error("Fatal attribution pipeline error:", err);
   process.exit(1);
 });
+

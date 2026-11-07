@@ -81,6 +81,22 @@ describe("Feature A: Content-Hash Audio Caching", () => {
     expect(cache_path).toContain("audio");
     expect(cache_path).toContain("cache");
   });
+
+  test("computes hash reliably with rich emotional description or undefined emotions", () => {
+    const rich_emotion_payload = {
+      ...base_payload,
+      emotion: "Emotionally grounded with subtle layers of tense suppressed fear."
+    };
+    const rich_hash = compute_take_content_hash(rich_emotion_payload);
+    expect(rich_hash).toHaveLength(16);
+
+    const undefined_emotion_payload = {
+      ...base_payload,
+      emotion: undefined
+    };
+    const undefined_hash = compute_take_content_hash(undefined_emotion_payload);
+    expect(undefined_hash).toHaveLength(16);
+  });
 });
 
 describe("Feature B: Pronunciation Lexicon & Phonetic Overrides", () => {

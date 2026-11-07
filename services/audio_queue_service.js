@@ -480,8 +480,10 @@ async function execute_sequential_generation_queue(getMainWindow) {
     let compiled_prosody_block = "";
     let compiled_style_block = "";
     let compiled_emotion_block = "";
+    let rich_emotional_description_string = "";
 
     if (has_rich_qwen_style_metadata) {
+      rich_emotional_description_string = rich_qwen_style_emotion || active_emotional_state;
       if (current_active_task.script_segment_data.qwen_style) {
         const qwen_inline_age = current_active_task.script_segment_data.qwen_style.age_range || speaker_age_specification;
         const qwen_inline_gender = current_active_task.script_segment_data.qwen_style.gender || speaker_gender_specification;
@@ -492,15 +494,15 @@ async function execute_sequential_generation_queue(getMainWindow) {
         compiled_voice_quality_block = `Voice Quality: Base voice is ${speaker_age_specification.toLowerCase()} ${speaker_gender_specification.toLowerCase()} with a ${speaker_personality_traits.toLowerCase()} tone. Subtly influenced by a ${qwen_inline_pitch.toLowerCase()} pitch and a ${rich_qwen_style_texture.toLowerCase()} texture.`;
         compiled_prosody_block = `Prosody: Core pacing is ${active_pacing_level}. Gently inflected with ${qwen_inline_pacing.toLowerCase()} pacing and ${qwen_inline_cadence.toLowerCase()} speech.`;
         compiled_style_block = `Style: Base style is ${active_acting_style}. Softly nuanced by a ${rich_qwen_style_persona} persona, emphasizing ${rich_qwen_style_technique.toLowerCase()}.`;
-        compiled_emotion_block = `Emotion: Emotionally grounded with subtle layers of ${rich_qwen_style_emotion}.`;
+        compiled_emotion_block = `Emotion: Emotionally grounded with subtle layers of ${rich_emotional_description_string}.`;
       } else {
         compiled_voice_quality_block = `Voice Quality: Base voice is ${speaker_age_specification.toLowerCase()} ${speaker_gender_specification.toLowerCase()} with a ${speaker_personality_traits.toLowerCase()} tone. Subtly influenced by a ${active_pitch_level} pitch and a ${rich_qwen_style_texture.toLowerCase()} texture.`;
         compiled_prosody_block = `Prosody: Core pacing is ${active_pacing_level} delivery, gently inflected with ${rich_qwen_style_technique.toLowerCase()} speech.`;
         compiled_style_block = `Style: Base style is ${active_acting_style}. Softly nuanced by a ${rich_qwen_style_persona} persona.`;
-        compiled_emotion_block = `Emotion: Emotionally grounded with subtle layers of ${rich_qwen_style_emotion}.`;
+        compiled_emotion_block = `Emotion: Emotionally grounded with subtle layers of ${rich_emotional_description_string}.`;
       }
     } else {
-      const rich_emotional_description_string = transform_simple_emotion_label_into_rich_description_string(active_emotional_state);
+      rich_emotional_description_string = transform_simple_emotion_label_into_rich_description_string(active_emotional_state);
       compiled_voice_quality_block = `Voice Quality: ${speaker_age_specification.toLowerCase()} ${speaker_gender_specification.toLowerCase()} with a ${active_pitch_level} pitch and a ${speaker_personality_traits.toLowerCase()} texture.`;
       compiled_prosody_block = `Prosody: ${active_pacing_level} delivery, featuring steady cadence and rhythmic speech.`;
       compiled_style_block = `Style: ${active_acting_style}.`;
