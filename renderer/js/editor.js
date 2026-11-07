@@ -2322,10 +2322,11 @@ function render_line_inspector_view(line_index) {
   const audio_takes = Array.isArray(segment.audioVersions) ? segment.audioVersions : [];
   let takes_list_html = "";
   if (audio_takes.length > 0) {
-    takes_list_html = audio_takes.map(take => {
-      const is_master = !!take.isActive;
-      const take_energy = typeof take.energy === "number" ? take.energy : 1.0;
-      const validation = take.validation;
+    takes_list_html = audio_takes.map((take, take_idx) => {
+      const take_number = typeof take === "object" && take ? take.take : (take_idx + 1);
+      const is_master = typeof take === "object" && take ? !!take.isActive : (segment.activeTake === take_number);
+      const take_energy = typeof take === "object" && typeof take?.energy === "number" ? take.energy : 1.0;
+      const validation = typeof take === "object" ? take?.validation : null;
       let validation_badge_html = "";
 
       if (validation) {
@@ -2346,10 +2347,10 @@ function render_line_inspector_view(line_index) {
               ${status_label}
             </span>
             <div class="d-flex gap-4">
-              <button class="cyber_btn btn_secondary p-1-4 text-10 text-cyan" onclick="open_whistle_validation_details_modal(${valid_index}, ${take.take})" title="Inspect word-by-word diff, missing words, and telemetry">
+              <button class="cyber_btn btn_secondary p-1-4 text-10 text-cyan" onclick="open_whistle_validation_details_modal(${valid_index}, ${take_number})" title="Inspect word-by-word diff, missing words, and telemetry">
                 🔍 Diff
               </button>
-              <button class="cyber_btn btn_secondary p-1-4 text-10" id="btn_whistle_${valid_index}_${take.take}" onclick="handle_validate_take_with_whistle(${valid_index}, ${take.take})" title="Re-run Whistle STT validation">
+              <button class="cyber_btn btn_secondary p-1-4 text-10" id="btn_whistle_${valid_index}_${take_number}" onclick="handle_validate_take_with_whistle(${valid_index}, ${take_number})" title="Re-run Whistle STT validation">
                 ⚡ Validate
               </button>
             </div>
@@ -2358,7 +2359,7 @@ function render_line_inspector_view(line_index) {
       } else {
         validation_badge_html = `
           <div class="d-flex align-items-center justify-content-end mt-4">
-            <button class="cyber_btn btn_secondary p-2-6 text-10" id="btn_whistle_${valid_index}_${take.take}" onclick="handle_validate_take_with_whistle(${valid_index}, ${take.take})" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);" title="Test whether audio matches dialogue text (Strict 90% threshold)">
+            <button class="cyber_btn btn_secondary p-2-6 text-10" id="btn_whistle_${valid_index}_${take_number}" onclick="handle_validate_take_with_whistle(${valid_index}, ${take_number})" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);" title="Test whether audio matches dialogue text (Strict 90% threshold)">
               🎯 Validate (Whistle)
             </button>
           </div>
@@ -2369,18 +2370,18 @@ function render_line_inspector_view(line_index) {
         <div class="take_comparison_item ${is_master ? 'take_active_master' : ''}">
           <div class="d-flex justify-content-between align-items-center">
             <span class="font-weight-bold text-11 d-flex align-items-center gap-6">
-              ${is_master ? '<span class="text-green font-bold">★ Take ' + take.take + ' (Master)</span>' : 'Take ' + take.take}
+              ${is_master ? '<span class="text-green font-bold">★ Take ' + take_number + ' (Master)</span>' : 'Take ' + take_number}
             </span>
-            <span class="text-10 text-muted">${take.duration ? Number(take.duration).toFixed(1) + 's' : ''} • Energy: ${Math.round(take_energy * 100)}%</span>
+            <span class="text-10 text-muted">${(typeof take === "object" && take?.duration) ? Number(take.duration).toFixed(1) + 's' : ''} • Energy: ${Math.round(take_energy * 100)}%</span>
           </div>
           <div class="mini_waveform_track">
-            ${generate_simulated_waveform_html(take.take, take_energy)}
+            ${generate_simulated_waveform_html(take_number, take_energy)}
           </div>
           <div class="d-flex justify-content-end gap-6 text-10">
-            <button class="cyber_btn btn_secondary p-2-6 text-10" onclick="play_specific_card_take(${valid_index}, ${take.take})" title="Audition this take">▶ Audition</button>
-            ${!is_master ? `<button class="cyber_btn p-2-6 text-10 text-green" onclick="handle_card_take_change_event(${valid_index}, ${take.take}, false)" title="Set as master audio take">★ Set Master</button>` : ''}
-            <button class="cyber_btn btn_secondary p-2-6 text-10 text-purple" onclick="open_auk_edit_tools_modal(${valid_index}, false)" title="AuK Audio Editing Suite">🪄 Edit</button>
-            <button class="cyber_btn btn_secondary p-2-6 text-10 text-coral" onclick="trigger_delete_specific_take(${valid_index}, ${take.take})" title="Delete take">🗑</button>
+            <button class="cyber_btn btn_secondary p-2-6 text-10" onclick="play_specific_card_take(${valid_index}, ${take_number})" title="Audition this take">▶ Audition</button>
+            ${!is_master ? `<button class="cyber_btn p-2-6 text-10 text-green" onclick="handle_card_take_change_event(${valid_index}, ${take_number}, false)" title="Set as master audio take">★ Set Master</button>` : ''}
+            <button class="cyber_btn btn_secondary p-2-6 text-10 text-purple" onclick="open_auk_edit_tools_modal(${valid_index}, false, ${take_number})" title="AuK Audio Editing Suite">🪄 Edit</button>
+            <button class="cyber_btn btn_secondary p-2-6 text-10 text-coral" onclick="trigger_delete_specific_take(${valid_index}, ${take_number})" title="Delete take">🗑</button>
           </div>
           ${validation_badge_html}
         </div>`;
@@ -2591,13 +2592,26 @@ function play_specific_card_take(card_index, take_number) {
   const segment = active_loaded_project_state_object.scriptSegments[card_index];
   if (!segment || !segment.audioVersions) return;
 
-  const target_take = segment.audioVersions.find(t => t.take === take_number);
-  if (target_take && target_take.audioPath) {
-    const clip_player_node = document.getElementById("individual_clip_audio_player");
-    if (clip_player_node) {
-      clip_player_node.dataset.currentCardIndex = String(card_index);
-      clip_player_node.src = target_take.audioPath;
-      clip_player_node.play().catch(e => console.error("Audition playback failed:", e));
+  const target_take = segment.audioVersions.find((t, idx) => (typeof t === "object" && t ? t.take === take_number : (idx + 1) === take_number));
+  const raw_audio_path = typeof target_take === "string" 
+    ? target_take 
+    : (target_take ? (target_take.filePath || target_take.audioPath) : null);
+
+  if (raw_audio_path) {
+    const normalized_absolute_path = raw_audio_path.replace(/\\/g, "/").replace(/^\/+/, "");
+    const source_audio_file_path = `peaksaudio:///${normalized_absolute_path}?t=${Date.now()}`;
+    let clip_player_node = document.getElementById("html5_segment_audio_player");
+    if (!clip_player_node) {
+      clip_player_node = document.createElement("audio");
+      clip_player_node.id = "html5_segment_audio_player";
+      clip_player_node.style.display = "none";
+      document.body.appendChild(clip_player_node);
+    }
+    clip_player_node.dataset.currentCardIndex = String(card_index);
+    clip_player_node.src = source_audio_file_path;
+    const play_promise = clip_player_node.play();
+    if (play_promise && typeof play_promise.catch === "function") {
+      play_promise.catch(e => console.error("Audition playback failed:", e));
     }
   } else {
     alert("Audio take file not available on disk.");
@@ -3796,7 +3810,7 @@ let active_auk_editing_target_context = null;
 
 // WHAT: Opens the AuK Audio Editing Suite modal for a specific take on a card.
 // WHY: Gives the user access to whisper conversion, pitch shift, speed adjust, denoise, and emotion morphing.
-function open_auk_edit_tools_modal(segment_index_position, is_directorial_flag) {
+function open_auk_edit_tools_modal(segment_index_position, is_directorial_flag, specific_take_number) {
   const segment_collection = is_directorial_flag
     ? active_loaded_project_state_object.directorialSegments
     : active_loaded_project_state_object.scriptSegments;
@@ -3807,13 +3821,30 @@ function open_auk_edit_tools_modal(segment_index_position, is_directorial_flag) 
     return;
   }
 
-  const active_take_number = target_script_segment.activeTake || 1;
-  const active_take_file_path = target_script_segment.audioVersions[active_take_number - 1] || target_script_segment.audioVersions[0];
+  let active_take_number = specific_take_number;
+  if (!active_take_number) {
+    const active_entry = target_script_segment.audioVersions.find(v => v && typeof v === "object" && v.isActive);
+    active_take_number = active_entry ? active_entry.take : (target_script_segment.activeTake || 1);
+  }
+
+  const matching_take_entry = target_script_segment.audioVersions.find(v => v && typeof v === "object" && v.take === active_take_number)
+    || target_script_segment.audioVersions[active_take_number - 1]
+    || target_script_segment.audioVersions[0];
+
+  let resolved_take_file_path = "";
+  if (typeof matching_take_entry === "string") {
+    resolved_take_file_path = matching_take_entry;
+  } else if (matching_take_entry && typeof matching_take_entry === "object") {
+    resolved_take_file_path = matching_take_entry.filePath || matching_take_entry.audioPath || "";
+  }
+  if (!resolved_take_file_path && target_script_segment.audioPath) {
+    resolved_take_file_path = target_script_segment.audioPath;
+  }
 
   active_auk_editing_target_context = {
     segment_index_position: segment_index_position,
     is_directorial_flag: is_directorial_flag,
-    source_take_file_path: active_take_file_path,
+    source_take_file_path: resolved_take_file_path,
     active_take_number: active_take_number,
     speaker_name: target_script_segment.speaker,
     segment_text: target_script_segment.text
@@ -3984,7 +4015,25 @@ async function execute_active_auk_edit_task() {
         if (!target_segment.audioVersions) {
           target_segment.audioVersions = [];
         }
-        target_segment.audioVersions.push(edit_response_result.filePath);
+
+        // Deactivate previous active takes
+        target_segment.audioVersions.forEach((version_candidate) => {
+          if (version_candidate && typeof version_candidate === "object") {
+            version_candidate.isActive = false;
+          }
+        });
+
+        const is_string_array = target_segment.audioVersions.length > 0 && typeof target_segment.audioVersions[0] === "string";
+        const new_take_entry = is_string_array
+          ? edit_response_result.filePath
+          : {
+              take: edit_response_result.newTakeNumber,
+              filePath: edit_response_result.filePath,
+              timestamp: Date.now(),
+              isActive: true
+            };
+
+        target_segment.audioVersions.push(new_take_entry);
         target_segment.activeTake = edit_response_result.newTakeNumber;
         target_segment.audioPath = edit_response_result.filePath;
       }
@@ -3999,16 +4048,17 @@ async function execute_active_auk_edit_task() {
         populate_screenplay_cards_in_editor_view();
       }
 
+      const target_card_index = active_auk_editing_target_context.segment_index_position;
+
+      // Re-render Line Inspector if active for this line
+      if (typeof render_line_inspector_view === "function" && typeof get_active_inspected_segment_index === "function" && get_active_inspected_segment_index() === target_card_index) {
+        render_line_inspector_view(target_card_index);
+      }
+
       close_auk_edit_tools_modal();
 
       // Automatically play the freshly edited take
-      const audio_element = document.getElementById("master_hidden_audio_player");
-      if (audio_element) {
-        const audio_playback_promise = audio_element.play();
-        if (audio_playback_promise && typeof audio_playback_promise.catch === "function") {
-          audio_playback_promise.catch(() => {});
-        }
-      }
+      play_specific_card_take(target_card_index, edit_response_result.newTakeNumber);
     } else {
       if (status_message_element) {
         status_message_element.textContent = `Edit failed: ${edit_response_result.error || "Unknown error"}`;

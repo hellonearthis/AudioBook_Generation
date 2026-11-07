@@ -196,6 +196,40 @@ describe("AuK Workflow Integration & Audio Editing Suite", () => {
       expect(target_segment.audioVersions[1]).toBe("C:/TestWorkspace/TestAudiobook/audio/takes/line_0/take_2.flac");
       expect(window.trigger_project_state_disk_flush).toHaveBeenCalled();
     });
+
+    it("handles take descriptor objects in audioVersions and preserves structured objects", async () => {
+      window.active_loaded_project_state_object.scriptSegments[0].audioVersions = [
+        { take: 1, filePath: "C:/TestWorkspace/TestAudiobook/audio/takes/line_0/take_1.wav", isActive: false },
+        { take: 2, filePath: "C:/TestWorkspace/TestAudiobook/audio/takes/line_0/take_2.wav", isActive: true }
+      ];
+
+      // Open modal targeting take 2 specifically
+      open_auk_edit_tools_modal(0, false, 2);
+
+      window.audiobook_api.apply_auk_audio_edit.mockResolvedValue({
+        success: true,
+        newTakeNumber: 3,
+        filePath: "C:/TestWorkspace/TestAudiobook/audio/takes/line_0/take_3.flac",
+        message: "Take 3 created with AuK pitch."
+      });
+
+      await execute_active_auk_edit_task();
+
+      // Ensure string path was dispatched, not an object
+      expect(window.audiobook_api.apply_auk_audio_edit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source_take_file_path: "C:/TestWorkspace/TestAudiobook/audio/takes/line_0/take_2.wav"
+        })
+      );
+
+      const target_segment = window.active_loaded_project_state_object.scriptSegments[0];
+      expect(target_segment.audioVersions.length).toBe(3);
+      expect(target_segment.activeTake).toBe(3);
+      expect(target_segment.audioVersions[2].take).toBe(3);
+      expect(target_segment.audioVersions[2].filePath).toBe("C:/TestWorkspace/TestAudiobook/audio/takes/line_0/take_3.flac");
+      expect(target_segment.audioVersions[2].isActive).toBe(true);
+      expect(target_segment.audioVersions[1].isActive).toBe(false);
+    });
   });
 
 });

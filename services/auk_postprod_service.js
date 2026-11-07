@@ -54,8 +54,25 @@ function register_auk_postprod_handlers(ipcMain) {
     let staged_temporary_edit_audio_path = null;
 
     try {
-      if (!source_take_file_path || !filesystem_library.existsSync(source_take_file_path)) {
-        return { success: false, error: "Source audio take file was not found on disk." };
+      let resolved_source_take_file_path = source_take_file_path;
+      if (typeof resolved_source_take_file_path === "object" && resolved_source_take_file_path !== null) {
+        resolved_source_take_file_path = resolved_source_take_file_path.filePath || resolved_source_take_file_path.audioPath || "";
+      }
+      if (typeof resolved_source_take_file_path === "string" && resolved_source_take_file_path.startsWith("peaksaudio:///")) {
+        resolved_source_take_file_path = decodeURIComponent(resolved_source_take_file_path.replace(/^peaksaudio:\/\/\//, ""));
+        if (process.platform === "win32" && /^[a-zA-Z]\//.test(resolved_source_take_file_path)) {
+          resolved_source_take_file_path = resolved_source_take_file_path[0] + ":" + resolved_source_take_file_path.slice(1);
+        }
+      }
+      if (resolved_source_take_file_path && !filesystem_library.existsSync(resolved_source_take_file_path)) {
+        const candidate_relative = path_library.join(workspace_directory_path, project_name, resolved_source_take_file_path);
+        if (filesystem_library.existsSync(candidate_relative)) {
+          resolved_source_take_file_path = candidate_relative;
+        }
+      }
+
+      if (!resolved_source_take_file_path || !filesystem_library.existsSync(resolved_source_take_file_path)) {
+        return { success: false, error: `Source audio take file was not found on disk at: ${resolved_source_take_file_path || "empty path"}` };
       }
 
       const comfyui_is_reachable = await new Promise((resolve_ping_probe) => {
@@ -125,7 +142,7 @@ function register_auk_postprod_handlers(ipcMain) {
         return { success: false, error: `AuK workflow template ${workflow_template_filename} not found on disk.` };
       }
 
-      const source_audio_file_extension = path_library.extname(source_take_file_path) || ".wav";
+      const source_audio_file_extension = path_library.extname(resolved_source_take_file_path) || ".wav";
       const staging_audio_filename = `auk_edit_input_${Date.now()}${source_audio_file_extension}`;
       const comfyui_resolved_base_directory = resolve_comfyui_base_directory();
       const absolute_comfyui_staging_path = path_library.join(comfyui_resolved_base_directory, "input", staging_audio_filename);
@@ -134,7 +151,7 @@ function register_auk_postprod_handlers(ipcMain) {
       if (!filesystem_library.existsSync(comfyui_input_parent_directory)) {
         filesystem_library.mkdirSync(comfyui_input_parent_directory, { recursive: true });
       }
-      filesystem_library.copyFileSync(source_take_file_path, absolute_comfyui_staging_path);
+      filesystem_library.copyFileSync(resolved_source_take_file_path, absolute_comfyui_staging_path);
       staged_temporary_edit_audio_path = absolute_comfyui_staging_path;
 
       if (comfyui_workflow_nodes_payload["2"]) {
