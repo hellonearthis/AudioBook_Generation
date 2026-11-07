@@ -257,7 +257,26 @@ function populate_voice_matrix_configuration_cards() {
       character_timbre_details.personalMotto || ""
     );
 
+    // WHAT: Checking if the character is in AuK Voice Clone mode or standard Qwen3 Seed mode.
+    // WHY: Allows the creator to flip this part of the card between Qwen3 seed testing and AuK reference audio cloning.
+    const is_auk_clone_mode = character_timbre_details.synthesisMode === "auk_clone" ||
+      character_timbre_details.workflowType === "auk_voice_clone";
 
+    const reference_audio_file_path = character_timbre_details.referenceAudioPath ||
+      character_timbre_details.anchorFilePath ||
+      (character_timbre_details.voice && character_timbre_details.voice.reference_audio) ||
+      "";
+
+    const has_reference_audio = Boolean(reference_audio_file_path && reference_audio_file_path.trim().length > 0);
+    const reference_audio_filename = has_reference_audio
+      ? reference_audio_file_path.split(/[\\/]/).pop()
+      : "";
+    const reference_audio_extension = has_reference_audio
+      ? (reference_audio_filename.split(".").pop() || "").toUpperCase()
+      : "";
+    const reference_audio_src_url = has_reference_audio
+      ? `file:///${reference_audio_file_path.replace(/\\/g, "/").replace(/^\/+/, "")}?t=${Date.now()}`
+      : "";
 
     // WHAT: Checking if this is the fallback "Narrator" profile.
     // WHY: The Narrator profile must never be deleted as it is the absolute default fallback speaker.
@@ -319,6 +338,7 @@ function populate_voice_matrix_configuration_cards() {
       <div class="character_implicit_metadata_badges">
         <span class="character_meta_badge text-purple border-purple-glow">${character_timbre_details.gender || 'Unknown'}</span>
         <span class="character_meta_badge">${character_timbre_details.age || 'Adult'}</span>
+        ${is_auk_clone_mode && has_reference_audio ? `<span class="character_meta_badge text-neon-blue border-cyan-glow">AuK Voice Clone</span>` : ""}
         ${character_timbre_details.savedVoiceFilename ? `<span class="character_meta_badge text-gold border-gold-glow" style="word-break: break-all;">${character_timbre_details.savedVoiceFilename}</span>` : ""}
       </div>
 
@@ -411,13 +431,50 @@ function populate_voice_matrix_configuration_cards() {
         ` : ""}
 
         <div class="form_input_group mb-0 mt-15 pt-10 border-top-glass">
-          <h4 class="font-display text-11 font-semibold text-gold mb-10" style="margin: 0;">🧪 TESTING & VOICE SEED</h4>
-          
-          <div class="form_input_group mb-10 d-flex align-items-center gap-10 flex-wrap flex-row" style="align-content: flex-start;">
-            <input type="number" id="test_seed_${character_name_string}" value="${character_timbre_details.seed || Math.floor(Math.random() * 90000) + 10000}" class="form_text_field flex-1 text-11 bg-input-glass" onchange="modify_character_voice_synthesis_seed('${character_name_string.replace(/'/g, "\\'")}', this.value)" title="Numerical randomization seed controlling vocal timbre contours">
-            <button class="cyber_btn btn_secondary text-11 p-0 p-4-8" onclick="trigger_randomized_voice_seed_generation('${character_name_string.replace(/'/g, "\\'")}')" title="Randomize Seed">🎲</button>
-            <label class="form_input_label text-10 text-muted" style="margin: 0; white-space: nowrap;">Voice Seed</label>
+          <div class="d-flex justify-content-between align-items-center mb-10">
+            <h4 class="font-display text-11 font-semibold text-gold" style="margin: 0;">🧪 TESTING & VOICE SYNTHESIS</h4>
+            <div class="d-flex gap-4" style="background: rgba(0,0,0,0.3); padding: 2px 4px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08);">
+              <button type="button" class="cyber_btn ${is_auk_clone_mode ? 'btn_secondary text-muted' : 'btn_primary text-gold border-gold-glow'} text-10 p-2-6" onclick="set_character_synthesis_mode('${character_name_string.replace(/'/g, "\\'")}', 'seed')" title="Switch to Qwen3 Voice Design with random/fixed Seed">
+                🎲 Seed (Qwen3)
+              </button>
+              <button type="button" class="cyber_btn ${is_auk_clone_mode ? 'btn_primary text-gold border-gold-glow' : 'btn_secondary text-muted'} text-10 p-2-6" onclick="set_character_synthesis_mode('${character_name_string.replace(/'/g, "\\'")}', 'auk_clone')" title="Flip to AuK Voice Clone using loaded audio file">
+                🎙️ AuK Clone (Audio)
+              </button>
+            </div>
           </div>
+          
+          ${is_auk_clone_mode ? `
+            <div class="form_input_group mb-10 d-flex flex-column gap-6 p-8 border-radius-4" style="background: rgba(0, 200, 255, 0.05); border: 1px dashed rgba(0, 200, 255, 0.35);">
+              ${has_reference_audio ? `
+                <div class="d-flex align-items-center justify-content-between gap-8">
+                  <span class="text-11 text-gold font-semibold text-truncate" title="${reference_audio_file_path}">🎙️ ${reference_audio_filename}</span>
+                  <div class="d-flex gap-4">
+                    <button type="button" class="cyber_btn btn_secondary text-10 p-2-6" onclick="trigger_character_reference_audio_load('${character_name_string.replace(/'/g, "\\'")}')" title="Choose a different audio file">📂 Replace</button>
+                    <button type="button" class="cyber_btn btn_secondary text-10 p-2-6 text-coral" onclick="trigger_character_reference_audio_remove('${character_name_string.replace(/'/g, "\\'")}')" title="Remove reference audio">✕ Clear</button>
+                  </div>
+                </div>
+                <audio controls src="${reference_audio_src_url}" class="w-100 mt-4 mb-2" style="height: 24px;"></audio>
+                <div class="d-flex align-items-center justify-content-between">
+                  <span class="text-9 text-neon-blue">✨ AuK Zero-Shot Voice Clone active</span>
+                  <span class="text-9 text-muted">${reference_audio_extension} Source</span>
+                </div>
+              ` : `
+                <div class="d-flex flex-column align-items-center justify-content-center gap-6 p-4 text-center">
+                  <span class="text-11 text-muted">No voice recording loaded for AuK clone</span>
+                  <button type="button" class="cyber_btn btn_primary text-11 p-6-12 border-cyan-glow" onclick="trigger_character_reference_audio_load('${character_name_string.replace(/'/g, "\\'")}')" title="Open file browser to select reference voice recording">
+                    📂 Load Voice Audio File (.wav, .mp3, .flac)
+                  </button>
+                  <span class="text-9 text-muted">AuK ComfyUI workflow will clone this vocal identity into test phrases and book dialogue.</span>
+                </div>
+              `}
+            </div>
+          ` : `
+            <div class="form_input_group mb-10 d-flex align-items-center gap-10 flex-wrap flex-row" style="align-content: flex-start;">
+              <input type="number" id="test_seed_${character_name_string}" value="${character_timbre_details.seed || Math.floor(Math.random() * 90000) + 10000}" class="form_text_field flex-1 text-11 bg-input-glass" onchange="modify_character_voice_synthesis_seed('${character_name_string.replace(/'/g, "\\'")}', this.value)" title="Numerical randomization seed controlling vocal timbre contours">
+              <button class="cyber_btn btn_secondary text-11 p-0 p-4-8" onclick="trigger_randomized_voice_seed_generation('${character_name_string.replace(/'/g, "\\'")}')" title="Randomize Seed">🎲</button>
+              <label class="form_input_label text-10 text-muted" style="margin: 0; white-space: nowrap;">Voice Seed</label>
+            </div>
+          `}
           
           <div class="form_input_group mb-10">
             <div class="d-flex justify-content-between align-items-center mb-4">
@@ -434,8 +491,8 @@ function populate_voice_matrix_configuration_cards() {
             <textarea id="test_phrase_${character_name_string}" class="form_text_field w-100 text-11 line-height-1-4 resize-vertical bg-input-glass p-2-4" rows="6" onchange="modify_character_test_phrase('${character_name_string.replace(/'/g, "\\'")}', this.value)">${character_timbre_details.testPhrase || character_timbre_details.anchorPhrase || 'The direct path through the valley was covered in thick, dark moss. Young children should always evaluate their choices before jumping into unknown waters. She saw a magnificent bluejay perched high upon the smooth wooden fence, singing a remarkably clear tune that echoed softly across the quiet, frozen northern landscape.'}</textarea>
           </div>
           
-          <button class="cyber_btn btn_primary w-100 text-11 p-6 mb-10" onclick="trigger_character_voice_test('${character_name_string.replace(/'/g, "\\'")}')" title="Generates a short test clip of the phrase above using the current voice profile traits.">
-            Generate Test Phrase
+          <button class="cyber_btn btn_primary w-100 text-11 p-6 mb-10" onclick="trigger_character_voice_test('${character_name_string.replace(/'/g, "\\'")}')" title="${is_auk_clone_mode ? 'Generates a test clip using AuK Zero-Shot Voice Clone from the loaded reference audio.' : 'Generates a short test clip of the phrase above using the current voice profile traits.'}">
+            ${is_auk_clone_mode ? '🎙️ Generate Test Phrase (AuK Clone)' : 'Generate Test Phrase'}
           </button>
           
           <div id="test_audio_container_${character_name_string}" class="d-flex flex-column gap-6">
@@ -552,22 +609,139 @@ function modify_character_test_phrase(character_name_string, updated_test_phrase
   }
 }
 
-// WHAT: Dispatches three test generation tasks (Normal, Surprised, Angry) to the backend.
-// WHY: Allows the user to hear the exact seed/key vocal timbre across different emotional contexts.
+// WHAT: Flips the character's voice synthesis mode between Qwen3 Voice Design (seed) and AuK Voice Clone (audio).
+// WHY: Gives the user immediate control on the character card to either sculpt a synthetic voice or clone an audio recording.
+function set_character_synthesis_mode(character_name_string, target_mode_string) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.voiceMapping) {
+    return;
+  }
+  const character_profile_object = active_loaded_project_state_object.voiceMapping[character_name_string];
+  if (!character_profile_object) return;
+
+  character_profile_object.synthesisMode = target_mode_string;
+  if (target_mode_string === "auk_clone") {
+    character_profile_object.workflowType = "auk_voice_clone";
+  } else {
+    character_profile_object.workflowType = "design";
+  }
+
+  trigger_project_state_disk_flush();
+  populate_voice_matrix_configuration_cards();
+}
+
+// WHAT: Opens the native file picker to select an external voice audio file and imports it for AuK cloning.
+// WHY: Allows the user to supply a real voice recording (.wav, .mp3, .m4a, .flac) to clone with AuK Zero-Shot TTS.
+async function trigger_character_reference_audio_load(character_name_string) {
+  if (!window.audiobook_api || typeof window.audiobook_api.select_audio_file !== "function") {
+    alert("Audio file selection dialog is not available in this environment.");
+    return;
+  }
+
+  try {
+    const selected_source_file_path = await window.audiobook_api.select_audio_file();
+    if (!selected_source_file_path) {
+      return; // User cancelled dialog
+    }
+
+    if (!active_loaded_project_state_object || !active_loaded_project_state_object.voiceMapping) {
+      return;
+    }
+    const character_profile_object = active_loaded_project_state_object.voiceMapping[character_name_string];
+    if (!character_profile_object) return;
+
+    // WHAT: If the import_character_voice_audio IPC handler is available, copy/transcode to project anchors.
+    // WHY: Keeps all project audio files contained within the project directory for portability.
+    if (typeof window.audiobook_api.import_character_voice_audio === "function" &&
+        active_selected_workspace_directory_path &&
+        active_loaded_project_state_object.projectName) {
+      const import_response_payload = await window.audiobook_api.import_character_voice_audio({
+        workspace_directory_path: active_selected_workspace_directory_path,
+        project_name: active_loaded_project_state_object.projectName,
+        character_name: character_name_string,
+        source_audio_file_path: selected_source_file_path,
+        current_project_state: active_loaded_project_state_object,
+        optional_metadata: {
+          workflowType: "auk_voice_clone",
+          synthesisMode: "auk_clone"
+        }
+      });
+
+      if (import_response_payload && import_response_payload.success) {
+        character_profile_object.referenceAudioPath = import_response_payload.anchor_file_path;
+        character_profile_object.anchorFilePath = import_response_payload.anchor_file_path;
+        character_profile_object.originalSourceAudioPath = selected_source_file_path;
+        character_profile_object.workflowType = "auk_voice_clone";
+        character_profile_object.synthesisMode = "auk_clone";
+        character_profile_object.source = "imported_audio";
+
+        trigger_project_state_disk_flush();
+        populate_voice_matrix_configuration_cards();
+        return;
+      }
+    }
+
+    // Fallback: save direct file path if import IPC is not wired
+    character_profile_object.referenceAudioPath = selected_source_file_path;
+    character_profile_object.anchorFilePath = selected_source_file_path;
+    character_profile_object.workflowType = "auk_voice_clone";
+    character_profile_object.synthesisMode = "auk_clone";
+
+    trigger_project_state_disk_flush();
+    populate_voice_matrix_configuration_cards();
+  } catch (file_selection_error) {
+    console.error("[VoiceMatrix] Failed to load reference audio file:", file_selection_error);
+    alert(`Failed to load voice audio file: ${file_selection_error.message}`);
+  }
+}
+
+// WHAT: Removes the imported reference audio from a character profile and reverts to standard seed mode.
+// WHY: Allows the user to reset a character back to synthetic VoiceDesign if desired.
+function trigger_character_reference_audio_remove(character_name_string) {
+  if (!active_loaded_project_state_object || !active_loaded_project_state_object.voiceMapping) {
+    return;
+  }
+  const character_profile_object = active_loaded_project_state_object.voiceMapping[character_name_string];
+  if (!character_profile_object) return;
+
+  delete character_profile_object.referenceAudioPath;
+  character_profile_object.synthesisMode = "seed";
+  character_profile_object.workflowType = "design";
+
+  trigger_project_state_disk_flush();
+  populate_voice_matrix_configuration_cards();
+}
+
+// WHAT: Dispatches a test generation task to ComfyUI (either Qwen3 DesignVoice or AuK Voice Clone).
+// WHY: Allows the user to hear the exact seed/key vocal timbre or cloned audio reference before generating chapters.
 function trigger_character_voice_test(character_name_string) {
   const seed_input = document.getElementById(`test_seed_${character_name_string}`);
   const phrase_input = document.getElementById(`test_phrase_${character_name_string}`);
   const container = document.getElementById(`test_audio_container_${character_name_string}`);
   
-  if (!seed_input || !phrase_input || !container) return;
+  if (!phrase_input || !container) return;
   
   const test_phrase = phrase_input.value || "This is a test phrase.";
-  const seed_value = Number(seed_input.value);
+  const seed_value = seed_input ? Number(seed_input.value) : (Math.floor(Math.random() * 90000) + 10000);
   
-  // Update state to make sure seed is set
-  if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping[character_name_string]) {
-    active_loaded_project_state_object.voiceMapping[character_name_string].seed = seed_value;
+  const character_profile_object = active_loaded_project_state_object?.voiceMapping?.[character_name_string];
+  if (character_profile_object && seed_input) {
+    character_profile_object.seed = seed_value;
     trigger_project_state_disk_flush();
+  }
+  
+  const is_auk_clone_active = character_profile_object && (
+    character_profile_object.synthesisMode === "auk_clone" ||
+    character_profile_object.workflowType === "auk_voice_clone"
+  );
+
+  const resolved_reference_audio_path = character_profile_object?.referenceAudioPath ||
+    character_profile_object?.anchorFilePath ||
+    character_profile_object?.voice?.reference_audio;
+
+  if (is_auk_clone_active && !resolved_reference_audio_path) {
+    alert(`Please load a voice audio file for "${character_name_string}" first to clone with AuK.`);
+    trigger_character_reference_audio_load(character_name_string);
+    return;
   }
   
   // Set up UI for 1 player (Normal)
@@ -578,7 +752,7 @@ function trigger_character_voice_test(character_name_string) {
     container.innerHTML += `
       <div class="d-flex flex-column p-8 border-radius-4 gap-6 mb-8" style="background: rgba(0,0,0,0.2);">
         <div class="d-flex align-items-center justify-content-between w-100">
-          <span class="text-10 text-muted" style="text-transform: capitalize; font-weight: 500;">${emotion} take</span>
+          <span class="text-10 text-muted" style="text-transform: capitalize; font-weight: 500;">${emotion} take (${is_auk_clone_active ? 'AuK Clone' : 'Qwen3 Design'})</span>
           <span id="test_status_${emotion}_${character_name_string}" class="text-10 text-gold">Queued...</span>
         </div>
         <audio id="test_player_${emotion}_${character_name_string}" controls class="w-100 d-none" style="height: 24px;"></audio>
@@ -594,7 +768,8 @@ function trigger_character_voice_test(character_name_string) {
       direction: emotion, // This feeds into Qwen's emotion processing
       workflowOverride: {
         seed: seed_value,
-        workflowType: "design"
+        workflowType: is_auk_clone_active ? "auk_voice_clone" : "design",
+        referenceAudioPath: is_auk_clone_active ? resolved_reference_audio_path : undefined
       }
     };
     
@@ -618,6 +793,15 @@ function trigger_character_voice_test(character_name_string) {
         `test_${emotion}_${character_name_string}`,
         1,
         ".wav"
+      ).catch(() => {});
+
+      window.audiobook_api.delete_take_file(
+        active_selected_workspace_directory_path,
+        active_loaded_project_state_object.projectName,
+        false,
+        `test_${emotion}_${character_name_string}`,
+        1,
+        ".flac"
       ).catch(() => {});
 
       window.audiobook_api.enqueue_speech_generation_task(
@@ -703,7 +887,19 @@ if (window.audiobook_api && window.audiobook_api.subscribe_to_generation_status_
         const player_el = document.getElementById(`test_player_${emotion}_${character_name}`);
         
         if (status_el) {
-          status_el.innerText = status_payload.status === "processing" ? "Processing..." : (status_payload.status === "completed" ? "Done" : status_payload.status);
+          if (status_payload.status === "processing") {
+            status_el.innerText = "Processing...";
+            status_el.style.color = "var(--accent-cyber-gold)";
+          } else if (status_payload.status === "completed") {
+            status_el.innerText = "Done";
+            status_el.style.color = "#4ade80";
+          } else if (status_payload.status === "failed") {
+            status_el.innerText = status_payload.message || "Failed";
+            status_el.style.color = "var(--accent-coral-red, #ff5555)";
+            status_el.title = status_payload.message || "Synthesis failed";
+          } else {
+            status_el.innerText = status_payload.status;
+          }
         }
         
         if (status_payload.status === "completed" && player_el && status_payload.filePath) {

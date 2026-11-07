@@ -367,7 +367,9 @@ async function execute_sequential_generation_queue(getMainWindow) {
         active_workflow_type = (active_speaker_name === "Narrator") ? "custom" : "design";
       } else if (global_character_mapping.workflowType) {
         active_workflow_type = global_character_mapping.workflowType;
-      } else if (active_speaker_name !== "Narrator" && (global_character_mapping.anchorFilePath || global_character_mapping.voice?.reference_audio)) {
+      } else if (global_character_mapping.synthesisMode === "auk_clone" || global_character_mapping.synthesisMode === "auk") {
+        active_workflow_type = "auk_voice_clone";
+      } else if (active_speaker_name !== "Narrator" && (global_character_mapping.anchorFilePath || global_character_mapping.voice?.reference_audio || global_character_mapping.referenceAudioPath)) {
         active_workflow_type = "auk_voice_clone";
       } else {
         active_workflow_type = "custom";
@@ -381,7 +383,7 @@ async function execute_sequential_generation_queue(getMainWindow) {
     let is_saved_voice_rerouted = false;
     let resolved_saved_voice_filename = null;
 
-    if (global_character_mapping.savedVoiceFilename && active_workflow_type !== "design") {
+    if (global_character_mapping.savedVoiceFilename && active_workflow_type !== "design" && !active_workflow_type.startsWith("auk")) {
       is_saved_voice_rerouted = true;
       active_workflow_type = "load_custom_voice";
       resolved_saved_voice_filename = global_character_mapping.savedVoiceFilename;
@@ -894,7 +896,7 @@ async function execute_sequential_generation_queue(getMainWindow) {
           comfyui_workflow_nodes_payload["2"].inputs.audio = unique_staging_audio_filename;
         }
       } else {
-        console.warn(`[AuK Voice Clone Warning] No reference audio file found for character "${active_speaker_name}". Will proceed with workflow defaults.`);
+        throw new Error(`AuK Voice Clone requires a reference audio file. Please load a voice audio file for character "${active_speaker_name}" first.`);
       }
 
     } else if (active_workflow_type === "auk_instruct_tts" || active_workflow_type === "auk_instruct") {

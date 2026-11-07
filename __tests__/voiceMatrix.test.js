@@ -331,5 +331,85 @@ describe('Voice Anchor Pipeline', () => {
       expect(state_josh_view.power_dynamic).toBe("b_over_a");
     });
   });
+
+  describe('AuK Voice Clone & Flip Tab Controls', () => {
+    it('successfully flips character synthesis mode between seed and auk_clone', () => {
+      set_character_synthesis_mode("Character 1", "auk_clone");
+
+      const characterData = window.active_loaded_project_state_object.voiceMapping["Character 1"];
+      expect(characterData.synthesisMode).toBe("auk_clone");
+      expect(characterData.workflowType).toBe("auk_voice_clone");
+      expect(window.trigger_project_state_disk_flush).toHaveBeenCalled();
+      expect(window.populate_voice_matrix_configuration_cards).toHaveBeenCalled();
+
+      set_character_synthesis_mode("Character 1", "seed");
+      expect(characterData.synthesisMode).toBe("seed");
+      expect(characterData.workflowType).toBe("design");
+    });
+
+    it('loads external reference audio and sets up AuK clone profile', async () => {
+      window.audiobook_api.select_audio_file = jest.fn().mockResolvedValue("/path/to/character_voice.wav");
+      window.audiobook_api.import_character_voice_audio = jest.fn().mockResolvedValue({
+        success: true,
+        anchor_file_path: "/mock/workspace/MockProject/audio/anchors/character_voice_character_1.wav"
+      });
+
+      await trigger_character_reference_audio_load("Character 1");
+
+      const characterData = window.active_loaded_project_state_object.voiceMapping["Character 1"];
+      expect(characterData.referenceAudioPath).toBe("/mock/workspace/MockProject/audio/anchors/character_voice_character_1.wav");
+      expect(characterData.anchorFilePath).toBe("/mock/workspace/MockProject/audio/anchors/character_voice_character_1.wav");
+      expect(characterData.workflowType).toBe("auk_voice_clone");
+      expect(characterData.synthesisMode).toBe("auk_clone");
+      expect(window.trigger_project_state_disk_flush).toHaveBeenCalled();
+      expect(window.populate_voice_matrix_configuration_cards).toHaveBeenCalled();
+    });
+
+    it('removes reference audio and reverts character profile to seed mode', () => {
+      const characterData = window.active_loaded_project_state_object.voiceMapping["Character 1"];
+      characterData.referenceAudioPath = "/mock/path.wav";
+      characterData.synthesisMode = "auk_clone";
+
+      trigger_character_reference_audio_remove("Character 1");
+
+      expect(characterData.referenceAudioPath).toBeUndefined();
+      expect(characterData.synthesisMode).toBe("seed");
+      expect(characterData.workflowType).toBe("design");
+      expect(window.trigger_project_state_disk_flush).toHaveBeenCalled();
+      expect(window.populate_voice_matrix_configuration_cards).toHaveBeenCalled();
+    });
+
+    it('dispatches AuK clone task with referenceAudioPath when in auk_clone mode', () => {
+      window.audiobook_api.enqueue_speech_generation_task = jest.fn();
+      window.audiobook_api.delete_take_file = jest.fn().mockResolvedValue({ success: true });
+
+      document.body.innerHTML += `
+        <textarea id="test_phrase_Character 1">Sample voice phrase.</textarea>
+        <div id="test_audio_container_Character 1"></div>
+      `;
+
+      const characterData = window.active_loaded_project_state_object.voiceMapping["Character 1"];
+      characterData.synthesisMode = "auk_clone";
+      characterData.referenceAudioPath = "/mock/anchors/custom_voice.wav";
+
+      trigger_character_voice_test("Character 1");
+
+      expect(window.audiobook_api.enqueue_speech_generation_task).toHaveBeenCalledWith(
+        "/mock/workspace",
+        "MockProject",
+        expect.objectContaining({
+          speaker: "Character 1",
+          text: "Sample voice phrase.",
+          workflowOverride: expect.objectContaining({
+            workflowType: "auk_voice_clone",
+            referenceAudioPath: "/mock/anchors/custom_voice.wav"
+          })
+        }),
+        expect.any(Object),
+        expect.any(String),
+        1
+      );
+    });
+  });
 });
 
