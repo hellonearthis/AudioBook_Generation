@@ -160,4 +160,105 @@ describe("Line Studio Inspector (Column 3)", () => {
     expect(seg.pre_pause_ms).toBe(250);
     expect(seg.post_pause_ms).toBe(600);
   });
+
+  test("handle_inspector_subtext_change updates segment intent and triggers disk flush", async () => {
+    const fs = require("fs");
+    const editorCode = fs.readFileSync("renderer/js/editor.js", "utf8");
+    eval(editorCode);
+
+    select_and_inspect_segment(1);
+
+    await handle_inspector_subtext_change(1, "Whispered, dripping with hidden venom.");
+
+    const seg = window.active_loaded_project_state_object.scriptSegments[1];
+    expect(seg.intent).toBe("Whispered, dripping with hidden venom.");
+    expect(window.audiobook_api.save_audiobook_project_state).toHaveBeenCalled();
+  });
+
+  test("handle_inspector_breath_toggle updates segment inject_breath state", async () => {
+    const fs = require("fs");
+    const editorCode = fs.readFileSync("renderer/js/editor.js", "utf8");
+    eval(editorCode);
+
+    select_and_inspect_segment(1);
+
+    await handle_inspector_breath_toggle(1, false);
+
+    const seg = window.active_loaded_project_state_object.scriptSegments[1];
+    expect(seg.inject_breath).toBe(false);
+
+    await handle_inspector_breath_toggle(1, true);
+    expect(seg.inject_breath).toBe(true);
+  });
+
+  test("compute_take_content_hash changes when inspector settings are modified", () => {
+    const { compute_take_content_hash } = require("../services/audio_cache_service");
+
+    const baseParams = {
+      text: "Explain the cupola, Brother.",
+      speaker: "Inspector Mara",
+      voice: "Eric",
+      seed: 4242,
+      workflowType: "custom",
+      emotion: "calm",
+      instruction: "steady",
+      speed: "1.0",
+      pitch: "medium",
+      volume: "medium",
+      intent: "Demanding technical accountability",
+      phonetic_overrides: { "cupola": "KOO-puh-luh" },
+      pre_pause_ms: 150,
+      post_pause_ms: 300,
+      inject_breath: true,
+      energy: 1.0
+    };
+
+    const baseHash = compute_take_content_hash(baseParams);
+    expect(baseHash).toHaveLength(16);
+
+    // Identical params yield identical hash
+    expect(compute_take_content_hash({ ...baseParams })).toBe(baseHash);
+
+    // Intent change alters hash
+    const modifiedIntentHash = compute_take_content_hash({
+      ...baseParams,
+      intent: "Terrified, pleading for mercy"
+    });
+    expect(modifiedIntentHash).not.toBe(baseHash);
+
+    // Phonetic overrides change alters hash
+    const modifiedPhoneticHash = compute_take_content_hash({
+      ...baseParams,
+      phonetic_overrides: { "cupola": "kyoo-POH-luh" }
+    });
+    expect(modifiedPhoneticHash).not.toBe(baseHash);
+
+    // Pre-pause change alters hash
+    const modifiedPrePauseHash = compute_take_content_hash({
+      ...baseParams,
+      pre_pause_ms: 500
+    });
+    expect(modifiedPrePauseHash).not.toBe(baseHash);
+
+    // Post-pause change alters hash
+    const modifiedPostPauseHash = compute_take_content_hash({
+      ...baseParams,
+      post_pause_ms: 800
+    });
+    expect(modifiedPostPauseHash).not.toBe(baseHash);
+
+    // Breath toggle alters hash
+    const modifiedBreathHash = compute_take_content_hash({
+      ...baseParams,
+      inject_breath: false
+    });
+    expect(modifiedBreathHash).not.toBe(baseHash);
+
+    // Energy change alters hash
+    const modifiedEnergyHash = compute_take_content_hash({
+      ...baseParams,
+      energy: 2.5
+    });
+    expect(modifiedEnergyHash).not.toBe(baseHash);
+  });
 });

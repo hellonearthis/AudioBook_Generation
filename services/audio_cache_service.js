@@ -13,7 +13,8 @@ const filesystem_library = require("fs");
 
 /**
  * WHAT: Generates a deterministic SHA-256 fingerprint for a specific audio synthesis task.
- * WHY: Any change to the dialogue text, voice preset, seed, emotional delivery, or acting instruction
+ * WHY: Any change to the dialogue text, voice preset, seed, emotional delivery, acting instruction,
+ *      line subtext/intent, pacing silences, breath injection, or phonetic overrides
  *      must produce a different hash, while identical parameters produce an identical hash.
  * 
  * @param {Readonly<Object>} task_parameters - The synthesis parameters.
@@ -32,6 +33,17 @@ function compute_take_content_hash(task_parameters) {
   const normalized_volume_level = (task_parameters.volume || "medium").trim().toLowerCase();
   const normalized_intensity_band = String(task_parameters.intensity_band || task_parameters.band || "");
   const normalized_expression_axis = (task_parameters.expression_axis || task_parameters.expression || "").trim().toLowerCase();
+  const normalized_intent_text = (task_parameters.intent || "").trim().toLowerCase();
+  const normalized_pre_pause = String(task_parameters.pre_pause_ms ?? "");
+  const normalized_post_pause = String(task_parameters.post_pause_ms ?? "");
+  const normalized_inject_breath = String(task_parameters.inject_breath ?? "");
+  const normalized_energy_level = String(task_parameters.energy ?? "");
+  const normalized_phonetics = task_parameters.phonetic_overrides && typeof task_parameters.phonetic_overrides === "object"
+    ? Object.keys(task_parameters.phonetic_overrides)
+        .sort()
+        .map((key_string) => `${key_string.toLowerCase()}:${String(task_parameters.phonetic_overrides[key_string]).toLowerCase()}`)
+        .join(";")
+    : "";
 
   const canonical_payload_representation = [
     normalized_text_content,
@@ -45,7 +57,13 @@ function compute_take_content_hash(task_parameters) {
     normalized_pitch_level,
     normalized_volume_level,
     normalized_intensity_band,
-    normalized_expression_axis
+    normalized_expression_axis,
+    normalized_intent_text,
+    normalized_pre_pause,
+    normalized_post_pause,
+    normalized_inject_breath,
+    normalized_energy_level,
+    normalized_phonetics
   ].join("|");
 
   return crypto

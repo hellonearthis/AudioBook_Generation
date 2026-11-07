@@ -171,6 +171,28 @@ describe("Feature B: Pronunciation Lexicon & Phonetic Overrides", () => {
 
     expect(result.transformed_text).toBe("Traveling to The Big Apple was exciting.");
   });
+
+  test("line-specific phonetic overrides take precedence over project lexicon rules", () => {
+    // Project-wide lexicon has a default pronunciation
+    const project_lexicon = [
+      { target_word: "cupola", replacement: "KYOO-puh-luh" },
+      { target_word: "chasm", replacement: "KAZ-um" }
+    ];
+
+    // Line Inspector provides a line-specific override for "cupola"
+    const line_overrides = {
+      "cupola": "KOO-poh-lah"
+    };
+
+    const dialogue_text = "Look up through the cupola into the dark chasm.";
+
+    // Apply line overrides first, then project rules
+    const { transformed_text: line_conditioned } = apply_pronunciation_lexicon(dialogue_text, line_overrides);
+    const { transformed_text: final_conditioned } = apply_pronunciation_lexicon(line_conditioned, project_lexicon);
+
+    expect(final_conditioned).toBe("Look up through the KOO-poh-lah into the dark KAZ-um.");
+    expect(final_conditioned).not.toContain("KYOO-puh-luh");
+  });
 });
 
 describe("Feature C: Audio Mastering & Assembly (No Room Tone)", () => {

@@ -91,6 +91,55 @@ function get_compiled_project_lexicon(project_root_directory_path) {
   return cached_compiled_lexicon_rules;
 }
 
+/**
+ * WHAT: Applies micro-pacing silence padding (pre-pause and post-pause) via FFmpeg.
+ * WHY: Line Inspector allows fine-grained pause control before and after speech lines.
+ *      Pre-delay and post-padding ensure realistic sentence boundaries and breath room.
+ * 
+ * @param {string} input_audio_path - Source audio path from ComfyUI output.
+ * @param {string} output_audio_path - Destination audio path.
+ * @param {number} pre_pause_ms - Milliseconds of silence to prepend.
+ * @param {number} post_pause_ms - Milliseconds of silence to append.
+ * @returns {Promise<void>}
+ */
+async function apply_audio_pacing_padding(input_audio_path, output_audio_path, pre_pause_ms, post_pause_ms) {
+  const audio_filters = [];
+  if (pre_pause_ms > 0) {
+    audio_filters.push(`adelay=${pre_pause_ms}:all=1`);
+  }
+  if (post_pause_ms > 0) {
+    audio_filters.push(`apad=pad_dur=${(post_pause_ms / 1000).toFixed(3)}`);
+  }
+
+  if (audio_filters.length === 0) {
+    filesystem_library.copyFileSync(input_audio_path, output_audio_path);
+    return;
+  }
+
+  const temporary_pacing_output_path = `${output_audio_path}.pacing_${Date.now()}.tmp`;
+  try {
+    await new Promise((resolve, reject) => {
+      ffmpeg(input_audio_path)
+        .audioFilters(audio_filters)
+        .output(temporary_pacing_output_path)
+        .on("end", () => resolve())
+        .on("error", (filter_error) => reject(filter_error))
+        .run();
+    });
+
+    if (filesystem_library.existsSync(output_audio_path)) {
+      filesystem_library.unlinkSync(output_audio_path);
+    }
+    filesystem_library.renameSync(temporary_pacing_output_path, output_audio_path);
+  } catch (pacing_error) {
+    console.warn(`[Audio Pacing] Failed to apply silence padding (${pre_pause_ms}ms pre / ${post_pause_ms}ms post):`, pacing_error.message);
+    if (filesystem_library.existsSync(temporary_pacing_output_path)) {
+      try { filesystem_library.unlinkSync(temporary_pacing_output_path); } catch (_) {}
+    }
+    filesystem_library.copyFileSync(input_audio_path, output_audio_path);
+  }
+}
+
 // WHAT: Persists pending audio queue tasks to `<project>/audio/queue_state.json`.
 // WHY: Ensures crash-safe, resumable background generation across system restarts.
 function persist_queue_state_to_disk(workspace_directory_path, project_name, queue_items) {
@@ -430,8 +479,20 @@ async function execute_sequential_generation_queue(getMainWindow) {
     let active_pitch_level = "balanced";
     let active_pacing_level = "steady speaking speed";
     let active_volume_level = "normal";
-    let active_emotional_state = "neutral";
+    let active_emotional_state = current_active_task.script_segment_data.emotion || "neutral";
     let active_acting_style = "natural narrator";
+
+    const raw_segment_intent = (current_active_task.script_segment_data.intent || "").trim();
+    const raw_segment_energy = typeof current_active_task.script_segment_data.energy === "number"
+      ? current_active_task.script_segment_data.energy
+      : 1.0;
+    const inject_breath_flag = current_active_task.script_segment_data.inject_breath !== false;
+    const pre_pause_ms = typeof current_active_task.script_segment_data.pre_pause_ms === "number"
+      ? current_active_task.script_segment_data.pre_pause_ms
+      : 0;
+    const post_pause_ms = typeof current_active_task.script_segment_data.post_pause_ms === "number"
+      ? current_active_task.script_segment_data.post_pause_ms
+      : 0;
 
     let has_rich_qwen_style_metadata = false;
     let rich_qwen_style_texture = "";
@@ -511,6 +572,20 @@ async function execute_sequential_generation_queue(getMainWindow) {
       compiled_emotion_block = `Emotion: ${rich_emotional_description_string}.`;
     }
 
+    // WHAT: Inject Line Inspector subtext, breath intake, and energy intensity into the prompt blocks.
+    // WHY: Ensures actor-guided nuances from Column 3 directly shape the synthesized performance.
+    if (raw_segment_intent) {
+      compiled_emotion_block += ` Subtext and dramatic intent: ${raw_segment_intent}.`;
+      rich_emotional_description_string += ` (intent: ${raw_segment_intent})`;
+    }
+    if (inject_breath_flag) {
+      compiled_prosody_block += ` Delivered with a subtle natural intake of breath before speaking.`;
+    }
+    if (raw_segment_energy !== 1.0) {
+      const energy_label = raw_segment_energy > 1.3 ? "high dynamic energy" : (raw_segment_energy < 0.7 ? "subdued low energy" : "moderate energy");
+      compiled_voice_quality_block += ` Intensity: ${energy_label}.`;
+    }
+
     generated_qwen3_style_prompt_string = `${compiled_voice_quality_block} ${compiled_prosody_block} ${compiled_style_block} ${compiled_emotion_block}`;
 
     const character_name_deterministic_hash_value = Array.from(active_speaker_name).reduce(
@@ -531,8 +606,9 @@ async function execute_sequential_generation_queue(getMainWindow) {
       current_active_task.project_name
     );
 
-    // WHAT: Compute deterministic content hash for this take.
+    // WHAT: Compute deterministic content hash for this take including Line Inspector parameters.
     // WHY: If an identical take was generated previously, we can skip GPU synthesis entirely.
+    //      Any tweak to subtext, phonetics, pause durations, or breath invalidates the hash.
     const take_content_hash_string = compute_take_content_hash({
       text: target_dialogue_text,
       speaker: active_speaker_name,
@@ -543,7 +619,13 @@ async function execute_sequential_generation_queue(getMainWindow) {
       instruction: current_active_task.script_segment_data.direction || "",
       speed: current_active_task.script_segment_data.speed || "1.0",
       pitch: active_pitch_level,
-      volume: active_volume_level
+      volume: active_volume_level,
+      intent: raw_segment_intent,
+      phonetic_overrides: current_active_task.script_segment_data.phonetic_overrides,
+      pre_pause_ms: pre_pause_ms,
+      post_pause_ms: post_pause_ms,
+      inject_breath: inject_breath_flag,
+      energy: raw_segment_energy
     });
 
     // WHAT: Check if we have an instant cache hit on disk.
@@ -554,6 +636,11 @@ async function execute_sequential_generation_queue(getMainWindow) {
 
     if (cached_audio_file_path) {
       console.log(`[Audio Cache Hit] Restoring segment ${segment_index_position} (take ${target_take_number}) from cache (${take_content_hash_string}).`);
+      const cached_extension = path_library.extname(cached_audio_file_path) || ".wav";
+      destination_audio_file_path = path_library.join(
+        take_destination_subfolder_path,
+        `take_${target_take_number}${cached_extension}`
+      );
       filesystem_library.copyFileSync(cached_audio_file_path, destination_audio_file_path);
 
       notify_renderer({
@@ -572,11 +659,18 @@ async function execute_sequential_generation_queue(getMainWindow) {
       return;
     }
 
-    // WHAT: Apply project pronunciation lexicon overrides before synthesis.
-    // WHY: Replaces fantasy words and acronyms with phonetic respellings using pre-compiled, cached rules.
+    // WHAT: Apply line-specific phonetic overrides and project pronunciation lexicon before synthesis.
+    // WHY: Individual line inspector respellings take precedence over project-wide lexicon rules,
+    //      ensuring actor-guided pronunciation overrides fantasy words, names, and acronyms.
+    const line_phonetic_overrides = current_active_task.script_segment_data.phonetic_overrides || {};
     const project_lexicon_rules = get_compiled_project_lexicon(project_root_directory_path);
-    const { transformed_text: phonetically_conditioned_dialogue_text } = apply_pronunciation_lexicon(
+
+    const { transformed_text: line_phonetically_conditioned_text } = apply_pronunciation_lexicon(
       target_dialogue_text,
+      line_phonetic_overrides
+    );
+    const { transformed_text: phonetically_conditioned_dialogue_text } = apply_pronunciation_lexicon(
+      line_phonetically_conditioned_text,
       project_lexicon_rules
     );
 
@@ -627,10 +721,17 @@ async function execute_sequential_generation_queue(getMainWindow) {
 
         let structured_custom_voice_style_prompt_string;
 
+        const subtext_intent_suffix = raw_segment_intent ? `\nDramatic Subtext & Intent: ${raw_segment_intent}` : "";
+        const breath_suffix = inject_breath_flag ? `\nBreath: Preceded by a natural breath intake` : "";
+        const intensity_suffix = raw_segment_energy !== 1.0 ? `\nIntensity: ${raw_segment_energy > 1.3 ? "High dynamic energy" : "Subdued gentle energy"}` : "";
+
         if (precompiled_design_prompt_string && precompiled_design_prompt_string.includes("Voice Profile:")) {
           structured_custom_voice_style_prompt_string = 
             precompiled_design_prompt_string + `\n` +
-            `Delivery: ${active_emotional_state}, ${active_pacing_level}, ${active_pitch_level} pitch, ${active_volume_level} volume`;
+            `Delivery: ${active_emotional_state}, ${active_pacing_level}, ${active_pitch_level} pitch, ${active_volume_level} volume` +
+            subtext_intent_suffix +
+            breath_suffix +
+            intensity_suffix;
         } else {
           structured_custom_voice_style_prompt_string = 
             `Character Name: ${active_speaker_name}\n` +
@@ -638,7 +739,10 @@ async function execute_sequential_generation_queue(getMainWindow) {
             (resolved_identity_background_section ? `Identity & Background: ${resolved_identity_background_section}\n` : "") +
             (resolved_physical_appearance_section ? `Physical Appearance: ${resolved_physical_appearance_section}\n` : "") +
             (resolved_personality_traits_section ? `Personality Traits: ${resolved_personality_traits_section}\n` : "") +
-            `Delivery: ${active_emotional_state}, ${active_pacing_level}, ${active_pitch_level} pitch, ${active_volume_level} volume`;
+            `Delivery: ${active_emotional_state}, ${active_pacing_level}, ${active_pitch_level} pitch, ${active_volume_level} volume` +
+            subtext_intent_suffix +
+            breath_suffix +
+            intensity_suffix;
         }
 
         comfyui_workflow_nodes_payload["43"].inputs.value = (structured_custom_voice_style_prompt_string && structured_custom_voice_style_prompt_string.trim())
@@ -805,12 +909,27 @@ async function execute_sequential_generation_queue(getMainWindow) {
       if (!auk_instruction) {
         const raw_intensity = segment_render_block.intensity ?? current_active_task.script_segment_data.intensity ?? 0.4;
         const raw_expression = segment_render_block.expression ?? current_active_task.script_segment_data.expression ?? "balanced";
+        const adjusted_intensity = Math.min(1.0, Math.max(0.1, raw_intensity * (raw_segment_energy || 1.0)));
         auk_instruction = compile_auk_emotional_instruction({
           emotion: active_emotional_state || "neutral",
-          intensity_value: raw_intensity,
+          intensity_value: adjusted_intensity,
           expression: raw_expression,
           dialogue_text: phonetically_conditioned_dialogue_text
         });
+      }
+
+      // WHAT: Append Line Inspector subtext and breath intake into AuK secondary instruction.
+      // WHY: Guides the zero-shot voice clone model with dramatic subtext and natural breath pacing.
+      if (raw_segment_intent) {
+        auk_instruction = auk_instruction
+          ? `${auk_instruction}. Subtext: ${raw_segment_intent}`
+          : `Subtext: ${raw_segment_intent}`;
+      }
+
+      if (inject_breath_flag) {
+        auk_instruction = auk_instruction
+          ? `${auk_instruction}. Preceded by an audible, subtle intake of breath.`
+          : `Preceded by an audible, subtle intake of breath.`;
       }
 
       // WHAT: Estimating duration from word count or explicit gen_seconds hint.
@@ -965,7 +1084,14 @@ async function execute_sequential_generation_queue(getMainWindow) {
             `take_${target_take_number}${actual_rendered_extension}`
           );
 
-          filesystem_library.copyFileSync(absolute_comfyui_output_wav_path, destination_audio_file_path);
+          // WHAT: Apply Line Inspector micro-pacing silence padding (pre-pause & post-pause).
+          // WHY: Inserts millisecond-precise lead-in silence and trailing silence directly onto the audio track.
+          await apply_audio_pacing_padding(
+            absolute_comfyui_output_wav_path,
+            destination_audio_file_path,
+            pre_pause_ms,
+            post_pause_ms
+          );
 
           // WHAT: Storing newly synthesized take in project content cache.
           // WHY: Enables instant restoration on subsequent runs with matching parameters.
@@ -1497,5 +1623,6 @@ module.exports = {
   fetch_comfyui_queue_history,
   compute_adaptive_poll_interval_ms,
   persist_queue_state_to_disk,
-  load_persisted_queue_state
+  load_persisted_queue_state,
+  apply_audio_pacing_padding
 };
