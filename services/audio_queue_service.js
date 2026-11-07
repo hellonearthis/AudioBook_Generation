@@ -1362,7 +1362,22 @@ function register_audio_queue_handlers(ipcMain, getMainWindow) {
     );
 
     try {
-      filesystem_library.copyFileSync(test_take_file_path, destination_anchor_file_path);
+      const source_extension = path_library.extname(test_take_file_path).toLowerCase();
+      if (source_extension === ".wav") {
+        filesystem_library.copyFileSync(test_take_file_path, destination_anchor_file_path);
+      } else {
+        // WHAT: Transcodes non-WAV test takes (e.g. FLAC) to genuine 24kHz 16-bit PCM WAV.
+        // WHY: Guarantees that subsequent ComfyUI speaker loaders and audio elements read valid WAV RIFF headers.
+        await new Promise((resolve_transcode, reject_transcode) => {
+          ffmpeg(test_take_file_path)
+            .audioCodec("pcm_s16le")
+            .audioFrequency(24000)
+            .toFormat("wav")
+            .on("end", resolve_transcode)
+            .on("error", reject_transcode)
+            .save(destination_anchor_file_path);
+        });
+      }
       return { success: true, anchor_file_path: destination_anchor_file_path };
     } catch (promote_operation_error) {
       console.error("Failed to promote test take to anchor:", promote_operation_error);

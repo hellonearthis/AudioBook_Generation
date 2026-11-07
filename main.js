@@ -18,11 +18,8 @@ const path_library = require("path");
 const filesystem_library = require("fs");
 
 // WHAT: Registering the custom "peaksaudio" protocol scheme as privileged before app is ready.
-// WHY: Peaks.js needs to fetch() audio files for Web Audio API decoding. Because the renderer
-//      runs with sandbox: true, standard file:// URLs are blocked by Chromium's security policy.
-//      By registering a custom protocol as "standard" and "supportFetchAPI", the sandboxed
-//      renderer can call fetch("peaksaudio:///path/to/file.wav") and receive the raw audio bytes
-//      served securely from the main process. The "corsEnabled" flag prevents CORS blocks.
+// WHY: Peaks.js needs to fetch() audio files for Web Audio API decoding, and HTML5 audio players
+//      require streaming protocol privileges to seek and stream local takes in sandboxed renderers.
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "peaksaudio",
@@ -30,7 +27,9 @@ protocol.registerSchemesAsPrivileged([
       standard: true,
       secure: true,
       supportFetchAPI: true,
-      corsEnabled: true
+      corsEnabled: true,
+      stream: true,
+      bypassCSP: true
     }
   }
 ]);
@@ -84,7 +83,8 @@ function create_primary_desktop_window() {
 // WHAT: Handling application boot lifecycle.
 app.whenReady().then(() => {
   // WHAT: Registering the peaksaudio:// protocol handler to serve local audio files to the renderer.
-  // WHY: Peaks.js in the sandboxed renderer uses fetch() to download audio data for waveform decoding.
+  // WHY: Serves audio bytes to Peaks.js fetch() and supports HTTP byte-range requests (206 Partial Content)
+  //      so HTML5 <audio> players can stream, inspect FLAC/WAV/MP3 metadata, and seek without decoder crashes.
   protocol.handle("peaksaudio", (incoming_protocol_request) => {
     const requested_url_object = new URL(incoming_protocol_request.url);
     let decoded_file_system_path = decodeURIComponent(requested_url_object.pathname);
@@ -101,6 +101,11 @@ app.whenReady().then(() => {
       return new Response("Audio file not found on disk.", { status: 404 });
     }
 
+    const file_stats = filesystem_library.statSync(decoded_file_system_path);
+    const file_size = file_stats.size;
+
+    // Detect MIME type with magic byte verification to avoid extension mismatch errors
+    let resolved_content_type_string = "application/octet-stream";
     const file_extension_lowercase = path_library.extname(decoded_file_system_path).toLowerCase();
     const mime_type_lookup_table = {
       ".wav": "audio/wav",
@@ -109,14 +114,63 @@ app.whenReady().then(() => {
       ".flac": "audio/flac",
       ".m4a": "audio/mp4"
     };
-    const resolved_content_type_string = mime_type_lookup_table[file_extension_lowercase] || "application/octet-stream";
+    resolved_content_type_string = mime_type_lookup_table[file_extension_lowercase] || "audio/flac";
+
+    try {
+      const header_sample_buffer = Buffer.alloc(4);
+      const fd = filesystem_library.openSync(decoded_file_system_path, "r");
+      filesystem_library.readSync(fd, header_sample_buffer, 0, 4, 0);
+      filesystem_library.closeSync(fd);
+      if (header_sample_buffer[0] === 0x66 && header_sample_buffer[1] === 0x4c && header_sample_buffer[2] === 0x61 && header_sample_buffer[3] === 0x43) {
+        resolved_content_type_string = "audio/flac";
+      } else if (header_sample_buffer[0] === 0x52 && header_sample_buffer[1] === 0x49 && header_sample_buffer[2] === 0x46 && header_sample_buffer[3] === 0x46) {
+        resolved_content_type_string = "audio/wav";
+      }
+    } catch (_) {}
+
+    // Support HTTP Range requests (206 Partial Content) for seeking & HTML5 audio tags
+    const range_header_value = incoming_protocol_request.headers.get("range");
+    if (range_header_value) {
+      const byte_range_matches = range_header_value.match(/bytes=(\d+)-(\d*)/);
+      if (byte_range_matches) {
+        const start_byte_position = parseInt(byte_range_matches[1], 10);
+        const end_byte_position = byte_range_matches[2] ? parseInt(byte_range_matches[2], 10) : file_size - 1;
+        const bounded_end_position = Math.min(end_byte_position, file_size - 1);
+        const chunk_byte_length = (bounded_end_position - start_byte_position) + 1;
+
+        if (start_byte_position >= file_size || start_byte_position > bounded_end_position) {
+          return new Response(null, {
+            status: 416,
+            headers: {
+              "Content-Range": `bytes */${file_size}`
+            }
+          });
+        }
+
+        const file_descriptor = filesystem_library.openSync(decoded_file_system_path, "r");
+        const range_chunk_buffer = Buffer.alloc(chunk_byte_length);
+        filesystem_library.readSync(file_descriptor, range_chunk_buffer, 0, chunk_byte_length, start_byte_position);
+        filesystem_library.closeSync(file_descriptor);
+
+        return new Response(range_chunk_buffer, {
+          status: 206,
+          headers: {
+            "Content-Type": resolved_content_type_string,
+            "Content-Range": `bytes ${start_byte_position}-${bounded_end_position}/${file_size}`,
+            "Accept-Ranges": "bytes",
+            "Content-Length": String(chunk_byte_length)
+          }
+        });
+      }
+    }
 
     const audio_file_raw_buffer = filesystem_library.readFileSync(decoded_file_system_path);
     return new Response(audio_file_raw_buffer, {
       status: 200,
       headers: {
         "Content-Type": resolved_content_type_string,
-        "Content-Length": String(audio_file_raw_buffer.length)
+        "Accept-Ranges": "bytes",
+        "Content-Length": String(file_size)
       }
     });
   });

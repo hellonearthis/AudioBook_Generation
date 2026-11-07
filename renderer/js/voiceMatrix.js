@@ -334,7 +334,7 @@ function populate_voice_matrix_configuration_cards() {
                 <span class="text-10 text-muted" style="text-transform: capitalize; font-weight: 500;">${emotion} take (${is_auk_clone_mode ? 'AuK Clone' : 'Qwen3 Design'})</span>
                 <span id="test_status_${emotion}_${character_name_string}" class="d-none text-10 text-gold"></span>
               </div>
-              <audio id="test_player_${emotion}_${character_name_string}" src="${src_url}" controls class="w-100 d-block" style="height: 24px;"></audio>
+              <audio id="test_player_${emotion}_${character_name_string}" src="${src_url}" controls preload="metadata" class="w-100 d-block" style="height: 24px;"></audio>
               <button id="test_lock_btn_${emotion}_${character_name_string}" class="cyber_btn ${is_take_locked ? 'btn_secondary border-gold-glow text-gold font-semibold' : 'btn_secondary'} text-10 p-4-8 mt-2 w-100" onclick="promote_test_take_to_anchor('${character_name_string.replace(/'/g, "\\'")}', '${emotion}')" title="${is_take_locked ? "This voice take is currently locked in as the character's active master anchor. Click to re-lock or re-export." : "Saves this take as the Character Anchor and exports it directly to ComfyUI for future generations."}">
                 ${is_take_locked ? '🔒 Voice Locked In (Active Anchor)' : '⭐ Lock in character'}
               </button>
@@ -778,7 +778,7 @@ function trigger_character_voice_test(character_name_string) {
           <span class="text-10 text-muted" style="text-transform: capitalize; font-weight: 500;">${emotion} take (${is_auk_clone_active ? 'AuK Clone' : 'Qwen3 Design'})</span>
           <span id="test_status_${emotion}_${character_name_string}" class="text-10 text-gold">Queued...</span>
         </div>
-        <audio id="test_player_${emotion}_${character_name_string}" controls class="w-100 d-none" style="height: 24px;"></audio>
+        <audio id="test_player_${emotion}_${character_name_string}" controls preload="metadata" class="w-100 d-none" style="height: 24px;"></audio>
         <button id="test_lock_btn_${emotion}_${character_name_string}" class="cyber_btn btn_secondary text-10 p-4-8 mt-2 w-100 d-none" onclick="promote_test_take_to_anchor('${character_name_string.replace(/'/g, "\\'")}', '${emotion}')" title="Saves this take as the Character Anchor and exports it directly to ComfyUI for future generations.">⭐ Lock in character</button>
       </div>
     `;
