@@ -2154,10 +2154,10 @@ function play_individual_line_clip(index_position_of_card) {
     absolute_audio_path_to_play = `${active_selected_workspace_directory_path}/${active_loaded_project_state_object.projectName}/${absolute_audio_path_to_play}`;
   }
 
-  // WHAT: Convert the absolute path to a safe, normalized file:/// URL.
-  // WHY: Electron requires safe file protocol prefixes to stream local media cleanly.
+  // WHAT: Convert the absolute path to a safe, normalized peaksaudio:/// URL.
+  // WHY: Electron requires safe custom protocol prefixes to stream local media cleanly in sandboxed windows.
   const normalized_absolute_path = absolute_audio_path_to_play.replace(/\\/g, "/").replace(/^\/+/, "");
-  const source_audio_file_path = `file:///${normalized_absolute_path}?t=${Date.now()}`;
+  const source_audio_file_path = `peaksaudio:///${normalized_absolute_path}?t=${Date.now()}`;
   
   // WHAT: Fetching or creating html5 audio player elements.
   // WHY: Standard browser plays standard wav/mp3 clips easily without visual overlays.
@@ -3533,10 +3533,10 @@ function play_individual_directorial_line_clip(index_position_of_card) {
     absolute_audio_path_to_play = `${active_selected_workspace_directory_path}/${active_loaded_project_state_object.projectName}/${absolute_audio_path_to_play}`;
   }
 
-  // WHAT: Convert the absolute path to a safe, normalized file:/// URL.
-  // WHY: Electron requires safe file protocol prefixes to stream local media cleanly.
+  // WHAT: Convert the absolute path to a safe, normalized peaksaudio:/// URL.
+  // WHY: Electron requires safe custom protocol prefixes to stream local media cleanly in sandboxed windows.
   const normalized_absolute_path = absolute_audio_path_to_play.replace(/\\/g, "/").replace(/^\/+/, "");
-  const source_audio_file_path = `file:///${normalized_absolute_path}?t=${Date.now()}`;
+  const source_audio_file_path = `peaksaudio:///${normalized_absolute_path}?t=${Date.now()}`;
   
   // WHAT: Fetching or creating html5 audio player elements.
   // WHY: Standard browser plays standard wav/mp3 clips easily without visual overlays.

@@ -198,6 +198,21 @@ function format_general_metadata_field_to_string(metadata_field_value) {
   return String(metadata_field_value);
 }
 
+// WHAT: Formats a local audio file path into a safe peaksaudio:// URL for playback inside the renderer.
+// WHY: Electron's security boundaries can block direct file:/// media loading in sandboxed windows;
+//      peaksaudio:// is routed directly through the protocol handler in main.js.
+function format_safe_audio_playback_url(raw_audio_file_path) {
+  if (!raw_audio_file_path || typeof raw_audio_file_path !== "string") {
+    return "";
+  }
+  if (raw_audio_file_path.startsWith("peaksaudio://") || raw_audio_file_path.startsWith("http://") || raw_audio_file_path.startsWith("https://")) {
+    return `${raw_audio_file_path}${raw_audio_file_path.includes("?") ? "&" : "?"}t=${Date.now()}`;
+  }
+  const path_without_file_protocol = raw_audio_file_path.replace(/^file:\/\/\/?/i, "");
+  const normalized_path_string = path_without_file_protocol.replace(/\\/g, "/").replace(/^\/+/, "");
+  return `peaksaudio:///${normalized_path_string}?t=${Date.now()}`;
+}
+
 // =========================================================================
 // CAST PROFILE CARD BUILDER
 // =========================================================================
@@ -275,7 +290,7 @@ function populate_voice_matrix_configuration_cards() {
       ? (reference_audio_filename.split(".").pop() || "").toUpperCase()
       : "";
     const reference_audio_src_url = has_reference_audio
-      ? `file:///${reference_audio_file_path.replace(/\\/g, "/").replace(/^\/+/, "")}?t=${Date.now()}`
+      ? format_safe_audio_playback_url(reference_audio_file_path)
       : "";
 
     // WHAT: Checking if this is the fallback "Narrator" profile.
@@ -306,12 +321,11 @@ function populate_voice_matrix_configuration_cards() {
       emotions.forEach(emotion => {
         if (character_timbre_details.testTakes[emotion]) {
           const raw_path = character_timbre_details.testTakes[emotion];
-          const normalized_path = raw_path.replace(/\\/g, "/").replace(/^\/+/, "");
-          const src_url = `file:///${normalized_path}?t=${Date.now()}`;
+          const src_url = format_safe_audio_playback_url(raw_path);
           test_audio_players_html += `
             <div class="d-flex flex-column p-8 border-radius-4 gap-6 mb-8" style="background: rgba(0,0,0,0.2);">
               <div class="d-flex align-items-center justify-content-between w-100">
-                <span class="text-10 text-muted" style="text-transform: capitalize; font-weight: 500;">${emotion} take</span>
+                <span class="text-10 text-muted" style="text-transform: capitalize; font-weight: 500;">${emotion} take (${is_auk_clone_mode ? 'AuK Clone' : 'Qwen3 Design'})</span>
                 <span id="test_status_${emotion}_${character_name_string}" class="d-none text-10 text-gold"></span>
               </div>
               <audio id="test_player_${emotion}_${character_name_string}" src="${src_url}" controls class="w-100 d-block" style="height: 24px;"></audio>
@@ -882,9 +896,22 @@ if (window.audiobook_api && window.audiobook_api.subscribe_to_generation_status_
       if (parts.length >= 3) {
         const emotion = parts[1];
         const character_name = parts.slice(2).join("_");
+
+        let resolved_character_name = character_name;
+        if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping) {
+          if (!active_loaded_project_state_object.voiceMapping[resolved_character_name]) {
+            const matching_key = Object.keys(active_loaded_project_state_object.voiceMapping).find(k => 
+              k.toLowerCase() === character_name.toLowerCase() ||
+              k.toLowerCase().replace(/\s+/g, "_") === character_name.toLowerCase().replace(/\s+/g, "_")
+            );
+            if (matching_key) {
+              resolved_character_name = matching_key;
+            }
+          }
+        }
         
-        const status_el = document.getElementById(`test_status_${emotion}_${character_name}`);
-        const player_el = document.getElementById(`test_player_${emotion}_${character_name}`);
+        const status_el = document.getElementById(`test_status_${emotion}_${resolved_character_name}`) || document.getElementById(`test_status_${emotion}_${character_name}`);
+        const player_el = document.getElementById(`test_player_${emotion}_${resolved_character_name}`) || document.getElementById(`test_player_${emotion}_${character_name}`);
         
         if (status_el) {
           if (status_payload.status === "processing") {
@@ -902,28 +929,37 @@ if (window.audiobook_api && window.audiobook_api.subscribe_to_generation_status_
           }
         }
         
-        if (status_payload.status === "completed" && player_el && status_payload.filePath) {
-          const normalized_path = status_payload.filePath.replace(/\\\\/g, '/').replace(/\\/g, '/').replace(/^\/+/, "");
-          const final_src_url = `file:///${normalized_path}?t=${Date.now()}`;
-          player_el.src = final_src_url;
-          player_el.classList.remove('d-none');
-          player_el.classList.add('d-block');
-          if (status_el) status_el.classList.add('d-none');
-          
-          const lock_btn = document.getElementById(`test_lock_btn_${emotion}_${character_name}`);
-          if (lock_btn) {
-            lock_btn.classList.remove('d-none');
-          }
-          
-          if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping[character_name]) {
-            if (!active_loaded_project_state_object.voiceMapping[character_name].testTakes) {
-              active_loaded_project_state_object.voiceMapping[character_name].testTakes = {};
+        if (status_payload.status === "completed" && status_payload.filePath) {
+          // WHAT: Persist the newly generated test take unconditionally to project state.
+          // WHY: Prevents orphaned takes on disk if user flipped tabs or cards re-rendered during synthesis.
+          if (active_loaded_project_state_object && active_loaded_project_state_object.voiceMapping && active_loaded_project_state_object.voiceMapping[resolved_character_name]) {
+            if (!active_loaded_project_state_object.voiceMapping[resolved_character_name].testTakes) {
+              active_loaded_project_state_object.voiceMapping[resolved_character_name].testTakes = {};
             }
-            active_loaded_project_state_object.voiceMapping[character_name].testTakes[emotion] = status_payload.filePath;
+            active_loaded_project_state_object.voiceMapping[resolved_character_name].testTakes[emotion] = status_payload.filePath;
             trigger_project_state_disk_flush();
+          }
+
+          const safe_playback_url = format_safe_audio_playback_url(status_payload.filePath);
+
+          if (player_el) {
+            player_el.src = safe_playback_url;
+            player_el.classList.remove('d-none');
+            player_el.classList.add('d-block');
+            if (status_el) status_el.classList.add('d-none');
+            
+            const lock_btn = document.getElementById(`test_lock_btn_${emotion}_${resolved_character_name}`) || document.getElementById(`test_lock_btn_${emotion}_${character_name}`);
+            if (lock_btn) {
+              lock_btn.classList.remove('d-none');
+            }
+          } else {
+            // WHAT: Re-populate cards if player was not in DOM when async completion arrived.
+            // WHY: Guarantees the player and lock button appear when synthesis finishes in background.
+            populate_voice_matrix_configuration_cards();
           }
         }
       }
+      return;
     }
   });
 }

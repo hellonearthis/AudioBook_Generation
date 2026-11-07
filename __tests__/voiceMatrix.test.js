@@ -410,6 +410,54 @@ describe('Voice Anchor Pipeline', () => {
         1
       );
     });
+
+    it('formats safe peaksaudio URLs correctly', () => {
+      expect(format_safe_audio_playback_url("")).toBe("");
+      expect(format_safe_audio_playback_url(null)).toBe("");
+      
+      const windowsPath = "C:\\Users\\Desktop-Dev\\AudioBooks\\takes\\take_1.flac";
+      const formattedWindows = format_safe_audio_playback_url(windowsPath);
+      expect(formattedWindows).toMatch(/^peaksaudio:\/\/\/C:\/Users\/Desktop-Dev\/AudioBooks\/takes\/take_1\.flac\?t=\d+$/);
+
+      const fileUrl = "file:///C:/Users/Desktop-Dev/AudioBooks/takes/take_1.flac";
+      const formattedFileUrl = format_safe_audio_playback_url(fileUrl);
+      expect(formattedFileUrl).toMatch(/^peaksaudio:\/\/\/C:\/Users\/Desktop-Dev\/AudioBooks\/takes\/take_1\.flac\?t=\d+$/);
+
+      const alreadyPeaks = "peaksaudio:///workspace/audio/take.wav";
+      const formattedPeaks = format_safe_audio_playback_url(alreadyPeaks);
+      expect(formattedPeaks).toMatch(/^peaksaudio:\/\/\/workspace\/audio\/take\.wav\?t=\d+$/);
+    });
+
+    it('persists completed test takes to state and updates player when status update arrives', () => {
+      // Find the listener callback registered to subscribe_to_generation_status_updates
+      expect(window.audiobook_api.subscribe_to_generation_status_updates).toHaveBeenCalled();
+      const listenerCallback = window.audiobook_api.subscribe_to_generation_status_updates.mock.calls[0][0];
+
+      document.body.innerHTML += `
+        <div id="test_status_normal_Character 1">Queued...</div>
+        <audio id="test_player_normal_Character 1" class="d-none"></audio>
+        <button id="test_lock_btn_normal_Character 1" class="d-none">Lock</button>
+      `;
+
+      listenerCallback({
+        index_position: "test_normal_Character 1",
+        status: "completed",
+        filePath: "C:\\mock\\takes\\take_1.flac"
+      });
+
+      const characterData = window.active_loaded_project_state_object.voiceMapping["Character 1"];
+      expect(characterData.testTakes).toBeDefined();
+      expect(characterData.testTakes.normal).toBe("C:\\mock\\takes\\take_1.flac");
+      expect(window.trigger_project_state_disk_flush).toHaveBeenCalled();
+
+      const playerEl = document.getElementById("test_player_normal_Character 1");
+      expect(playerEl.classList.contains("d-block")).toBe(true);
+      expect(playerEl.classList.contains("d-none")).toBe(false);
+      expect(playerEl.src).toMatch(/^peaksaudio:\/\/\/C:\/mock\/takes\/take_1\.flac\?t=\d+$/);
+
+      const lockBtn = document.getElementById("test_lock_btn_normal_Character 1");
+      expect(lockBtn.classList.contains("d-none")).toBe(false);
+    });
   });
 });
 
